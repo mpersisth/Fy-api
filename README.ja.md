@@ -1,3 +1,20 @@
+<!--
+=========================================================================
+ Fy-api お知らせ ／ Fy-api Notice
+ このファイルは上流 new-api の元の README（日本語）です。
+ Fy-api はまだこの言語をローカライズしていません。
+
+ Fy-api のブランド化バージョンは以下をご覧ください：
+   - README.md       (English, Fy-api ブランド)
+   - README.zh_CN.md (簡体字中国語, Fy-api ブランド)
+
+ Fy-api は https://github.com/QuantumNous/new-api のダウンストリーム fork
+ であり、Apache 2.0 に準拠して上流の帰属を保持しています。
+ Fy-api 固有の変更については OVERLAY.md および docs/ ディレクトリを
+ 参照してください。
+=========================================================================
+-->
+
 <div align="center">
 
 ![new-api](/web/public/logo.png)

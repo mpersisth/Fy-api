@@ -1,3 +1,19 @@
+<!--
+=========================================================================
+ Fy-api Notice
+ Ce fichier est le README original de new-api en amont (français).
+ Fy-api n'a pas encore localisé cette langue.
+
+ Pour la version Fy-api adaptée :
+   - README.md       (English, branded Fy-api)
+   - README.zh_CN.md (Simplified Chinese, branded Fy-api)
+
+ Fy-api is a downstream fork of https://github.com/QuantumNous/new-api
+ that preserves upstream attribution per Apache 2.0. See OVERLAY.md and
+ the docs/ directory for Fy-api-specific changes.
+=========================================================================
+-->
+
 <div align="center">
 
 ![new-api](/web/public/logo.png)

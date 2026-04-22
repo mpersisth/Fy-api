@@ -1,3 +1,17 @@
+<!--
+=========================================================================
+ Fy-api 提示 ／ Fy-api Notice
+ 本檔案為上游 new-api 的原始 README（繁體中文），Fy-api 尚未本地化此語系。
+ 如需瀏覽 Fy-api 的品牌化 README，請查看：
+   - README.md       (English, Fy-api 品牌化)
+   - README.zh_CN.md (簡體中文，Fy-api 品牌化)
+
+ Fy-api 是 https://github.com/QuantumNous/new-api 的下游 fork，
+ Apache 2.0 合規地保留了上游 attribution。關於 Fy-api 特有的變更請見
+ OVERLAY.md 與 docs/ 目錄。
+=========================================================================
+-->
+
 <div align="center">
 
 ![new-api](/web/public/logo.png)

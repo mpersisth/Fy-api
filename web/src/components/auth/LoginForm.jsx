@@ -519,6 +519,22 @@ const LoginForm = () => {
             </div>
             <div className='px-2 py-8'>
               <div className='space-y-3'>
+                {/* Fy-api overlay: email/username login is shown first. */}
+                <Button
+                  theme='solid'
+                  type='primary'
+                  className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
+                  icon={<IconMail size='large' />}
+                  onClick={handleEmailLoginClick}
+                  loading={emailLoginLoading}
+                >
+                  <span className='ml-3'>{t('使用 邮箱或用户名 登录')}</span>
+                </Button>
+
+                <Divider margin='12px' align='center'>
+                  {t('或')}
+                </Divider>
+
                 {status.wechat_login && (
                   <Button
                     theme='outline'
@@ -641,21 +657,6 @@ const LoginForm = () => {
                     <span className='ml-3'>{t('使用 Passkey 登录')}</span>
                   </Button>
                 )}
-
-                <Divider margin='12px' align='center'>
-                  {t('或')}
-                </Divider>
-
-                <Button
-                  theme='solid'
-                  type='primary'
-                  className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
-                  icon={<IconMail size='large' />}
-                  onClick={handleEmailLoginClick}
-                  loading={emailLoginLoading}
-                >
-                  <span className='ml-3'>{t('使用 邮箱或用户名 登录')}</span>
-                </Button>
               </div>
 
               {(hasUserAgreement || hasPrivacyPolicy) && (
@@ -696,7 +697,8 @@ const LoginForm = () => {
                 </div>
               )}
 
-              {!status.self_use_mode_enabled && (
+              {/* Fy-api overlay: always show register link (self_use_mode check commented out). */}
+              {true && (
                 <div className='mt-6 text-center text-sm'>
                   <Text>
                     {t('没有账户？')}{' '}
@@ -849,7 +851,8 @@ const LoginForm = () => {
                 </>
               )}
 
-              {!status.self_use_mode_enabled && (
+              {/* Fy-api overlay: always show register link (self_use_mode check commented out). */}
+              {true && (
                 <div className='mt-6 text-center text-sm'>
                   <Text>
                     {t('没有账户？')}{' '}

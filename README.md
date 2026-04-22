@@ -1,7 +1,5 @@
 <div align="center">
 
-![Fy-api](/web/public/new_logo.png)
-
 # Fy-api
 
 🍥 **AI Gateway & Asset Management Platform — downstream fork of [new-api](https://github.com/QuantumNous/new-api)**

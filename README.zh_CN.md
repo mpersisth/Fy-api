@@ -1,7 +1,5 @@
 <div align="center">
 
-![Fy-api](/web/public/new_logo.png)
-
 # Fy-api
 
 🍥 **AI 网关与资产管理平台 — [new-api](https://github.com/QuantumNous/new-api) 的下游 fork**

@@ -55,6 +55,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const About = lazy(() => import('./pages/About'));
 const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+// Fy-api overlay: embedded product docs page
+const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
@@ -355,6 +357,15 @@ function App() {
           element={
             <Suspense fallback={<Loading></Loading>} key={location.pathname}>
               <PrivacyPolicy />
+            </Suspense>
+          }
+        />
+        {/* Fy-api overlay: embedded product docs */}
+        <Route
+          path='/docs'
+          element={
+            <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+              <FyApiDocs />
             </Suspense>
           }
         />

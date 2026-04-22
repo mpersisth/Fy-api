@@ -1,0 +1,59 @@
+name: Upstream Watch
+
+on:
+  schedule:
+    # Every Monday at 01:00 UTC (~ 09:00 Asia/Shanghai)
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream (QuantumNous/new-api)
+        run: |
+          git remote add upstream https://github.com/QuantumNous/new-api.git
+          git fetch upstream --tags
+
+      - name: Compute drift
+        id: drift
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "Behind upstream by $BEHIND commits."
+
+      - name: Render recent upstream activity
+        run: |
+          {
+            echo "### Upstream activity (last 50 unmerged commits)"
+            echo ""
+            echo '```'
+            git log HEAD..upstream/main --oneline | head -50 || true
+            echo '```'
+            echo ""
+            echo "### Conventional feat/fix mix"
+            git log HEAD..upstream/main --format="%s" | awk -F: '
+              /^feat/ { f++ }
+              /^fix/  { x++ }
+              /^chore|^refactor/ { c++ }
+              END { printf "feat=%d  fix=%d  chore/refactor=%d\n", f+0, x+0, c+0 }
+            '
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Emit warning if drift exceeds threshold
+        if: steps.drift.outputs.behind > 100
+        run: |
+          echo "::warning ::Fy-api is ${{ steps.drift.outputs.behind }} commits behind upstream. Schedule the monthly sync (docs/Monthly-upstream-sync-runbook.md)."
+
+      - name: Fail if drift extremely high (>500)
+        if: steps.drift.outputs.behind > 500
+        run: |
+          echo "::error ::Fy-api is dangerously far behind upstream (${{ steps.drift.outputs.behind }} commits). Merge conflicts will be painful; prioritize sync this week."
+          exit 1

@@ -1,0 +1,110 @@
+name: Upstream Sync (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      merge_strategy:
+        description: 'Merge strategy: merge (preserve history) or rebase (linear)'
+        type: choice
+        default: merge
+        options: [merge, rebase]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # If you protect main with required reviews, use a PAT with
+          # workflow + pull_request + contents:write scopes and store as PAT_SYNC.
+          token: ${{ secrets.PAT_SYNC || secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.email "fyapi-bot@users.noreply.github.com"
+          git config user.name  "Fy-api bot"
+
+      - name: Add upstream and fetch
+        run: |
+          git remote add upstream https://github.com/QuantumNous/new-api.git
+          git fetch upstream --tags
+
+      - name: Create sync branch
+        id: branch
+        run: |
+          BRANCH=sync/upstream-$(date -u +%Y%m%d)
+          git checkout -b "$BRANCH" origin/main
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream/main
+        id: merge
+        run: |
+          set +e
+          if [ "${{ inputs.merge_strategy }}" = "rebase" ]; then
+            git rebase upstream/main
+          else
+            git merge --no-ff upstream/main -m "sync: upstream as of $(date -u +%F)"
+          fi
+          RC=$?
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          # Continue even on conflicts — we still want the branch pushed so a human can resolve.
+          set -e
+
+      - name: Re-apply Fy-api i18n brand override
+        if: steps.merge.outputs.rc == '0'
+        run: |
+          for lang in zh-CN zh-TW en fr ja ru vi; do
+            f="web/src/i18n/locales/${lang}.json"
+            [ -f "$f" ] || continue
+            jq '(.translation |= with_entries(.value |= gsub("New API"; "Fy-api")))' "$f" > "/tmp/rebrand-${lang}.json"
+            if jq . "/tmp/rebrand-${lang}.json" > /dev/null; then
+              cp "/tmp/rebrand-${lang}.json" "$f"
+            fi
+          done
+          if ! git diff --quiet web/src/i18n/locales; then
+            git add web/src/i18n/locales
+            git commit -m "chore(sync): re-apply Fy-api brand override in i18n"
+          fi
+
+      - name: Push branch
+        run: |
+          git push origin "${{ steps.branch.outputs.name }}"
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ secrets.PAT_SYNC || secrets.GITHUB_TOKEN }}
+        run: |
+          BODY=$(cat <<EOF
+          ### Upstream sync as of $(date -u +%F)
+
+          - Merge strategy: \`${{ inputs.merge_strategy }}\`
+          - Merge exit code: \`${{ steps.merge.outputs.rc }}\`
+
+          If exit code is not zero, this branch contains unresolved conflicts.
+          Check out locally:
+
+          \`\`\`
+          git fetch origin ${{ steps.branch.outputs.name }}
+          git checkout ${{ steps.branch.outputs.name }}
+          git status
+          \`\`\`
+
+          Resolve per [OVERLAY.md](../blob/main/OVERLAY.md) and [Monthly sync runbook](../blob/main/docs/Monthly-upstream-sync-runbook.md).
+
+          After resolving, remember to run:
+          \`\`\`
+          go mod tidy && go build ./... && go test ./...
+          cd web && bun install && bun run build
+          \`\`\`
+          EOF
+          )
+          gh pr create \
+            --title "sync: upstream as of $(date -u +%F)" \
+            --body "$BODY" \
+            --base main \
+            --head "${{ steps.branch.outputs.name }}" || true

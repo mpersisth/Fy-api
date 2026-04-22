@@ -12,7 +12,7 @@ import (
 
 var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.0"            // this hard coding will be replaced automatically when building, no need to manually change
-var SystemName = "New API"
+var SystemName = "Fy-api"
 var Footer = ""
 var Logo = ""
 var TopUpLink = ""
@@ -40,6 +40,7 @@ var OptionMapRWMutex sync.RWMutex
 
 var ItemsPerPage = 10
 var MaxRecentItems = 1000
+var MaxLogExportItems = 50000 // 导出日志时的最大条数限制
 
 var PasswordLoginEnabled = true
 var PasswordRegisterEnabled = true

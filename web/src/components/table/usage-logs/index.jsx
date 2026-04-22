@@ -22,6 +22,8 @@ import CardPro from '../../common/ui/CardPro';
 import LogsTable from './UsageLogsTable';
 import LogsActions from './UsageLogsActions';
 import LogsFilters from './UsageLogsFilters';
+// Fy-api overlay: CSV export button.
+import UsageLogsExportButton from './UsageLogsExportButton';
 import ColumnSelectorModal from './modals/ColumnSelectorModal';
 import UserInfoModal from './modals/UserInfoModal';
 import ChannelAffinityUsageCacheModal from './modals/ChannelAffinityUsageCacheModal';
@@ -45,7 +47,18 @@ const LogsPage = () => {
       {/* Main Content */}
       <CardPro
         type='type2'
-        statsArea={<LogsActions {...logsData} />}
+        statsArea={
+          <div className='flex flex-col md:flex-row items-start md:items-center gap-2 w-full'>
+            <div className='flex-1 min-w-0'>
+              <LogsActions {...logsData} />
+            </div>
+            <UsageLogsExportButton
+              formApi={logsData.formApi}
+              isAdminUser={logsData.isAdminUser}
+              t={logsData.t}
+            />
+          </div>
+        }
         searchArea={<LogsFilters {...logsData} />}
         paginationArea={createCardProPagination({
           currentPage: logsData.activePage,

@@ -52,6 +52,17 @@
 - **修改**：新增 `.cursor/` 和 `*.log`
 - **冲突风险**：极低
 
+### B-5 [docker] 去掉 Dockerfile 里的 `@sha256` 摘要 pin
+- **文件**：`Dockerfile`
+- **修改**：三个 base image（`oven/bun:1`、`golang:1.26.1-alpine`、`debian:bookworm-slim`）去掉 `@sha256:xxx` 摘要后缀，只保留 tag
+- **原因**：阿里云 Container Registry mirror **不支持**按摘要拉取（返回 `denied: requested access to the resource is denied`）。大多数国内镜像加速器都有同样限制。
+- **代价**：失去摘要级可重现性——同一个 tag 理论上可能指向不同的 image（维护者 re-tag 时）。实际风险很低，因为：
+  1. `oven/bun:1` / `golang:1.26.1-alpine` / `debian:bookworm-slim` 都是稳定语义化 tag；
+  2. `go.sum` / `bun.lock` 已锁定依赖树，就算 base image 小升级也不影响产物；
+  3. 原始 SHA256 保留在 Dockerfile 顶部注释作审计参考。
+- **冲突风险**：低（上游偶尔刷 SHA，merge 时选我们这版+覆盖注释里的旧 SHA）
+- **Merge 策略**：上游 bump SHA 时，把新 SHA 更新到注释里，保留 tag-only 的 FROM 行
+
 ---
 
 ## 前端定制

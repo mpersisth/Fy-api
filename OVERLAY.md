@@ -52,16 +52,18 @@
 - **修改**：新增 `.cursor/` 和 `*.log`
 - **冲突风险**：极低
 
-### B-5 [docker] 去掉 Dockerfile 里的 `@sha256` 摘要 pin
+### B-5 [docker] Dockerfile 国内部署适配
 - **文件**：`Dockerfile`
-- **修改**：三个 base image（`oven/bun:1`、`golang:1.26.1-alpine`、`debian:bookworm-slim`）去掉 `@sha256:xxx` 摘要后缀，只保留 tag
-- **原因**：阿里云 Container Registry mirror **不支持**按摘要拉取（返回 `denied: requested access to the resource is denied`）。大多数国内镜像加速器都有同样限制。
-- **代价**：失去摘要级可重现性——同一个 tag 理论上可能指向不同的 image（维护者 re-tag 时）。实际风险很低，因为：
-  1. `oven/bun:1` / `golang:1.26.1-alpine` / `debian:bookworm-slim` 都是稳定语义化 tag；
-  2. `go.sum` / `bun.lock` 已锁定依赖树，就算 base image 小升级也不影响产物；
-  3. 原始 SHA256 保留在 Dockerfile 顶部注释作审计参考。
-- **冲突风险**：低（上游偶尔刷 SHA，merge 时选我们这版+覆盖注释里的旧 SHA）
-- **Merge 策略**：上游 bump SHA 时，把新 SHA 更新到注释里，保留 tag-only 的 FROM 行
+- **修改**：
+  1. **去掉 `@sha256` 摘要 pin**：三个 base image（`oven/bun:1`、`golang:1.26.1-alpine`、`debian:bookworm-slim`）只留 tag
+  2. **添加 Go 模块国内代理**：`ENV GOPROXY=https://goproxy.cn,direct` + `ENV GOSUMDB=sum.golang.google.cn`
+- **原因**：
+  1. 阿里云 Container Registry mirror 不支持按摘要拉取（返回 `denied: requested access to the resource is denied`）
+  2. 国内 build 主机无法直连 `proxy.golang.org`（Google 域被墙），`go mod download` 超时
+- **代价**：失去摘要级可重现性（见下）；`direct` fallback 允许仍能从原始 VCS 拉模块
+- **兜底**：供应链完整性由 `go.sum` / `bun.lock` 保证，base image 小浮动不影响产物
+- **冲突风险**：低（上游偶尔刷 SHA；GOPROXY 注入属于 build-env 配置，不太可能冲突）
+- **Merge 策略**：上游 bump SHA 时，把新 SHA 更新到文件顶部注释里；保留 tag-only 的 FROM 行和 GOPROXY ENV
 
 ---
 

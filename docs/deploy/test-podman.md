@@ -102,15 +102,31 @@ git log -1 --format="%h %s"    # 记录当前 commit，便于回滚
 
 ```yaml
 # compose.test.yml — Fy-api 测试环境（podman + 远端 RDS + 可选本地 redis）
+# 关键点：fy-api 共享 redis 容器的网络命名空间（network_mode: service:redis），
+# 这样 fy-api 内部用 localhost:6379 连 redis，避开 podman rootless 下跨容器
+# DNS 不稳定的问题。
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: fy-api-redis
+    restart: unless-stopped
+    # 端口映射必须在 redis 上声明（因为 fy-api 共享这个 netns）
+    ports:
+      - "3000:3000"      # fy-api 监听的端口从这里暴露到宿主
+    volumes:
+      # :Z 仅 SELinux 系统需要；Ubuntu/Debian 去掉 :Z
+      - ./redis-data:/data:Z
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+
   fy-api:
     image: fy-api:local
     container_name: fy-api
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # 共享 redis 的网络命名空间；注意：此模式下 ports/hostname 不能在这里声明
+    network_mode: "service:redis"
+    depends_on:
+      - redis
     volumes:
-      # :Z 仅 SELinux 系统需要；Ubuntu/Debian 去掉 :Z
       - ./data:/data:Z
       - ./logs:/app/logs:Z
     env_file:
@@ -125,15 +141,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  # 可选：本地 redis 做缓存 + rate limit（如果测试环境不配阿里云 redis）
-  redis:
-    image: redis:7-alpine
-    container_name: fy-api-redis
-    restart: unless-stopped
-    volumes:
-      - ./redis-data:/data:Z
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
 ```
 
 ### 2.3 写 `.env.test`（敏感配置，永远不进 git）
@@ -149,7 +156,9 @@ SQL_DSN=fy_api_app:YOUR_PASSWORD_HERE@tcp(rm-xxxxxxx.mysql.rds.aliyuncs.com:3306
 # SQL_DSN=postgres://fy_api_app:YOUR_PASSWORD_HERE@rm-xxxxxxx.pg.rds.aliyuncs.com:5432/fy_api_test?sslmode=require
 
 # ========== Redis ==========
-REDIS_CONN_STRING=redis://redis:6379
+# 用 localhost:6379 —— 因为 fy-api 共享 redis 容器的 netns（见 compose.test.yml）
+# 若 Redis 走阿里云 Redis，这里写阿里云内网地址：redis://:password@r-xxx.redis.rds.aliyuncs.com:6379
+REDIS_CONN_STRING=redis://localhost:6379
 
 # ========== 会话加密密钥 ==========
 # 首次部署时生成；两台及以上节点必须一致
@@ -269,6 +278,8 @@ podman exec -it fy-api sh
 | `Access denied for user` | 账号密码错 | 对照 RDS 控制台账号密码，注意特殊字符需 URL encode |
 | `database does not exist` | 库名不对或未创建 | RDS 控制台先 CREATE DATABASE |
 | `TLS requested but server does not support TLS` | DSN 带 `tls=` 但 RDS 未启 SSL | DSN 去掉 `&tls=...`；或 RDS 控制台开启 SSL 并用正确参数 |
+| `Access denied for user 'xxx'@'%' to database 'yyy'` | 阿里云 RDS 账号未授权该库 | RDS 控制台 → 账号管理 → 修改权限 → 把库授给账号（读写级别） |
+| `Redis ping test failed: ... lookup redis on ... no such host` | 跨容器 DNS 不通 | compose 里用 `network_mode: service:redis` + `REDIS_CONN_STRING=redis://localhost:6379` |
 | `SESSION_SECRET must be set` | 首次启动要求提供 | 检查 `.env.test` 是否生效 |
 | 容器一直 `starting` 不 `healthy` | 应用启动 > 30s | 正常，首次 AutoMigrate 耗时；30s 后再看 |
 

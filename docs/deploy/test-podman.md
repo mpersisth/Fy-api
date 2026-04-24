@@ -101,32 +101,19 @@ git log -1 --format="%h %s"    # 记录当前 commit，便于回滚
 在 `~/Fy-api/` 新建 `compose.test.yml`（这个文件已加 `.gitignore`，每台服务器可以有不同配置）：
 
 ```yaml
-# compose.test.yml — Fy-api 测试环境（podman + 远端 RDS + 可选本地 redis）
-# 关键点：fy-api 共享 redis 容器的网络命名空间（network_mode: service:redis），
-# 这样 fy-api 内部用 localhost:6379 连 redis，避开 podman rootless 下跨容器
-# DNS 不稳定的问题。
+# compose.test.yml — Fy-api 测试环境（podman + 远端 RDS，无 Redis）
+# 单节点测试环境不需要 Redis——Fy-api 会自动用内存缓存。
+# 多节点 / staging 验证多 pod 会话时，Redis 建议走阿里云 Redis 实例而不是本地容器
+# （podman-compose 对 network_mode: service:xxx 的支持不稳定，跨容器 DNS 也偶发）。
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: fy-api-redis
-    restart: unless-stopped
-    # 端口映射必须在 redis 上声明（因为 fy-api 共享这个 netns）
-    ports:
-      - "3000:3000"      # fy-api 监听的端口从这里暴露到宿主
-    volumes:
-      # :Z 仅 SELinux 系统需要；Ubuntu/Debian 去掉 :Z
-      - ./redis-data:/data:Z
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
-
   fy-api:
     image: fy-api:local
     container_name: fy-api
     restart: unless-stopped
-    # 共享 redis 的网络命名空间；注意：此模式下 ports/hostname 不能在这里声明
-    network_mode: "service:redis"
-    depends_on:
-      - redis
+    ports:
+      - "3000:3000"
     volumes:
+      # :Z 仅 SELinux 系统需要；Ubuntu/Debian 去掉 :Z
       - ./data:/data:Z
       - ./logs:/app/logs:Z
     env_file:
@@ -143,6 +130,12 @@ services:
       start_period: 30s
 ```
 
+> **什么时候需要 Redis？**
+> - 要跑 2+ pod 验证多实例会话（否则每个 pod 自己的内存缓存各干各的）
+> - 压测 rate limit 的跨节点一致性
+>
+> **怎么加 Redis？** 走阿里云 Redis 实例，`.env.test` 里 `REDIS_CONN_STRING=redis://:<pass>@r-xxx.redis.rds.aliyuncs.com:6379` 即可；本地 podman 容器里跑 Redis 不推荐（podman-compose 的 `network_mode: service:redis` 不稳定，跨容器 DNS 也常失灵）。
+
 ### 2.3 写 `.env.test`（敏感配置，永远不进 git）
 
 ```bash
@@ -155,10 +148,10 @@ SQL_DSN=fy_api_app:YOUR_PASSWORD_HERE@tcp(rm-xxxxxxx.mysql.rds.aliyuncs.com:3306
 # PostgreSQL 示例（注释掉上面一行，启用下面一行）：
 # SQL_DSN=postgres://fy_api_app:YOUR_PASSWORD_HERE@rm-xxxxxxx.pg.rds.aliyuncs.com:5432/fy_api_test?sslmode=require
 
-# ========== Redis ==========
-# 用 localhost:6379 —— 因为 fy-api 共享 redis 容器的 netns（见 compose.test.yml）
-# 若 Redis 走阿里云 Redis，这里写阿里云内网地址：redis://:password@r-xxx.redis.rds.aliyuncs.com:6379
-REDIS_CONN_STRING=redis://localhost:6379
+# ========== Redis（可选）==========
+# 单节点测试不配 Redis，Fy-api 自动用内存缓存。
+# 多节点或需要跨 pod 会话共享时，才配阿里云 Redis 实例的内网地址：
+# REDIS_CONN_STRING=redis://:password@r-xxxxxxx.redis.rds.aliyuncs.com:6379
 
 # ========== 会话加密密钥 ==========
 # 首次部署时生成；两台及以上节点必须一致
@@ -235,7 +228,7 @@ rm /tmp/fy-api.tar
 
 ```bash
 cd ~/Fy-api
-mkdir -p data logs redis-data    # :Z 挂载前预建，避免 root 拥有
+mkdir -p data logs                      # :Z 挂载前预建，避免 root 拥有
 
 podman-compose -f compose.test.yml up -d
 # 或 podman 4.4+ 的内置插件：
@@ -414,7 +407,7 @@ podman logs --tail 50 fy-api
 podman stats --no-stream fy-api fy-api-redis
 
 # 磁盘
-du -sh data/ logs/ redis-data/
+du -sh data/ logs/
 df -h
 
 # 宿主机
@@ -430,7 +423,7 @@ podman-compose -f compose.test.yml down
 # 完全清空（保留 DB 数据在 RDS，本地只清容器/镜像缓存）
 podman-compose -f compose.test.yml down
 podman rmi fy-api:local
-rm -rf data/ logs/ redis-data/
+rm -rf data/ logs/
 
 # 重新拉起
 podman-compose -f compose.test.yml up -d
@@ -473,7 +466,7 @@ sudo loginctl enable-linger $USER
 ```bash
 cd ~/Fy-api
 podman-compose -f compose.test.yml down
-rm -rf data/ logs/ redis-data/
+rm -rf data/ logs/
 
 # RDS 测试库
 # 通知 DBA：DROP DATABASE fy_api_test;

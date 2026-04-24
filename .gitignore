@@ -33,3 +33,6 @@ data/
 .gopath
 
 token_estimator_test.go
+
+# Fy-api overlay: local podman test artifacts
+compose.test.yml

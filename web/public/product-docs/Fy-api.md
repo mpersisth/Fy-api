@@ -16,7 +16,7 @@
 + Seed（随机种子）可选填数值，使相同输入得到一致输出以复现效果（留空则为随机）；
 + 流式输出开启后，模型会输出结构化内容（如列表、代码块），适配需清晰排版的场景。
 
-![](../docs/images/image1.png)
+![](/product-docs/images/image1.png)
 
 ### 数据看板
 &emsp;&emsp;在这里可以查看Fy-api的总体统计数据，可帮助用户实时掌握自身API调用的账户状态、资源消耗、运行性能与模型使用情况，以及系统公告和常见系统问答。
@@ -25,7 +25,7 @@
 
 &emsp;&emsp;平均RPM（每分钟平均API请求次数）和平均TPM（每分钟平均处理的 Token 总量）是核心的调用与资源消耗统计指标。其中平均 RPM 反映平台的请求并发压力，可用于指导服务器扩容、限流规则配置等运维决策，平均 TPM 直接关联大模型调用的成本与计费，能支撑用户分组资源管控、定价倍率调整等运营动作，且这两个指标存在联动关系，相同 RPM 下单次请求 Token 消耗越高则TPM越高，相同TPM下RPM越高则单次请求Token 消耗越低。
 
-![](../docs/images/image2.png)
+![](/product-docs/images/image2.png)
 
 ### 令牌管理
 &emsp;&emsp;在这里可以进行查看、编辑和添加令牌等操作，同时您可以根据不同应用场景将创建的令牌进行分组，自定义令牌所连接的不同厂商，不同类别的模型。
@@ -33,28 +33,28 @@
 #### 查看令牌
 &emsp;&emsp;支持一键复制令牌密钥，注意令牌隐私保护，不要轻易泄露。
 
-![](../docs/images/image3.png)
+![](/product-docs/images/image3.png)
 
 #### 添加令牌
 &emsp;&emsp;用户操作时需先填写基本信息（必填令牌名称、选择令牌分组、设置过期时间并填写新建数量，批量创建会自动添加随机后缀），再配置额度（可设置具体额度及对应等价金额，也能开启无限额度，实际使用受账户余额限制），之后按需设置访问限制（选填模型限制列表、填写IP白名单，注意IP存在伪造风险），最后点击提交完成创建或取消放弃操作，该功能用于管理API调用的权限与资源使用范围。
 
-![](../docs/images/image4.png)
+![](/product-docs/images/image4.png)
 
 &emsp;&emsp;用户操作时可以选择令牌分组，令牌分组对应用户所在分组下所拥有的权限，选择用户权限下的分组创建令牌后使用该令牌即可获得对应折扣。
 
-![](../docs/images/image18.png)
+![](/product-docs/images/image18.png)
 
 ### 使用日志
 &emsp;&emsp;在这里可以查看调用API的日志，查看所使用的令牌分组、模型和花费。普通用户可以看见自己的日志。
 
-![](../docs/images/image5.png)
+![](/product-docs/images/image5.png)
 
 &emsp;&emsp;用户所在分组拥有专属折扣，在实际使用的过程中会根据实际消耗token量进行计算，实际消耗的价格是已经打过折扣后的值。
-![](../docs/images/image7.png)
+![](/product-docs/images/image7.png)
 ### 绘图日志
 &emsp;&emsp;这是Midjourney绘图任务的记录管理模块，核心用于集中查看、追踪绘图任务的执行信息，操作时可通过顶部时间选择框筛选任务的提交时间区间，借助 “任务ID”输入框 +“查询” 按钮精准定位单个任务，也能通过“重置”清空筛选条件、“列设置”自定义表格显示字段，表格会展示提交时间、花费时间、任务状态、Prompt（含中英文）、结果图片等核心信息，当前界面显示 “搜索无结果”，说明选定时间范围内暂无 Midjourney 绘图任务记录。
 
-![](../docs/images/image6.png)
+![](/product-docs/images/image6.png)
 
 ### 个人设置
 &emsp;&emsp;在这里可以查看账号信息，管理账号绑定，进行安全设置等操作。
@@ -62,39 +62,39 @@
 #### 账号绑定
 &emsp;&emsp;这里可以进行账户绑定操作，有多种方式可以选择，例如邮箱，微信，GitHub,LinuxDo等
 
-![](../docs/images/image8.png)
+![](/product-docs/images/image8.png)
 
 #### 安全设置
 &emsp;&emsp;这里可以进行修改密码，重置 API 密钥,两步验证可以为您的账户提供额外的安全保护，进行两步验证设置启用后，登录时需要输入密码和验证器应用生成的验证码。后续会开通Passkey登录实现更安全的免密登录方式。
 
-![](../docs/images/image9.png)
+![](/product-docs/images/image9.png)
 
 ### 其他设置
 #### 通知设置 
 &emsp;&emsp;这里可以配置接收通知的方式，目前支持邮件，Webhook，Bark和Gotify通知等四种方式，按照场景需要进行选择。
 
-![](../docs/images/image10.png)
+![](/product-docs/images/image10.png)
 
-![](../docs/images/image11.png)
+![](/product-docs/images/image11.png)
 
-![](../docs/images/image12.png)
+![](/product-docs/images/image12.png)
 
-![](../docs/images/image13.png)
+![](/product-docs/images/image13.png)
 
 #### 价格设置
 &emsp;&emsp;这里可以设置是否接受未设置价格的模型，但是可能会产生额外的费用
 
-![](../docs/images/image14.png)
+![](/product-docs/images/image14.png)
 
 #### 隐私设置
 &emsp;&emsp;这里可以选择开启IP记录，开启后将会在日志中显示IP。
 
-![](../docs/images/image15.png)
+![](/product-docs/images/image15.png)
 
 #### 边栏设置
 &emsp;&emsp;这里可以选择隐藏和显示平台各个功能模块，您可以个性化设置侧边栏的要显示功能。
 
-![](../docs/images/image16.png)
+![](/product-docs/images/image16.png)
 
 ## 模型广场
 &emsp;&emsp;模型广场是Fy-api中集中展示、筛选可用AI 模型的功能界面，支持快速定位不同供应商类型的模型，查看模型参数与计费方式，为后续调用模型提供选择依据。
@@ -119,7 +119,7 @@
 &emsp;&emsp;部分模型附带功能说明（如 “Doubao-lite-32k” 标注了轻量版、上下文长度等特性）；
 &emsp;&emsp;卡片右上角的选择框可勾选目标模型，用于后续批量操作。
 
-![](../docs/images/image17.png)
+![](/product-docs/images/image17.png)
 
 # 用户操作指南
 &emsp;&emsp;本流程聚焦普通用户核心操作，涵盖账号登录、令牌管理、API 调用、用量查询及基础问题排查，全程围绕用户日常使用场景，步骤清晰可落地。

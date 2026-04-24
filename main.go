@@ -49,7 +49,8 @@ func main() {
 		return
 	}
 
-	common.SysLog("New API " + common.Version + " started")
+	// Fy-api overlay: use SystemName in startup log so brand follows constants.go
+	common.SysLog(common.SystemName + " " + common.Version + " started")
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}

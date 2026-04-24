@@ -27,6 +27,12 @@
 - **Merge 策略**：如果 upstream 又加了变量，手动合并到此文件
 - **建议长期改造**：改成 overlay/brand/brand.go 里的 init() 函数覆盖，避免 merge
 
+### B-1.1 [brand] 启动日志品牌化
+- **文件**：`main.go` 第 ~52 行
+- **修改**：`common.SysLog("New API " + ...)` → `common.SysLog(common.SystemName + " " + ...)`
+- **目的**：让启动日志 `Fy-api started` 跟随 SystemName，避免写两处
+- **冲突风险**：低（单行，带 `// Fy-api overlay:` 注释）
+
 ### B-2 [csv-export] 日志 CSV 导出（新增）
 - **新增文件**：
   - `controller/log_export.go`（ExportAllLogs / ExportUserLogs / writeLogsCSV）
@@ -80,12 +86,13 @@
 - **新增文件**：
   - `web/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs）
   - `web/src/components/common/NewMarkdownRender/NewMarkdownRender.jsx`
-  - `web/public/docs/Fy-api.md`
-  - `web/public/docs/images/image1.png` ~ `image18.png`
+  - `web/public/product-docs/Fy-api.md`
+  - `web/public/product-docs/images/image1.png` ~ `image18.png`
 - **修改文件**：`web/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
 - **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致）
+- **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。markdown 内图片路径全部用绝对路径 `/product-docs/images/...`。
 
 ### F-5 [csv-export] 日志页 "导出 CSV" 按钮
 - **新增文件**：`web/src/components/table/usage-logs/UsageLogsExportButton.jsx`

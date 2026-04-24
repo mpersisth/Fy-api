@@ -20,7 +20,8 @@ import React, { useState, useEffect } from 'react';
 import NewMarkdownRenderer from '../../components/common/NewMarkdownRender/NewMarkdownRender.jsx'
 
 // MD手册的服务器路径（域名+MD文件路径）
-const MD_MANUAL_URL = '/docs/Fy-api.md';
+// Fy-api overlay: 物理目录命名为 product-docs 避开 SPA 路由 /docs
+const MD_MANUAL_URL = '/product-docs/Fy-api.md';
 
 export default function FyApiDocs() {
   const [mdContent, setMdContent] = useState('');

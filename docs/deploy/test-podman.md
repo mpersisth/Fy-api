@@ -142,7 +142,9 @@ services:
 cat > .env.test <<'EOF'
 # ========== 数据库（阿里云 RDS）==========
 # MySQL 示例：
-SQL_DSN=fy_api_app:YOUR_PASSWORD_HERE@tcp(rm-xxxxxxx.mysql.rds.aliyuncs.com:3306)/fy_api_test?charset=utf8mb4&parseTime=True&loc=Local&tls=skip-verify
+# 【重要】阿里云 RDS 默认未开启 SSL，不要加 tls 参数。
+# 若 RDS 控制台里开了 SSL，改为 tls=true 并提供 CA 证书（见上游文档 TLS 章节）。
+SQL_DSN=fy_api_app:YOUR_PASSWORD_HERE@tcp(rm-xxxxxxx.mysql.rds.aliyuncs.com:3306)/fy_api_test?charset=utf8mb4&parseTime=True&loc=Local
 # PostgreSQL 示例（注释掉上面一行，启用下面一行）：
 # SQL_DSN=postgres://fy_api_app:YOUR_PASSWORD_HERE@rm-xxxxxxx.pg.rds.aliyuncs.com:5432/fy_api_test?sslmode=require
 
@@ -266,6 +268,7 @@ podman exec -it fy-api sh
 | `dial tcp ...: i/o timeout` | RDS 不可达 | 检查 RDS 白名单、安全组、`SQL_DSN` 格式 |
 | `Access denied for user` | 账号密码错 | 对照 RDS 控制台账号密码，注意特殊字符需 URL encode |
 | `database does not exist` | 库名不对或未创建 | RDS 控制台先 CREATE DATABASE |
+| `TLS requested but server does not support TLS` | DSN 带 `tls=` 但 RDS 未启 SSL | DSN 去掉 `&tls=...`；或 RDS 控制台开启 SSL 并用正确参数 |
 | `SESSION_SECRET must be set` | 首次启动要求提供 | 检查 `.env.test` 是否生效 |
 | 容器一直 `starting` 不 `healthy` | 应用启动 > 30s | 正常，首次 AutoMigrate 耗时；30s 后再看 |
 

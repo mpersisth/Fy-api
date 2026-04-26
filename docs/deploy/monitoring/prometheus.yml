@@ -1,0 +1,80 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: prod
+    service: fy-api
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "/etc/prometheus/alerts.yml"
+
+scrape_configs:
+  # ─── Prometheus 自身 ───────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ─── 宿主机指标 ───────────────────────────────────────────
+  - job_name: node
+    static_configs:
+      - targets: ["host.containers.internal:9100"]   # podman 特殊域名
+        labels:
+          instance: ecs-prod-1
+
+  # ─── 容器指标 ─────────────────────────────────────────────
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # ─── Fy-api HTTP 黑盒探测 ────────────────────────────────
+  # Fy-api 本身没 /metrics,只能探 /api/status 的存活和延迟
+  - job_name: blackbox-fy-api
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://fy-api:3000/api/status        # 集群内
+          - https://api.your-domain.com/api/status   # 外网
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # ─── 证书有效期 ───────────────────────────────────────────
+  - job_name: blackbox-tls
+    metrics_path: /probe
+    params:
+      module: [tcp_connect_tls]
+    static_configs:
+      - targets:
+          - api.your-domain.com:443
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # ─── MySQL 指标 ─────────────────────────────────────────
+  - job_name: mysql
+    static_configs:
+      - targets: ["mysql-exporter:9104"]
+        labels:
+          db: fy-api-rds
+
+  # ─── Redis 指标 ─────────────────────────────────────────
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          cache: fy-api-redis

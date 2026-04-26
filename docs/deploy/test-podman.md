@@ -446,7 +446,235 @@ sudo loginctl enable-linger $USER
 
 ---
 
-## 九、常见故障速查
+## 九、性能优化（测试环境提速）
+
+> Podman 不是比 Docker 慢,是默认配置偏保守。按下面顺序改,**单机 RPS 通常能提升 3-10 倍**。
+> 生产的完整性能手册见 [`prod-ack.md`](./prod-ack.md) §九;本节只列"测试环境上手就能用"的那部分。
+
+### 9.1 优化优先级(按收益降序)
+
+| # | 优化点 | 典型症状 | 提速幅度 |
+|---|-------|---------|---------|
+| 1 | **Podman 网络栈** 换成 pasta 或 rootful + `--net=host` | IP 限流全落一个 IP / localhost 吞吐 < 100Mbps | 3-10× |
+| 2 | **Fy-api 连接池 / 批量写** 打开并调大 | p99 高 / MySQL CPU 飙升 | 2-5× |
+| 3 | **数据库别用 SQLite**(连测试也换 MySQL) | 并发 >20 就卡 | 5-20× |
+| 4 | **Linux 内核** TCP / 文件句柄调优 | 大量 TIME_WAIT / `too many open files` | 1.5× |
+
+### 9.2 Podman 网络栈(收益最大)
+
+**现象**:rootless Podman 默认用 `slirp4netns`(用户态 TCP 栈),有两个坏毛病:
+
+1. 吞吐只有宿主网卡的 1/5 左右
+2. **不保留真实客户端 IP** — Fy-api 的 IP 限流会把所有请求记到同一个 SNAT 地址,撞 `GLOBAL_API_RATE_LIMIT` 墙
+
+三个方案任选:
+
+**方案 A — 换 pasta(rootless 推荐,兼顾安全和性能)**
+
+```bash
+# 安装 pasta(passt 项目的一部分)
+sudo apt install -y passt        # Debian/Ubuntu
+sudo dnf install -y passt         # RHEL/Alibaba Cloud Linux
+
+# 让 Podman 默认用 pasta 取代 slirp4netns
+mkdir -p ~/.config/containers
+cat > ~/.config/containers/containers.conf <<'EOF'
+[network]
+default_rootless_network_cmd = "pasta"
+EOF
+
+# 重建容器
+podman-compose -f compose.test.yml down
+podman-compose -f compose.test.yml up -d
+```
+
+**方案 B — 切 rootful(最省事,性能最好,测试环境无安全洁癖时首选)**
+
+```bash
+# 以 root 身份跑
+sudo podman-compose -f compose.test.yml up -d
+# 或加到 systemd 里用 system 级而非 user 级 unit
+```
+
+**方案 C — `--net=host`(测试机专用,跳过 NAT)**
+
+编辑 `compose.test.yml`:
+
+```yaml
+services:
+  fy-api:
+    network_mode: host     # 跳过整个网络栈,直接复用宿主机
+    # 此时 ports: 段会被忽略,由 Fy-api 的 PORT 环境变量控制
+    environment:
+      - PORT=3000
+```
+
+**选哪个**:
+
+- QA 点击主要靠自己 → **方案 B** 最快上手
+- 需要保留真实 IP 做限流验收 → **方案 A**
+- 单机压测想榨性能 → **方案 C**
+
+### 9.3 Fy-api 环境变量加速(复制进 `.env.test`)
+
+测试机上把下面这些加到 `.env.test`,是 `prod-ack.md` §6.2 里生产级配置的"测试机缩小版":
+
+```dotenv
+# ── Go 运行时 ──────────────────────────────────────────
+# 告诉 Go 容器里实际能用多少 CPU(数值 = podman run --cpus 或宿主机核数)
+GOMAXPROCS=4
+# 软内存上限,比容器内存低 ~15% 防 OOM
+GOMEMLIMIT=3500MiB
+
+# ── 上游转发连接池(Fy-api → OpenAI/Gemini/Kimi 的 keep-alive)──
+# 默认 500/100 偏小,测试机调大几乎无副作用
+RELAY_MAX_IDLE_CONNS=5000
+RELAY_MAX_IDLE_CONNS_PER_HOST=500
+# 非流式 120 够;流式(Kimi/Claude 长回答)建议 600
+RELAY_TIMEOUT=600
+STREAMING_TIMEOUT=300
+
+# ── DB 连接池 ──────────────────────────────────────────
+SQL_MAX_IDLE_CONNS=50
+SQL_MAX_OPEN_CONNS=300
+
+# ── 内存缓存 + 批量写(这两个不开会打满 DB)───────────
+MEMORY_CACHE_ENABLED=true
+SYNC_FREQUENCY=60              # 每 60s 从 DB 刷一次配置到内存
+BATCH_UPDATE_ENABLED=true
+BATCH_UPDATE_INTERVAL=3        # 3s 一次批量写 usage/quota
+
+# ── 日志 ───────────────────────────────────────────────
+# 关掉错误体打印,测试稳定后日志量明显降低
+ERROR_LOG_ENABLED=false
+# GIN 生产模式,避免每请求打一条框架日志
+GIN_MODE=release
+```
+
+改完 `podman-compose up -d --force-recreate fy-api` 重启一次生效。
+
+### 9.4 日志驱动换掉 journald
+
+Podman 默认 `--log-driver=journald`,高并发下 journald 会成为瓶颈,而且你已经见过 `~/Fy-api/logs/` 为空的现象 — 日志全进了 journal,不落盘。
+
+在 `compose.test.yml` 里给 Fy-api 服务加:
+
+```yaml
+services:
+  fy-api:
+    logging:
+      driver: k8s-file            # 或 json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+```
+
+或命令行 `--log-driver=k8s-file --log-opt max-size=100m --log-opt max-file=5`。
+
+### 9.5 如果还在用 SQLite,换掉
+
+Fy-api 每个请求至少 3 次写(usage、log、quota),SQLite 单写锁直接被打穿。
+测试环境也建议连 RDS(跟生产同构,参考 §二的 `SQL_DSN`)。
+
+连不到 RDS 的本地场景,加个 MySQL sidecar:
+
+```bash
+# 起本地 MySQL(仅测试,生产走 RDS)
+podman run -d --name fy-api-mysql \
+  -e MYSQL_ROOT_PASSWORD='test-pwd' \
+  -e MYSQL_DATABASE=newapi \
+  -v fy-api-mysql-data:/var/lib/mysql \
+  -p 3306:3306 \
+  mysql:8.4
+
+# 在 .env.test 里把 SQL_DSN 改成
+# SQL_DSN=root:test-pwd@tcp(localhost:3306)/newapi?parseTime=true&charset=utf8mb4
+```
+
+### 9.6 宿主机 Linux 内核(一次性,持久化)
+
+```bash
+cat | sudo tee /etc/sysctl.d/99-fyapi.conf <<'EOF'
+# 连接队列 / 端口范围
+net.ipv4.tcp_max_syn_backlog = 8192
+net.core.somaxconn = 8192
+net.ipv4.ip_local_port_range = 1024 65535
+
+# TIME_WAIT 复用
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 30
+
+# TCP 缓冲
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+
+# BBR 拥塞控制(Kernel ≥ 4.9)
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+
+# 文件句柄
+fs.file-max = 2097152
+EOF
+
+sudo sysctl --system
+
+# 给 Podman 容器更高的 nofile 上限
+podman run --ulimit nofile=1048576:1048576 ...
+# 或在 compose 里:
+#   ulimits:
+#     nofile: { soft: 1048576, hard: 1048576 }
+```
+
+### 9.7 压测验证(改完回归一下)
+
+```bash
+# 装 hey(简易 HTTP 压测)
+go install github.com/rakyll/hey@latest
+
+# 你的 Fy-api token
+export KEY=sk-xxxxxxxxxxxxxxxx
+
+# 200 并发、共 2000 请求
+hey -n 2000 -c 200 \
+    -H "Authorization: Bearer $KEY" \
+    -H "Content-Type: application/json" \
+    -m POST \
+    -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}' \
+    http://localhost:3000/v1/chat/completions
+```
+
+重点看三个指标:
+
+- **Requests/sec** — 优化前后对比
+- **99% in ... secs** — 尾延迟,通常 >5s 就是 DB 慢查询或 GC
+- **Error distribution** — 非 200 > 0 时调大 `SQL_MAX_OPEN_CONNS` 或降 `-c`
+
+### 9.8 测试机典型档位参考
+
+| 测试机规格 | `GOMAXPROCS` | `GOMEMLIMIT` | `SQL_MAX_OPEN` | `RELAY_MAX_IDLE` | 目标 RPS |
+|---|---|---|---|---|---|
+| 2c / 4g | 2 | 3500MiB | 150 | 2000 | 100-300 |
+| **4c / 8g(推荐)** | **4** | **7000MiB** | **300** | **5000** | **500-1500** |
+| 8c / 16g | 8 | 14000MiB | 500 | 8000 | 2000-5000 |
+
+> 实际 RPS 很大程度取决于上游模型响应时间,**流式接口通常 < 500 RPS**(单请求本身占用 30-300 秒)。
+
+### 9.9 排障速查
+
+| 现象 | 最可能原因 | 怎么看 |
+|------|-----------|-------|
+| 容器 CPU 打满、宿主机看不出高负载 | `GOMAXPROCS` 没限,Go 在宿主机 N 核上抢调度 | `podman exec fy-api cat /proc/1/status \| grep Cpus_allowed_list` |
+| 大量 TIME_WAIT | 上游 keep-alive 没生效 | `ss -ant \| awk '{print $1}' \| sort \| uniq -c` |
+| Fy-api 日志 `too many connections` | `SQL_MAX_OPEN_CONNS` < DB 真实连接用量 | MySQL 里 `SHOW STATUS LIKE 'Threads_connected';` |
+| 偶发 502 | 连接池命中上限或上游 TLS 握手失败 | `podman logs fy-api \| grep -i upstream` |
+| IP 限流全落同一 IP | rootless slirp4netns SNAT | 换 pasta(§9.2 方案 A) |
+| logs/ 目录空,但 journal 里有内容 | 默认日志驱动是 journald | 换 `k8s-file`(§9.4) |
+
+---
+
+## 十、常见故障速查
 
 | 症状 | 可能原因 | 诊断 | 修复 |
 |------|---------|------|------|
@@ -461,7 +689,7 @@ sudo loginctl enable-linger $USER
 
 ---
 
-## 十、停用环境（退役）
+## 十一、停用环境（退役）
 
 ```bash
 cd ~/Fy-api

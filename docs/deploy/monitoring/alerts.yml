@@ -1,0 +1,122 @@
+groups:
+  - name: fy-api-availability
+    interval: 30s
+    rules:
+      # Fy-api HTTP 可用性(黑盒探测)
+      - alert: FyApiDown
+        expr: probe_success{job="blackbox-fy-api"} == 0
+        for: 2m
+        labels: { severity: critical, team: sre }
+        annotations:
+          summary: "Fy-api {{ $labels.instance }} 不可达超过 2 分钟"
+          description: "probe_success=0,立刻查容器状态和日志"
+
+      # 响应时间
+      - alert: FyApiHighLatency
+        expr: probe_duration_seconds{job="blackbox-fy-api"} > 2
+        for: 5m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "Fy-api 响应延迟 > 2s 持续 5min"
+          description: "{{ $labels.instance }} duration={{ $value }}s"
+
+      # TLS 证书 15 天内到期
+      - alert: TLSCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 15 * 24 * 3600
+        for: 1h
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "Fy-api TLS 证书剩余 < 15 天"
+
+  - name: fy-api-resources
+    interval: 30s
+    rules:
+      # 宿主机 CPU > 85%
+      - alert: NodeHighCPU
+        expr: (1 - avg by (instance)(irate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 > 85
+        for: 10m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "{{ $labels.instance }} CPU > 85% 10min"
+
+      # 宿主机内存 > 90%
+      - alert: NodeHighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 5m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "{{ $labels.instance }} 内存 > 90% 5min"
+
+      # 磁盘 > 85%
+      - alert: NodeDiskAlmostFull
+        expr: (node_filesystem_size_bytes{fstype!~"tmpfs|devtmpfs"} - node_filesystem_avail_bytes) / node_filesystem_size_bytes * 100 > 85
+        for: 10m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "{{ $labels.instance }} {{ $labels.mountpoint }} 磁盘 > 85%"
+
+      # Fy-api 容器占用
+      - alert: FyApiContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total{name=~"fy-api.*"}[5m]) * 100 > 80
+        for: 10m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "容器 {{ $labels.name }} CPU > 80% 10min"
+
+      - alert: FyApiContainerOOMApproaching
+        expr: container_memory_usage_bytes{name=~"fy-api.*"} / container_spec_memory_limit_bytes{name=~"fy-api.*"} > 0.9
+        for: 5m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "容器 {{ $labels.name }} 内存 > 90% limit"
+
+      # 容器被重启
+      - alert: ContainerRestarted
+        expr: changes(container_start_time_seconds{name=~"fy-api.*"}[15m]) > 0
+        for: 1m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "容器 {{ $labels.name }} 最近 15min 重启过"
+
+  - name: fy-api-database
+    interval: 30s
+    rules:
+      # MySQL 连接数 > 70%
+      - alert: MySQLHighConnections
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.7
+        for: 5m
+        labels: { severity: warning, team: dba }
+        annotations:
+          summary: "MySQL 连接占用 > 70%,检查 Fy-api SQL_MAX_OPEN_CONNS"
+
+      # MySQL 慢查询速率
+      - alert: MySQLSlowQueriesHigh
+        expr: rate(mysql_global_status_slow_queries[5m]) > 5
+        for: 10m
+        labels: { severity: warning, team: dba }
+        annotations:
+          summary: "MySQL 慢查询 > 5 条/s"
+
+      # MySQL 不可达
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 1m
+        labels: { severity: critical, team: dba }
+        annotations:
+          summary: "MySQL unreachable"
+
+      # Redis 内存 > 80%
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels: { severity: warning, team: sre }
+
+      # Redis 不可达
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels: { severity: critical, team: sre }
+
+  # ─── 业务指标(从 SLS 补充,这里只占位说明)───────────────
+  # Fy-api 目前没有原生 /metrics,业务级别的 429 / 5xx /
+  # 客户消耗量等指标建议在 SLS 里配告警,不走 Prometheus

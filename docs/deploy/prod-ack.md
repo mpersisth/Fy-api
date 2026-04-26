@@ -3,6 +3,20 @@
 > 读者：运维 / SRE
 > 目标：Fy-api 跑在阿里云 ACK 集群上，Deployment + HPA + Nginx Ingress + cert-manager 完整生产栈
 > 依赖：阿里云 RDS + Redis + OSS + ACR + ACK + 备案域名
+> 最近更新：2026-04-26（补齐性能调优参数、RDS 专属代理、流式 SSE 通路、拓扑打散）
+
+---
+
+## 快速索引
+
+- 一/二节是「基础设施准备」——集群、证书、DNS；做一次就够
+- 三/四节是「数据面准备」——RDS 参数组 + 专属代理 + Redis
+- 五节是「镜像」——ACR 一次配置，以后只走 push
+- **六节是「应用清单」**——ConfigMap/Deployment/Ingress，生产性能参数都在这
+- 七/八节是「首次部署 + 发版」
+- 九/十节是「日常运维 + 故障速查」
+
+初次上线按顺序过。迭代发版直接跳到 §8。
 
 ---
 
@@ -172,6 +186,39 @@ kubectl -n fy-api run --rm -it db-check --image=mysql:8 --restart=Never -- \
   mysql -hrm-xxxxxxx.mysql.rds.aliyuncs.com -P3306 -u fy_api_app -p fy_api -e "SELECT VERSION();"
 ```
 
+### 3.4 参数组（强烈建议改,上线前做一次）
+
+在 RDS 控制台新建一个参数组 `fy-api-prod-pg`,针对 Fy-api 的写密集型日志场景改下面这些:
+
+| 参数 | 值 | 理由 |
+|------|------|------|
+| `innodb_buffer_pool_size` | **75% 内存** | 热表(users/tokens/options)常驻内存 |
+| `innodb_flush_log_at_trx_commit` | `1` | 生产强持久化,跨区双机互备保证 RTO |
+| `max_connections` | `2000` | 单 Pod 300 连接池 × 副本数 + buffer |
+| `slow_query_log` | `ON` | 排查慢查询靠它 |
+| `long_query_time` | `1` | 1s 以上即慢 |
+| `transaction_isolation` | `READ-COMMITTED` | 避免 `logs`/`quota_data` 批量更新时 gap lock 死锁 |
+| `character_set_server` | `utf8mb4` | emoji / 多语言 prompt 必需 |
+| `innodb_io_capacity` | `2000`(SSD) / `4000`(ESSD PL2+) | 根据存储规格 |
+
+改完把参数组应用到实例,注意**重启才生效**的项提前和业务协调时间。
+
+### 3.5 开启专属代理(重要,可选但强烈推荐)
+
+RDS 控制台 → 数据库代理 → 开启。然后在 §6.1 的 Secret 里把 DSN 从**直连地址**换成**代理地址**:
+
+```diff
+- SQL_DSN=fy_api_app:PASS@tcp(rm-xxxxxxx.mysql.rds.aliyuncs.com:3306)/fy_api?...
++ SQL_DSN=fy_api_app:PASS@tcp(rm-xxxxxxx-proxy.mysql.rds.aliyuncs.com:3306)/fy_api?...
+```
+
+代理会给你:
+1. **连接复用** — Fy-api 端不用把 `SQL_MAX_OPEN_CONNS` 开特别大,真实 RDS 连接数可以降到 1/5
+2. **读写分离** — `SELECT`(占 Fy-api 流量 70%+,日志和配置查询)自动走只读实例
+3. **主备切换透明** — 主库故障时 Pod 不用重连,代理层处理
+
+如果暂时没开代理,`SQL_MAX_OPEN_CONNS × 副本数 ≤ RDS max_connections × 0.7`,自己把算账做好。
+
 ---
 
 ## 四、Redis 准备
@@ -281,14 +328,71 @@ metadata:
   name: fy-api-config
   namespace: fy-api
 data:
+  # ─── 基础 ────────────────────────────────────────────────────────────────
   TZ: "Asia/Shanghai"
-  ERROR_LOG_ENABLED: "true"
-  GLOBAL_WEB_RATE_LIMIT_NUM: "240"
-  GLOBAL_WEB_RATE_LIMIT_DURATION: "60"
+  GIN_MODE: "release"
   FRONTEND_BASE_URL: "https://api.<your-domain>.com"
-  # Fy-api 自定义，可调
-  # MaxLogExportItems 是 Go 常量（50000），不走 env
+
+  # ─── 日志 ────────────────────────────────────────────────────────────────
+  ERROR_LOG_ENABLED: "true"
+  # 不设 LOG_DIR,让日志只走 stdout,由 SLS / Loki 日志驱动统一采集
+  # LOG_DIR: ""
+
+  # ─── 性能:Go 运行时 ─────────────────────────────────────────────────────
+  # 告诉 Go 你实际能用多少 CPU,否则容器里 Go 会看到宿主机核数,造成过度调度
+  # 数值要跟 resources.limits.cpu 的整数上取整对齐
+  GOMAXPROCS: "2"
+  # 软内存上限,比 limits.memory 低 ~15%,防 GC 压力导致 OOM 被 kill
+  GOMEMLIMIT: "1700MiB"
+
+  # ─── 性能:上游转发连接池 ─────────────────────────────────────────────────
+  # Fy-api → OpenAI/Anthropic/Gemini 的 http.Transport keep-alive 池
+  # 默认 500/100 对高并发偏低,调大几乎无副作用
+  RELAY_MAX_IDLE_CONNS: "5000"
+  RELAY_MAX_IDLE_CONNS_PER_HOST: "500"
+  # 上游请求总超时(秒),0 = 不超时。流式用户建议 600s,短请求 120 够
+  RELAY_TIMEOUT: "600"
+  # 流式无新 token 的超时(秒),默认 300 适用大多数场景
+  STREAMING_TIMEOUT: "300"
+
+  # ─── 性能:DB 连接池 ────────────────────────────────────────────────────
+  # 单副本对 RDS 的连接数。用专属代理时可开小些
+  SQL_MAX_IDLE_CONNS: "50"
+  SQL_MAX_OPEN_CONNS: "300"
+
+  # ─── 性能:内存缓存 + 批量写 ────────────────────────────────────────────
+  # 配置从 DB 读进内存,避免每请求查 options 表
+  MEMORY_CACHE_ENABLED: "true"
+  SYNC_FREQUENCY: "60"              # 每 60s 同步一次 DB → 本地缓存
+  # 用户 quota / 模型 usage 批量合并写,避免每请求直接更新
+  BATCH_UPDATE_ENABLED: "true"
+  BATCH_UPDATE_INTERVAL: "3"        # 3s 一次,写放大压到最小
+
+  # ─── 限流 ─────────────────────────────────────────────────────────────
+  # 按客户规模和预期 QPS 调,这里给的是"生产合理值"
+  GLOBAL_API_RATE_LIMIT_ENABLE: "true"
+  GLOBAL_API_RATE_LIMIT: "3000"
+  GLOBAL_API_RATE_LIMIT_DURATION: "60"
+  GLOBAL_WEB_RATE_LIMIT_ENABLE: "true"
+  GLOBAL_WEB_RATE_LIMIT: "240"
+  GLOBAL_WEB_RATE_LIMIT_DURATION: "60"
+  CRITICAL_RATE_LIMIT_ENABLE: "true"
+  CRITICAL_RATE_LIMIT: "50"
+  CRITICAL_RATE_LIMIT_DURATION: "1200"
+  SEARCH_RATE_LIMIT_ENABLE: "true"
+  SEARCH_RATE_LIMIT: "30"
+  SEARCH_RATE_LIMIT_DURATION: "60"
 ```
+
+**按副本规格对齐 `GOMAXPROCS` / `GOMEMLIMIT` / `SQL_MAX_OPEN_CONNS`**,典型三档:
+
+| Pod 规格 | `limits.cpu` | `limits.memory` | `GOMAXPROCS` | `GOMEMLIMIT` | `SQL_MAX_OPEN_CONNS` |
+|---|---|---|---|---|---|
+| 小(起步) | 1 | 1Gi | `1` | `850MiB` | 100 |
+| **中(推荐)** | **2** | **2Gi** | **`2`** | **`1700MiB`** | **300** |
+| 大(高并发) | 4 | 8Gi | `4` | `6800MiB` | 500 |
+
+副本数 × `SQL_MAX_OPEN_CONNS` 务必 ≤ RDS `max_connections × 0.7`;开了专属代理可以放宽。
 
 ### 6.3 Deployment + Service + HPA
 
@@ -320,7 +424,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3000"
     spec:
-      # 打散到不同节点，单节点宕机不全灭
+      # 打散到不同节点 + 不同可用区,单节点或单 AZ 宕机不全灭
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -330,6 +434,13 @@ spec:
                 labelSelector:
                   matchLabels:
                     app: fy-api
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: fy-api
       containers:
         - name: fy-api
           image: registry.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.3  # ← 发版时改这里，切勿 latest
@@ -354,13 +465,14 @@ spec:
               mountPath: /data
             - name: logs
               mountPath: /app/logs
+          # 资源配额:限额要跟 ConfigMap 的 GOMAXPROCS/GOMEMLIMIT 对齐
           resources:
             requests:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: "1"              # HPA 按 request 算比例,别设太大
+              memory: "1Gi"
             limits:
-              cpu: "2000m"
-              memory: "2Gi"
+              cpu: "2"              # = GOMAXPROCS
+              memory: "2Gi"         # GOMEMLIMIT 应 ≈ 1700MiB(85%)
           readinessProbe:
             httpGet:
               path: /api/status
@@ -381,14 +493,16 @@ spec:
           lifecycle:
             preStop:
               exec:
-                # 滚动升级时先让 Ingress 摘除流量
-                command: ["/bin/sh", "-c", "sleep 10"]
+                # 发版 / 缩容时先让 Ingress 摘流再退出,避免流式请求被 RST
+                # 20s 通常足够 nginx-ingress 完成摘流
+                command: ["/bin/sh", "-c", "sleep 20"]
       volumes:
         - name: data
           emptyDir: {}                 # TODO: 切 NAS PVC
         - name: logs
           emptyDir: {}                 # TODO: 切 NAS PVC 或 sidecar 发 SLS
-      terminationGracePeriodSeconds: 45
+      # 长流式请求最多 ~10 分钟,给足优雅退出时间
+      terminationGracePeriodSeconds: 90
 ---
 apiVersion: v1
 kind: Service
@@ -457,11 +571,28 @@ metadata:
   namespace: fy-api
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"   # 允许较大的 prompt / 上传
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"  # 流式响应可能长
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    # 开启 SSE 流式支持
+    # ── 请求体 / 流式相关 ────────────────────────────────────────────────
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"        # 允许较大的 prompt / 上传
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "900"     # 流式 AI 响应最长 ~15 分钟
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    # 关闭代理缓冲,SSE/流式 chunk 能立刻到客户端
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # 长连接超时放宽,跟 proxy-read-timeout 对齐
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # ── 真实 IP ───────────────────────────────────────────────────────
+    # 让 Fy-api 的 IP 限流看到真实客户端 IP,而不是 nginx-ingress 的内网 IP
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/enable-real-ip: "true"
+    # ── 安全 ───────────────────────────────────────────────────────────
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"          # HTTP → HTTPS
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # HSTS (跟下方 ConfigMap 里的 add_headers 共同生效)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 spec:
   ingressClassName: nginx
   tls:
@@ -650,7 +781,108 @@ kubectl -n fy-api rollout undo deploy/fy-api --to-revision=3
 
 ---
 
-## 九、日常运维
+## 九、生产性能调优与容量规划
+
+> 这一节讲**为什么 §6.2 的 ConfigMap 那样配**,以及出现性能瓶颈时该动哪里。
+> 推荐全员阅读一次,之后只改值不改结构。
+
+### 9.1 Fy-api 的四大性能瓶颈(按命中频率排序)
+
+| # | 瓶颈 | 症状 | 解决参数 |
+|---|------|------|---------|
+| 1 | **上游连接池饱和** | p99 飙升 / 大量 TIME_WAIT / 偶发 `dial tcp` | `RELAY_MAX_IDLE_CONNS`、`RELAY_MAX_IDLE_CONNS_PER_HOST` |
+| 2 | **DB 写放大** | MySQL CPU 打满 / `Threads_connected` 持续高 | `BATCH_UPDATE_ENABLED=true` + 专属代理 |
+| 3 | **Go 看到宿主机 CPU 数** | Pod CPU 远超 `requests`、调度抖动 | `GOMAXPROCS` 对齐 `limits.cpu` |
+| 4 | **日志路径阻塞** | 节点 IOPS 爆表 / Pod 被 `readinessProbe` kill | 关掉 `LOG_DIR`,走 stdout + SLS |
+
+### 9.2 调参思路
+
+**连接池**(§6.2 `RELAY_MAX_IDLE_CONNS`)
+- 上游是 N 个厂商 × 每家几个 API key。每家都要独立的 keep-alive 连接
+- 默认 `500 / 100` 只适合个人站
+- 生产按"目标 RPS × 平均上游响应秒数 × 2"估算,给到 5000 / 500 通常够用
+
+**DB 连接池**(§6.2 `SQL_MAX_OPEN_CONNS`)
+- 副本数 × `SQL_MAX_OPEN_CONNS` ≤ RDS `max_connections × 0.7`
+- 开了专属代理后,代理会复用真实 RDS 连接,Fy-api 端可以不用开到天花板
+- 没开代理时,10 副本 × 300 = 3000 就接近 RDS 2000 `max_connections` 上限,直接改 200 × 10 = 2000 还是高,降到 150
+
+**GOMAXPROCS / GOMEMLIMIT**
+- 容器里 Go 不会自动识别 cgroup 限制(需要 Go 1.25+ + 特定构建 tag),**老实用环境变量写死**
+- `GOMAXPROCS` = `limits.cpu` 向上取整的整数
+- `GOMEMLIMIT` ≈ `limits.memory × 0.85`,给 GC 和堆外内存留 buffer
+
+**批量写**(§6.2 `BATCH_UPDATE_*`)
+- 没开批量写,每个请求 3-5 条写操作(quota、usage、logs),高并发下 DB 是主要瓶颈
+- 打开后 3 秒合并一次,减少 DB TPS 90%+
+- 副作用:quota 扣减延迟最多 3 秒,极端情况有"超扣一点点"的理论风险,生产可以接受
+
+### 9.3 容量规划公式
+
+```
+峰值 RPS × 平均耗时(秒) / 单 Pod 并发能力 = 总 Pod 数
+总 Pod 数 × limits.cpu × 1.3(buffer)    = 总 CPU 核数
+总 CPU 核数 / 单节点核数                 = Worker 节点数
+```
+
+两个样本:
+
+| 场景 | RPS | 平均耗时 | 单 Pod 并发 | 总 Pod | 节点(4c) |
+|------|-----|---------|------------|--------|---------|
+| 轻量(非流式为主,RAG/嵌入) | 200 | 0.5s | 100 | 1 | 1 |
+| 重量(流式为主,Claude/Kimi 长响应) | 1500 | 3s | 20 | 225 | 约 75-90 |
+
+流式主导的场景特别吃 Pod 数,HPA 上限要放开。
+
+### 9.4 Linux 内核(Worker 节点一次性)
+
+写到节点 DaemonSet 的 initContainer 里,或在节点创建脚本里加:
+
+```bash
+cat | sudo tee /etc/sysctl.d/99-fyapi.conf <<'EOF'
+net.ipv4.tcp_max_syn_backlog = 8192
+net.core.somaxconn = 8192
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 30
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+fs.file-max = 2097152
+EOF
+sudo sysctl --system
+```
+
+### 9.5 压测脚本(上线前必做)
+
+```bash
+# 本机装 hey
+go install github.com/rakyll/hey@latest
+
+export H=https://api.<your-domain>.com
+export KEY=sk-xxxx
+
+hey -n 5000 -c 100 \
+    -H "Authorization: Bearer $KEY" \
+    -H "Content-Type: application/json" \
+    -m POST \
+    -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' \
+    "$H/v1/chat/completions"
+```
+
+关注:
+- **Requests/sec** — 单副本吞吐基准
+- **p99 latency** — 尾延迟超过 5s 通常是 GC / 慢查询
+- **Error rate** — >0 就是资源不够或连接池小了
+
+打开第二个终端看 HPA 扩容:`kubectl -n fy-api get hpa fy-api -w`
+
+---
+
+## 十、日常运维
 
 ### 9.1 查看状态
 
@@ -714,7 +946,7 @@ kubectl -n fy-api describe certificate fy-api-tls | grep -E "Not Before|Not Afte
 
 ---
 
-## 十、故障速查
+## 十一、故障速查
 
 | 症状 | 诊断 | 常见原因 | 修复 |
 |------|------|---------|------|
@@ -729,7 +961,7 @@ kubectl -n fy-api describe certificate fy-api-tls | grep -E "Not Before|Not Afte
 
 ---
 
-## 十一、停用（退役）
+## 十二、停用（退役）
 
 ```bash
 kubectl -n fy-api delete ingress fy-api

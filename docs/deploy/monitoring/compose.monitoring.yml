@@ -1,0 +1,148 @@
+version: "3.8"
+
+# Fy-api 监控栈:Prometheus + Grafana + Alertmanager + 黑盒 exporter
+# 和你的 Fy-api 容器共用一个外部网络,便于互通
+
+networks:
+  fy-api-net:
+    external: true   # 先 podman network create fy-api-net,Fy-api 也要加入
+
+volumes:
+  prom-data:
+  grafana-data:
+  alertmanager-data:
+
+services:
+  # ──────────────────────────────────────────────
+  # 1) Prometheus — 时序数据库 + 采集器
+  # ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro,Z
+      - prom-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.size=10GB"
+      - "--web.enable-lifecycle"      # 允许 curl -X POST :9090/-/reload
+    ports:
+      - "9090:9090"
+    networks: [fy-api-net]
+
+  # ──────────────────────────────────────────────
+  # 2) Alertmanager — 告警分发(钉钉/企微/邮件)
+  # ──────────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro,Z
+      - alertmanager-data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks: [fy-api-net]
+
+  # ──────────────────────────────────────────────
+  # 3) Grafana — 可视化面板
+  # ──────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "change-me-strong"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro,Z
+    ports:
+      - "3001:3000"         # 避免和 Fy-api 的 3000 冲突
+    networks: [fy-api-net]
+
+  # ──────────────────────────────────────────────
+  # 4) Node Exporter — 宿主机 CPU/内存/磁盘/网络
+  # ──────────────────────────────────────────────
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host        # 宿主机指标必须 host 模式
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--web.listen-address=:9100"
+
+  # ──────────────────────────────────────────────
+  # 5) cAdvisor — 每个 Podman 容器的资源(CPU/RAM/网络)
+  # ──────────────────────────────────────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    container_name: cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/containers:/var/lib/containers:ro   # podman 存储
+    devices:
+      - /dev/kmsg
+    ports:
+      - "8080:8080"
+    networks: [fy-api-net]
+
+  # ──────────────────────────────────────────────
+  # 6) Blackbox Exporter — 探测 Fy-api 健康/证书/延迟
+  # ──────────────────────────────────────────────
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: blackbox
+    restart: unless-stopped
+    volumes:
+      - ./blackbox.yml:/config/blackbox.yml:ro,Z
+    command: ["--config.file=/config/blackbox.yml"]
+    ports:
+      - "9115:9115"
+    networks: [fy-api-net]
+
+  # ──────────────────────────────────────────────
+  # 7) MySQL Exporter(连阿里云 RDS)
+  # ──────────────────────────────────────────────
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: mysql-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "exporter:YOUR_PASSWORD@(rm-xxx.mysql.rds.aliyuncs.com:3306)/"
+    command:
+      - "--collect.info_schema.processlist"
+      - "--collect.info_schema.innodb_metrics"
+      - "--collect.global_status"
+      - "--collect.global_variables"
+    ports:
+      - "9104:9104"
+    networks: [fy-api-net]
+
+  # ──────────────────────────────────────────────
+  # 8) Redis Exporter(连阿里云 Redis)
+  # ──────────────────────────────────────────────
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://r-xxx.redis.rds.aliyuncs.com:6379"
+      REDIS_PASSWORD: "YOUR_REDIS_PASSWORD"
+    ports:
+      - "9121:9121"
+    networks: [fy-api-net]

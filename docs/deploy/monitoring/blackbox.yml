@@ -1,0 +1,36 @@
+modules:
+  # 检查返回 2xx
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: "ip4"
+      valid_status_codes: [200]
+      fail_if_body_not_matches_regexp:
+        - '"success"\s*:\s*true'
+
+  # 纯连通性
+  http_up:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: "ip4"
+      method: GET
+
+  # TLS 证书探测(拿到剩余天数)
+  tcp_connect_tls:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      tls: true
+      tls_config:
+        insecure_skip_verify: false
+
+  # 流式 SSE 探测
+  sse_probe:
+    prober: http
+    timeout: 30s
+    http:
+      headers:
+        Accept: "text/event-stream"
+      valid_status_codes: [200]

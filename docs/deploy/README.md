@@ -8,7 +8,15 @@
 |------|:---:|------|------|------|:---:|------|
 | **本地开发** | 任意 | SQLite | 无 | localhost | 本地 build | [`local-dev.md`](./local-dev.md) |
 | **测试环境**（staging） | Podman + compose | 阿里云 RDS（与生产同构） | — | SSH port-forward / 内网 | 本地 build，`podman save` 传输 | [`test-podman.md`](./test-podman.md) |
-| **正式环境**（prod） | ACK (Deployment + HPA) | 阿里云 RDS | 阿里云 Redis | Nginx Ingress + cert-manager | ACR（运维手动 push） | [`prod-ack.md`](./prod-ack.md) |
+| **正式环境 · 单机**（起步推荐） | Podman + 蓝绿 | 阿里云 RDS | 阿里云 Redis | Nginx + Let's Encrypt | ACR 拉内网镜像 | [`prod-podman-single.md`](./prod-podman-single.md) |
+| **正式环境 · K8s**（规模化） | ACK (Deployment + HPA) | 阿里云 RDS | 阿里云 Redis | Nginx Ingress + cert-manager | ACR（运维手动 push） | [`prod-ack.md`](./prod-ack.md) |
+
+## 运营专题
+
+| 专题 | 场景 | 文档 |
+|------|------|------|
+| **限流开关与按客户限流** | 打开/关闭各套限流，按用户分组配独立配额，区分哪些能热更新、哪些必须重启 | [`rate-limiting.md`](./rate-limiting.md) |
+| **日志落盘 + SLS + Prometheus** | 日志不落盘的根因与修复，SLS 接入，Prometheus 三层监控栈与告警规则 | [`observability.md`](./observability.md) + [`monitoring/`](./monitoring/) |
 
 ## 读前提醒
 

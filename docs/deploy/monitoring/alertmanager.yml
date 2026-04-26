@@ -1,0 +1,45 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default-dingtalk
+  group_by: [alertname, severity]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+
+  routes:
+    # critical → P0 直接电话 + 钉钉
+    - match: { severity: critical }
+      receiver: critical-multi
+      repeat_interval: 30m
+    # warning → 钉钉
+    - match: { severity: warning }
+      receiver: default-dingtalk
+
+receivers:
+  # 钉钉机器人(普通)
+  # 需要先在钉钉群建 webhook,并在钉钉侧配关键字 "Fy-api"
+  - name: default-dingtalk
+    webhook_configs:
+      - url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_DINGTALK_TOKEN"
+        send_resolved: true
+
+  # critical:钉钉 + 短信(可接阿里云短信或企业微信)
+  - name: critical-multi
+    webhook_configs:
+      - url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_DINGTALK_CRITICAL_TOKEN"
+        send_resolved: true
+    # 如果接了阿里云短信,可加:
+    # email_configs:
+    #   - to: oncall@your-company.com
+    #     from: alert@your-company.com
+    #     smarthost: smtpdm.aliyun.com:25
+    #     auth_username: ...
+    #     auth_password: ...
+
+inhibit_rules:
+  # 宿主机挂了,容器告警就别再叠加
+  - source_match: { alertname: NodeDown, severity: critical }
+    target_match: { severity: warning }
+    equal: [instance]

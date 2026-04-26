@@ -98,17 +98,28 @@
 
 ### 2.2 资源清单
 
+> 下列规格按 **ECS 16c32g** 作为目标配置匹配(支撑 2000 RPS 非流式 / 500-800 RPS 流式)。
+> 如果你的 ECS 规格更小(4c8g 起步版),参考文末"附录 D:规格下调建议"按比例缩。
+
 | 资源 | 规格 | 命名示例 | 月成本 |
 |---|---|---|---|
-| ECS | `ecs.c7.xlarge` 4c8g,100G ESSD | `fy-api-prod-1` | ¥600 |
-| EIP + 公网带宽 | 5 Mbps 按固定 / 按量 | — | ¥100~200 |
-| RDS MySQL 8.0 高可用 | 2c4g,100G ESSD PL1,**主备双机** | `rm-xxx-fy-api-prod` | ¥400 |
-| R-KVStore Redis 7 主备 | 256MB 标准版 | `r-xxx-fy-api-prod` | ¥60 |
-| ACR 个人版(或企业版) | 1 个仓库 | `registry.cn-hangzhou.aliyuncs.com/fy-api/fy-api` | ¥0~100 |
-| SLS(日志) | 30GB 查询 + 180 天归档 | `fy-api-prod` | ¥100 |
-| OSS(SLS 归档、备份) | 标准存储 50G | `fy-api-backup` | ¥10 |
-| 备案域名 | — | `api.<your-domain>.com` | — |
-| **月成本合计** | | | **¥1,270~1,470** |
+| ECS | `ecs.c7.4xlarge` **16c32g**,100G ESSD | `fy-api-prod-1` | ¥2,400 |
+| EIP + 公网带宽 | **按量付费**(峰值 100 Mbps),初期日均 2TB 以内约 ¥1,700 | — | ¥1,500~2,000 |
+| RDS MySQL 8.0 高可用 | `mysql.x4.medium.2c` **4c8g**,**200G** ESSD PL1,主备双机 | `rm-xxx-fy-api-prod` | ¥900 |
+| RDS 专属代理 | 1 实例 | `rm-xxx-proxy` | ¥120 |
+| R-KVStore Redis 7 主备 | **1GB 主备标准版** | `r-xxx-fy-api-prod` | ¥180 |
+| ACR 企业版基础版 | 1 个仓库(VPC 内网免费) | `registry.cn-hangzhou.aliyuncs.com/fy-api/fy-api` | ¥100 |
+| SLS(日志) | 30GB 查询 + 180 天归档 | `fy-api-prod` | ¥300~500 |
+| OSS(SLS 归档、备份) | 标准存储 100G | `fy-api-backup` | ¥15 |
+| 备案域名 | — | `api.<your-domain>.com` | ¥5(¥55/年) |
+| **月成本合计** | | | **¥5,520~6,230** |
+
+**规格选型说明**:
+
+- **ECS 16c32g**:分配给 Fy-api 容器 12c/22g,剩余 4c/10g 给 Nginx / Logtail / 监控栈 / 系统缓冲。
+- **RDS 升到 4c8g**:2c4g 扛不住 2000 RPS 的写入频率(每请求 3 条写)。`max_connections` 也要从 500 提到 1000。
+- **Redis 升到 1GB**:256MB 够用但没 LRU 淘汰 buffer,起量后 key 多了会被 evict,影响限流准确性。
+- **EIP 按量付费**:AI 流式吃带宽(每响应 50-500KB),峰值可达 100 Mbps,按固定带宽反而贵。
 
 ---
 
@@ -337,15 +348,15 @@ REDIS_CONN_STRING=redis://:REPLACE_ME_REDIS_PASS@r-xxx.redis.rds.aliyuncs.com:63
 SESSION_SECRET=REPLACE_ME_64_HEX_CHARS
 CRYPTO_SECRET=REPLACE_ME_64_HEX_CHARS
 
-# ==== 性能 ====
-GOMAXPROCS=4
-GOMEMLIMIT=6500MiB
-RELAY_MAX_IDLE_CONNS=5000
-RELAY_MAX_IDLE_CONNS_PER_HOST=500
+# ==== 性能(16c32g ECS 对应值)====
+GOMAXPROCS=12
+GOMEMLIMIT=20000MiB
+RELAY_MAX_IDLE_CONNS=10000
+RELAY_MAX_IDLE_CONNS_PER_HOST=1000
 RELAY_TIMEOUT=600
 STREAMING_TIMEOUT=300
-SQL_MAX_IDLE_CONNS=50
-SQL_MAX_OPEN_CONNS=200
+SQL_MAX_IDLE_CONNS=100
+SQL_MAX_OPEN_CONNS=500
 MEMORY_CACHE_ENABLED=true
 SYNC_FREQUENCY=60
 BATCH_UPDATE_ENABLED=true
@@ -354,12 +365,12 @@ BATCH_UPDATE_INTERVAL=3
 # ==== 日志(关键,详细见 §7)====
 ERROR_LOG_ENABLED=true
 
-# ==== 限流(详细见 rate-limiting.md)====
+# ==== 限流(16c32g 支撑得起更高值,详细见 rate-limiting.md)====
 GLOBAL_API_RATE_LIMIT_ENABLE=true
-GLOBAL_API_RATE_LIMIT=3000
+GLOBAL_API_RATE_LIMIT=6000
 GLOBAL_API_RATE_LIMIT_DURATION=60
 CRITICAL_RATE_LIMIT_ENABLE=true
-CRITICAL_RATE_LIMIT=50
+CRITICAL_RATE_LIMIT=100
 CRITICAL_RATE_LIMIT_DURATION=1200
 
 # ==== 节点名(审计日志用)====
@@ -387,8 +398,8 @@ podman run -d --name fy-api-blue \
   --log-driver=k8s-file \
   --log-opt max-size=100m \
   --log-opt max-file=5 \
-  --memory=8g --memory-swap=8g \
-  --cpus=4 \
+  --memory=22g --memory-swap=22g \
+  --cpus=12 \
   $IMAGE \
   --log-dir=/app/logs           # ← 关键,Fy-api CLI 参数
 ```
@@ -396,7 +407,7 @@ podman run -d --name fy-api-blue \
 几点要点:
 - `127.0.0.1:3001:3000` — 只绑 loopback,外部经 Nginx 反代,**不直接暴露**
 - `--log-driver=k8s-file` — 替掉默认 journald(解决你之前 logs/ 空的问题)
-- `--memory=8g --cpus=4` — 对齐 `.env` 的 `GOMAXPROCS=4 / GOMEMLIMIT=6500MiB`
+- `--memory=22g --cpus=12` — 对齐 `.env` 的 `GOMAXPROCS=12 / GOMEMLIMIT=20000MiB`,留 10c/10g 给 Nginx / Logtail / 系统
 - `:Z` — SELinux 自动打标签(Alibaba Cloud Linux 默认开)
 - 命令末尾 `--log-dir=/app/logs` — 容器应用层落盘(见 §7)
 
@@ -853,7 +864,7 @@ podman run -d --name "fy-api-$NEXT" \
   --env-file /opt/fy-api/config/fy-api.env \
   --ulimit nofile=1048576:1048576 \
   --log-driver=k8s-file --log-opt max-size=100m --log-opt max-file=5 \
-  --memory=8g --cpus=4 \
+  --memory=22g --cpus=12 \
   "$IMAGE" \
   --log-dir=/app/logs
 
@@ -1093,7 +1104,7 @@ podman run -d --name fy-api-blue \
   --env-file /opt/fy-api/config/fy-api.env \
   --ulimit nofile=1048576:1048576 \
   --log-driver=k8s-file --log-opt max-size=100m --log-opt max-file=5 \
-  --memory=8g --cpus=4 \
+  --memory=22g --cpus=12 \
   "$IMAGE" \
   --log-dir=/app/logs
 BASH
@@ -1111,3 +1122,39 @@ chmod +x /opt/fy-api/scripts/start-blue.sh
 - 监控栈配置:[`monitoring/`](./monitoring/)
 - DB 迁移:[`../Phase3-DB-migration-runbook.md`](../Phase3-DB-migration-runbook.md)
 - 上游同步:[`../Monthly-upstream-sync-runbook.md`](../Monthly-upstream-sync-runbook.md)
+
+---
+
+## 附录 D:不同 ECS 规格的参数对照表
+
+本文默认按 **16c32g** 写。如果你的 ECS 规格不同,按下表改对应参数即可,其他步骤完全一致。
+
+| ECS 规格 | `GOMAXPROCS` | `GOMEMLIMIT` | `--memory` | `--cpus` | `RELAY_MAX_IDLE_CONNS` | `SQL_MAX_OPEN_CONNS` | 预期 RPS(非流式) | 预期 RPS(流式) |
+|---|---|---|---|---|---|---|---|---|
+| `c7.large` 2c/4g | 2 | 3500MiB | 4g | 2 | 2000 | 100 | 100-300 | 30-80 |
+| `c7.xlarge` 4c/8g | 4 | 6500MiB | 8g | 4 | 5000 | 200 | 500-1000 | 100-300 |
+| `c7.2xlarge` 8c/16g | 6 | 13000MiB | 14g | 6 | 8000 | 300 | 1000-1500 | 300-500 |
+| **`c7.4xlarge` 16c/32g**(本文) | **12** | **20000MiB** | **22g** | **12** | **10000** | **500** | **2000-3000** | **500-800** |
+| `c7.8xlarge` 32c/64g | 24 | 42000MiB | 48g | 24 | 20000 | 1000 | 4000-6000 | 1000-1500 |
+
+### 配套资源随 ECS 规模缩放
+
+| ECS 规格 | RDS 建议 | Redis 建议 | 公网带宽建议 |
+|---|---|---|---|
+| 2c/4g | 2c/4g 100G | 256MB | 5 Mbps |
+| 4c/8g | 2c/4g 100G | 256MB | 10 Mbps |
+| 8c/16g | 2c/4g 200G | 1GB | 按量 50 Mbps |
+| **16c/32g**(本文) | **4c/8g 200G** | **1GB** | **按量 100 Mbps** |
+| 32c/64g | 8c/16g 500G | 2GB | 按量 200 Mbps |
+
+### 升级建议
+
+单机 ECS 扛不住时的升级路径:
+
+1. **先升 ECS 规格**(4c→8c→16c→32c):最省事,不用改架构,机器重启即可
+2. **升 RDS**:CPU / 内存满了要扩
+3. **上 SLB + 多 ECS**:单机 CPU 打满或要多 AZ 容灾
+4. **迁 SAE / ACK**:规模 > 500 RPS 持续 2 周 + SLA 99.9%+ 要求
+
+具体触发条件见 §十五。
+

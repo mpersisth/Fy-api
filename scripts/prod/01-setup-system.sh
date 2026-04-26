@@ -14,14 +14,48 @@ err() { printf "\033[31m[error]\033[0m %s\n" "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || err "请用 root 或 sudo 执行"
 
 # ─────────────────────────────────────────────────────────
-# 1) 基础包
+# 1) 基础包(自动适配 dnf / apt)
 # ─────────────────────────────────────────────────────────
-log "安装基础包..."
-dnf install -y \
-  podman podman-compose passt \
-  nginx certbot python3-certbot-nginx \
-  jq htop vim tmux git curl wget \
-  logrotate
+log "检测包管理器..."
+if command -v dnf >/dev/null; then
+  PM=dnf
+elif command -v apt-get >/dev/null; then
+  PM=apt
+else
+  err "找不到 dnf 或 apt-get,无法自动装包。请手动安装 podman 等基础包后重跑"
+fi
+log "使用包管理器: $PM"
+
+if [ "$PM" = "dnf" ]; then
+  log "安装基础包 (RHEL/Rocky/Alibaba Cloud Linux)..."
+  dnf install -y \
+    podman podman-compose passt \
+    nginx certbot python3-certbot-nginx \
+    jq htop vim tmux git curl wget \
+    logrotate
+else
+  log "安装基础包 (Debian/Ubuntu)..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y --no-install-recommends \
+    podman passt \
+    nginx certbot python3-certbot-nginx \
+    jq htop vim tmux git curl wget ca-certificates \
+    logrotate uidmap slirp4netns
+
+  # Debian/Ubuntu 的 podman-compose 独立装(或 pip)
+  if ! command -v podman-compose >/dev/null; then
+    log "安装 podman-compose (pip3)..."
+    apt-get install -y --no-install-recommends python3-pip
+    pip3 install --break-system-packages podman-compose 2>/dev/null || \
+      pip3 install podman-compose
+  fi
+fi
+
+log "版本信息:"
+podman --version
+podman-compose --version 2>/dev/null || log "  podman-compose 未安装成功,稍后再手动装"
+nginx -v 2>&1 | head -1
 
 # ─────────────────────────────────────────────────────────
 # 2) 内核参数
@@ -99,17 +133,22 @@ chmod 755 /opt/fy-api
 chmod 700 /opt/fy-api/config
 
 # ─────────────────────────────────────────────────────────
-# 7) 防火墙(firewalld)
+# 7) 防火墙(firewalld / ufw / 都没有就靠阿里云安全组)
 # ─────────────────────────────────────────────────────────
-if systemctl is-active --quiet firewalld; then
+if systemctl is-active --quiet firewalld 2>/dev/null; then
   log "配置 firewalld..."
   firewall-cmd --permanent --add-port=80/tcp
   firewall-cmd --permanent --add-port=443/tcp
-  # 不开 3000 / 3001 / 3002,它们只绑 127.0.0.1
   firewall-cmd --reload
   log "firewalld 已放行 80/443。"
+elif command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  log "配置 ufw..."
+  ufw allow 80/tcp
+  ufw allow 443/tcp
+  ufw reload
+  log "ufw 已放行 80/443。"
 else
-  log "firewalld 未启用,跳过(请确认阿里云安全组已配置 80/443)"
+  log "未检测到启用的 firewalld 或 ufw — 请确认阿里云安全组已放 80/443"
 fi
 
 # ─────────────────────────────────────────────────────────

@@ -29,21 +29,32 @@ log "使用包管理器: $PM"
 if [ "$PM" = "dnf" ]; then
   log "安装基础包 (RHEL/Rocky/Alibaba Cloud Linux)..."
   dnf install -y \
-    podman podman-compose passt \
+    podman podman-compose \
     nginx certbot python3-certbot-nginx \
     jq htop vim tmux git curl wget \
     logrotate
+  # passt 可选 — 没有也能跑(走默认 slirp4netns)
+  dnf install -y passt 2>/dev/null && HAS_PASTA=1 || HAS_PASTA=0
 else
   log "安装基础包 (Debian/Ubuntu)..."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
   apt-get install -y --no-install-recommends \
-    podman passt \
+    podman \
     nginx certbot python3-certbot-nginx \
     jq htop vim tmux git curl wget ca-certificates \
     logrotate uidmap slirp4netns
+  # passt 在 Ubuntu 22.04 (jammy) 官方源没有,23.10+ / Debian 12+ 才有
+  # 装不上就用默认 slirp4netns,单机生产 + Nginx 反代真实 IP 足够
+  if apt-get install -y --no-install-recommends passt 2>/dev/null; then
+    HAS_PASTA=1
+    log "passt 安装成功 → 将使用 pasta 网络栈"
+  else
+    HAS_PASTA=0
+    log "passt 未在当前 apt 源(Ubuntu 22.04 正常),将使用 slirp4netns"
+  fi
 
-  # Debian/Ubuntu 的 podman-compose 独立装(或 pip)
+  # Debian/Ubuntu 的 podman-compose 走 pip
   if ! command -v podman-compose >/dev/null; then
     log "安装 podman-compose (pip3)..."
     apt-get install -y --no-install-recommends python3-pip
@@ -108,20 +119,29 @@ log "设置时区..."
 timedatectl set-timezone Asia/Shanghai
 
 # ─────────────────────────────────────────────────────────
-# 5) Podman rootless 网络栈切换到 pasta(比 slirp4netns 快 5-10 倍)
+# 5) Podman rootless 网络栈
 # ─────────────────────────────────────────────────────────
-log "配置 Podman 网络栈为 pasta..."
 mkdir -p /etc/containers
-cat > /etc/containers/containers.conf <<'EOF'
+if [ "${HAS_PASTA:-0}" = "1" ]; then
+  log "配置 Podman 网络栈为 pasta(更快 + 保留真实 IP)..."
+  cat > /etc/containers/containers.conf <<'EOF'
 [network]
 default_rootless_network_cmd = "pasta"
 
 [containers]
-# 允许给容器分配更高的 ulimit
 default_ulimits = [
   "nofile=1048576:1048576"
 ]
 EOF
+else
+  log "使用默认 slirp4netns 网络栈(单机 + Nginx 反代场景完全够用)..."
+  cat > /etc/containers/containers.conf <<'EOF'
+[containers]
+default_ulimits = [
+  "nofile=1048576:1048576"
+]
+EOF
+fi
 
 # ─────────────────────────────────────────────────────────
 # 6) 目录结构

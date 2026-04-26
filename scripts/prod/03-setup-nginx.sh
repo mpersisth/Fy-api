@@ -51,6 +51,17 @@ fi
 # 3) 写生产 HTTPS + 反代配置(蓝绿 upstream)
 # ─────────────────────────────────────────────────────────
 log "步骤 3: 写生产 HTTPS 配置,活跃端口=$ACTIVE_PORT"
+
+# log_format 必须放在 http 块里,不能在 server 里
+# conf.d/*.conf 都在 http 块内加载,文件名 00- 开头保证先于 fy-api.conf 加载
+cat > /etc/nginx/conf.d/00-fy-api-log-format.conf <<'LOGEOF'
+log_format fy_api_main '$remote_addr - $remote_user [$time_local] "$request" '
+                       '$status $body_bytes_sent "$http_referer" '
+                       '"$http_user_agent" "$http_x_forwarded_for" '
+                       'rt=$request_time uct="$upstream_connect_time" '
+                       'urt="$upstream_response_time"';
+LOGEOF
+
 cat > $CONF_FILE <<EOF
 # Fy-api 生产反代配置 — 蓝绿 upstream
 # active: $ACTIVE_PORT
@@ -115,11 +126,7 @@ server {
     proxy_set_header X-Forwarded-Proto \$scheme;
 
     # ─── 日志(独立,方便 SLS 采集) ───────────
-    log_format fy_api_main '\$remote_addr - \$remote_user [\$time_local] "\$request" '
-                           '\$status \$body_bytes_sent "\$http_referer" '
-                           '"\$http_user_agent" "\$http_x_forwarded_for" '
-                           'rt=\$request_time uct="\$upstream_connect_time" '
-                           'urt="\$upstream_response_time"';
+    # log_format 在 conf.d/00-fy-api-log-format.conf 里定义(必须在 http 块)
     access_log /var/log/nginx/fy-api-access.log fy_api_main buffer=32k flush=5s;
     error_log  /var/log/nginx/fy-api-error.log warn;
 

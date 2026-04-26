@@ -97,6 +97,7 @@ API_BASE=http://127.0.0.1:3001 \
 | 01 | `01-setup-system.sh` | 内核参数 / ulimit / 装 Podman+Nginx+logrotate / pasta 网络 / 目录 / 防火墙 | 新 ECS 首次 |
 | 02 | `02-install-logtail.sh` | 装 SLS Logtail,写机器组标识 | 新 ECS 首次 |
 | 03 | `03-setup-nginx.sh` | 生成 Nginx 反代配置 + 申请 Let's Encrypt + 证书续期 | 新域名首次 |
+| 03b | `03b-add-redirect-domain.sh` | 给次要域名配 HTTPS + 301 跳到主域(如 www → api) | 每个新增跳转域名 |
 | 04 | `04-deploy-fyapi.sh` | 拉 ACR 镜像首次启动 `fy-api-blue` | 首次部署 |
 | 05 | `05-enable-rate-limit.sh` | 通过 API 打开 Model Request RateLimit + 配分组 JSON | 首次/改分组 |
 | 06 | `06-deploy-blue-green.sh` | 蓝绿发版,零停机切版本 | 每次发版 |

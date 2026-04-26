@@ -1,0 +1,63 @@
+# compose.prod.yml — Fy-api 生产单机部署
+# 场景:阿里云 ECS 16c32g + 托管 RDS + 托管 Redis
+# 不在这里跑 MySQL / Redis 容器,全部指向阿里云托管实例
+#
+# 前置准备:
+#   1. 已经在 /opt/fy-api/config/fy-api.env 写好所有敏感变量(权限 600)
+#   2. 已经 podman login 阿里云 ACR(通过 ACR_IMAGE 变量传镜像完整路径)
+#   3. /opt/fy-api/{logs,data,config} 目录已建
+#
+# 启动:
+#   ACR_IMAGE=registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.5 \
+#     podman-compose -f compose.prod.yml up -d
+#
+# 注意:生产环境更推荐用 podman run + 蓝绿脚本(prod-podman-single.md §10),
+# compose 适合快速起步,但蓝绿发版需要手动改 image tag 后 --force-recreate,
+# 流式连接会被打断;想要零停机发版,切到 podman run 方案。
+
+services:
+  fy-api:
+    # 镜像不写死版本,从环境变量读,回滚时改变量而不是改文件
+    image: ${ACR_IMAGE:-registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:prod}
+    container_name: fy-api
+    restart: unless-stopped
+
+    # 只绑 loopback,Nginx 反代再暴露
+    ports:
+      - "127.0.0.1:3001:3000"
+
+    # 挂载
+    volumes:
+      - /opt/fy-api/logs:/app/logs:Z
+      - /opt/fy-api/data:/data:Z
+
+    # 所有敏感变量通过 env-file 进来(SQL_DSN / REDIS_CONN_STRING / SECRETS)
+    env_file:
+      - /opt/fy-api/config/fy-api.env
+
+    # Fy-api CLI 参数 — 让日志落 /app/logs,关键
+    command: ["--log-dir=/app/logs"]
+
+    # 资源限制,对齐 env 里的 GOMAXPROCS=12 / GOMEMLIMIT=20000MiB
+    mem_limit: 22g
+    memswap_limit: 22g
+    cpus: 12
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+
+    # 容器层日志用 k8s-file,替掉默认 journald
+    logging:
+      driver: k8s-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":[[:space:]]*true' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

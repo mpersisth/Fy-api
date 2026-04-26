@@ -325,6 +325,20 @@ podman pull registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.4
 
 ## 六、部署 Fy-api 容器
 
+本节给**两种启动方式**,按需选择:
+
+| 方式 | 推荐场景 | 文件 |
+|---|---|---|
+| **A. `podman run` + 蓝绿脚本** | ✅ **生产推荐**,零停机发版,流式请求无损 | 本文 §6.2 + §10 |
+| **B. `podman-compose`** | 初次验证通路、单机临时部署 | [`compose.prod.yml`](../../compose.prod.yml) |
+
+> **两种方式共用同一份 `.env`** — 模板在 [`config/fy-api.env.example`](../../config/fy-api.env.example),拷贝到 `/opt/fy-api/config/fy-api.env` 改权限 600 即可。
+
+**关键差异**:
+
+- 方式 A(蓝绿):起 `fy-api-blue` 和 `fy-api-green` 两个容器占不同端口,Nginx 切换 upstream,流式连接可以排空后再停旧容器 → **零停机**。
+- 方式 B(compose):只有一个容器,`force-recreate` 发版**会打断现有连接**,流式请求直接 502。适合做冒烟验证,不适合重度生产。
+
 ### 6.1 落地配置文件
 
 ```bash
@@ -411,7 +425,32 @@ podman run -d --name fy-api-blue \
 - `:Z` — SELinux 自动打标签(Alibaba Cloud Linux 默认开)
 - 命令末尾 `--log-dir=/app/logs` — 容器应用层落盘(见 §7)
 
-### 6.3 首次冒烟
+### 6.3 (方式 B) 用 podman-compose 启动
+
+简单场景 / 冒烟验证用。生产推荐仍然走 §6.2 蓝绿。
+
+```bash
+# 仓库里的 compose.prod.yml 是现成模板
+cd /path/to/Fy-api     # git clone 下来,或只把 compose.prod.yml + config/ 同步过去
+
+# 通过 ACR_IMAGE 环境变量指定镜像 tag,不写死在 yml 里
+export ACR_IMAGE=registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.4
+
+podman-compose -f compose.prod.yml up -d
+podman-compose -f compose.prod.yml ps
+podman logs -f fy-api
+```
+
+**和方式 A 的差异**:
+
+- 只有一个容器名 `fy-api`,无蓝绿
+- 发版:`ACR_IMAGE=...:v0.9.5 podman-compose -f compose.prod.yml up -d --force-recreate`
+  - **会 kill 现有容器新起一个,现有流式连接会断**
+  - 发版期间有秒级不可用
+- 回滚:重跑上面的命令改 tag 即可
+- 零停机发版请切换到方式 A(§10)
+
+### 6.4 首次冒烟
 
 ```bash
 # 容器起来了吗
@@ -427,7 +466,7 @@ curl -s http://127.0.0.1:3001/api/status | jq .
 # 期望:{"success":true, ...}
 ```
 
-### 6.4 首次管理员初始化
+### 6.5 首次管理员初始化
 
 ```bash
 read -s ROOT_PASS

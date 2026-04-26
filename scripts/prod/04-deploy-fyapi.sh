@@ -21,7 +21,11 @@ IMAGE_TAG="${IMAGE_TAG:-}"
 [ -n "$IMAGE_TAG" ] || err "请设置 IMAGE_TAG,例: IMAGE_TAG=v0.9.5"
 
 REGISTRY="${REGISTRY:-registry-vpc.cn-hangzhou.aliyuncs.com}"
-IMAGE="$REGISTRY/fy-api/fy-api:$IMAGE_TAG"
+# 企业版 ACR 路径是 <registry>/<namespace>/<repo>:<tag>,默认 fy-api/fy-api
+# 企业版示例: NAMESPACE=transnext REPO=fy-api
+NAMESPACE="${NAMESPACE:-fy-api}"
+REPO="${REPO:-fy-api}"
+IMAGE="$REGISTRY/$NAMESPACE/$REPO:$IMAGE_TAG"
 
 ENV_FILE=/opt/fy-api/config/fy-api.env
 LOG_DIR=/opt/fy-api/logs

@@ -15,7 +15,9 @@ NEW_TAG="${1:-}"
 [ -n "$NEW_TAG" ] || err "用法: $0 <new-image-tag>"
 
 REGISTRY="${REGISTRY:-registry-vpc.cn-hangzhou.aliyuncs.com}"
-IMAGE="$REGISTRY/fy-api/fy-api:$NEW_TAG"
+NAMESPACE="${NAMESPACE:-fy-api}"
+REPO="${REPO:-fy-api}"
+IMAGE="$REGISTRY/$NAMESPACE/$REPO:$NEW_TAG"
 
 ENV_FILE=/opt/fy-api/config/fy-api.env
 LOG_DIR=/opt/fy-api/logs

@@ -1,11 +1,11 @@
 version: "3.8"
 
-# Fy-api 监控栈:Prometheus + Grafana + Alertmanager + 黑盒 exporter
-# 和你的 Fy-api 容器共用一个外部网络,便于互通
+# TraceNex 监控栈:Prometheus + Grafana + Alertmanager + 黑盒 exporter
+# 和你的 TraceNex 容器共用一个外部网络,便于互通
 
 networks:
   fy-api-net:
-    external: true   # 先 podman network create fy-api-net,Fy-api 也要加入
+    external: true   # 先 podman network create fy-api-net,TraceNex 也要加入
 
 volumes:
   prom-data:
@@ -61,7 +61,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro,Z
     ports:
-      - "3001:3000"         # 避免和 Fy-api 的 3000 冲突
+      - "3001:3000"         # 避免和 TraceNex 的 3000 冲突
     networks: [fy-api-net]
 
   # ──────────────────────────────────────────────
@@ -102,7 +102,7 @@ services:
     networks: [fy-api-net]
 
   # ──────────────────────────────────────────────
-  # 6) Blackbox Exporter — 探测 Fy-api 健康/证书/延迟
+  # 6) Blackbox Exporter — 探测 TraceNex 健康/证书/延迟
   # ──────────────────────────────────────────────
   blackbox:
     image: prom/blackbox-exporter:v0.25.0

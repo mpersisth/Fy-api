@@ -1,6 +1,6 @@
 <div align="center">
 
-# Fy-api
+# TraceNex
 
 🍥 **AI Gateway & Asset Management Platform — downstream fork of [new-api](https://github.com/QuantumNous/new-api)**
 
@@ -26,7 +26,7 @@
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-what-fy-api-adds-on-top-of-new-api">What Fy-api Adds</a> •
+  <a href="#-what-fy-api-adds-on-top-of-new-api">What TraceNex Adds</a> •
   <a href="#-deployment">Deployment</a> •
   <a href="#-upstream-sync">Upstream Sync</a> •
   <a href="#-license--attribution">License</a>
@@ -34,20 +34,20 @@
 
 </div>
 
-## 📝 About Fy-api
+## 📝 About TraceNex
 
-Fy-api is a private-branded **downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api)** with a small overlay of customizations on top. It preserves everything upstream offers (40+ LLM providers, unified API gateway, quota/billing, admin dashboard, Subscription, Channel Affinity, Gemini cached-token billing, etc.) and adds a handful of operator-friendly features.
+TraceNex is a private-branded **downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api)** with a small overlay of customizations on top. It preserves everything upstream offers (40+ LLM providers, unified API gateway, quota/billing, admin dashboard, Subscription, Channel Affinity, Gemini cached-token billing, etc.) and adds a handful of operator-friendly features.
 
 > [!NOTE]
-> - Fy-api tracks `upstream/main` on a monthly cadence — every upstream improvement (new model adapters, bug fixes, schema migrations) flows into Fy-api via the automated [upstream-sync workflow](./.github/workflows/upstream-sync.yml).
+> - TraceNex tracks `upstream/main` on a monthly cadence — every upstream improvement (new model adapters, bug fixes, schema migrations) flows into TraceNex via the automated [upstream-sync workflow](./.github/workflows/upstream-sync.yml).
 > - The Go module path stays `github.com/QuantumNous/new-api` so that merging upstream patches does not require rewriting thousands of imports.
-> - Upstream attribution (LICENSE, copyright headers) is preserved per Apache 2.0 compliance. See [`OVERLAY.md`](./OVERLAY.md) for the full list of Fy-api-specific changes.
+> - Upstream attribution (LICENSE, copyright headers) is preserved per Apache 2.0 compliance. See [`OVERLAY.md`](./OVERLAY.md) for the full list of TraceNex-specific changes.
 
 ---
 
-## ✨ What Fy-api Adds on Top of new-api
+## ✨ What TraceNex Adds on Top of new-api
 
-All of these are **additive** — `upstream/main` still works exactly the same through Fy-api.
+All of these are **additive** — `upstream/main` still works exactly the same through TraceNex.
 
 | # | Feature | Surface | Status |
 |---|---------|---------|:------:|
@@ -56,7 +56,7 @@ All of these are **additive** — `upstream/main` still works exactly the same t
 | 3 | **Embedded product docs at `/docs`** | Markdown-driven manual with 18 screenshots, rendered via a new `NewMarkdownRender` component. | ✅ |
 | 4 | **Email/username login shown first** | Login form reordered so the primary affordance isn't hidden behind OAuth buttons. | ✅ |
 | 5 | **Register link always visible** | Removed the `self_use_mode` gate on the "Sign up" link (operators can still disable registration via backend setting). | ✅ |
-| 6 | **Fy-api branding** | `SystemName` → `Fy-api`, new logo + favicon, all 7 locales (zh-CN / zh-TW / en / fr / ja / ru / vi) rebranded. | ✅ |
+| 6 | **TraceNex branding** | `SystemName` → `TraceNex`, new logo + favicon, all 7 locales (zh-CN / zh-TW / en / fr / ja / ru / vi) rebranded. | ✅ |
 | 7 | **Upstream sync CI** | Two GitHub Actions — a weekly watch that warns when drift exceeds 100 commits, and a manual sync that opens a conflict-ready PR. | ✅ |
 
 > For the full source-level diff see [`OVERLAY.md`](./OVERLAY.md). For upgrade planning and runbooks see [`docs/`](./docs/).
@@ -68,9 +68,9 @@ All of these are **additive** — `upstream/main` still works exactly the same t
 ### Using Docker Compose (recommended)
 
 ```bash
-# Clone Fy-api (not upstream)
+# Clone TraceNex (not upstream)
 git clone git@github.com:seraph0017/Fy-api.git
-cd Fy-api
+cd TraceNex
 
 # Edit docker-compose.yml as needed
 nano docker-compose.yml
@@ -100,7 +100,7 @@ See [`docs/Phase4-Build-runbook.md`](./docs/Phase4-Build-runbook.md) for a full 
 
 ## 🚢 Deployment
 
-Fy-api is a drop-in replacement for a new-api deployment: same ports, same environment variables, same SQL schema (plus the upstream's ongoing migrations, which are auto-applied via GORM `AutoMigrate`).
+TraceNex is a drop-in replacement for a new-api deployment: same ports, same environment variables, same SQL schema (plus the upstream's ongoing migrations, which are auto-applied via GORM `AutoMigrate`).
 
 ### Requirements
 
@@ -124,9 +124,9 @@ Follow [`docs/Phase3-DB-migration-runbook.md`](./docs/Phase3-DB-migration-runboo
 
 ### Environment variables
 
-Fy-api inherits the full upstream environment variable set. See the [upstream docs](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables) for the canonical list.
+TraceNex inherits the full upstream environment variable set. See the [upstream docs](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables) for the canonical list.
 
-Fy-api adds:
+TraceNex adds:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -136,11 +136,11 @@ Fy-api adds:
 
 ## 🔄 Upstream Sync
 
-Fy-api is designed to stay close to upstream rather than drift. The philosophy:
+TraceNex is designed to stay close to upstream rather than drift. The philosophy:
 
 1. **Additive customizations only** — customizations live in overlay files (e.g. `controller/log_export.go`, `web/src/pages/FyApiDocs/`) to minimize merge conflicts.
 2. **Monthly sync cadence** — conflict cost grows exponentially with drift (~1 month → 0-2 conflicts; ~6 months → 20+). See [`docs/Monthly-upstream-sync-runbook.md`](./docs/Monthly-upstream-sync-runbook.md).
-3. **Automated watch** — `.github/workflows/upstream-watch.yml` runs every Monday and warns when Fy-api is > 100 commits behind; fails hard at > 500.
+3. **Automated watch** — `.github/workflows/upstream-watch.yml` runs every Monday and warns when TraceNex is > 100 commits behind; fails hard at > 500.
 4. **One-click sync PR** — `.github/workflows/upstream-sync.yml` (manual trigger) merges `upstream/main`, re-applies the i18n rebrand, and opens a PR.
 
 ```bash
@@ -173,7 +173,7 @@ For everything the gateway itself does (channels, relay protocols, billing formu
 - 📡 [API Reference](https://docs.newapi.pro/en/docs/api)
 - ❓ [FAQ](https://docs.newapi.pro/en/docs/support/faq)
 
-For Fy-api-specific documentation see [`docs/`](./docs/):
+For TraceNex-specific documentation see [`docs/`](./docs/):
 
 | File | Purpose |
 |------|---------|
@@ -187,14 +187,14 @@ For Fy-api-specific documentation see [`docs/`](./docs/):
 
 ## 📜 License & Attribution
 
-Fy-api is distributed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE), inheriting the upstream license.
+TraceNex is distributed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE), inheriting the upstream license.
 
 **Upstream:** [QuantumNous/new-api](https://github.com/QuantumNous/new-api) — AGPLv3
 **Original base:** [songquanpeng/one-api](https://github.com/songquanpeng/one-api) — MIT
 
-Fy-api preserves all upstream copyright notices, the LICENSE file, and the Go module path `github.com/QuantumNous/new-api`. See [`OVERLAY.md`](./OVERLAY.md) for the exact scope of downstream modifications.
+TraceNex preserves all upstream copyright notices, the LICENSE file, and the Go module path `github.com/QuantumNous/new-api`. See [`OVERLAY.md`](./OVERLAY.md) for the exact scope of downstream modifications.
 
-For commercial licensing of the upstream project, contact the upstream maintainers at [support@quantumnous.com](mailto:support@quantumnous.com). Fy-api itself is an internal deployment and does not offer separate commercial licensing.
+For commercial licensing of the upstream project, contact the upstream maintainers at [support@quantumnous.com](mailto:support@quantumnous.com). TraceNex itself is an internal deployment and does not offer separate commercial licensing.
 
 ---
 
@@ -202,7 +202,7 @@ For commercial licensing of the upstream project, contact the upstream maintaine
 
 Huge thanks to:
 
-- **[QuantumNous](https://github.com/QuantumNous)** and all new-api contributors — Fy-api is 99% their work
+- **[QuantumNous](https://github.com/QuantumNous)** and all new-api contributors — TraceNex is 99% their work
 - **[songquanpeng](https://github.com/songquanpeng)** for the original One API foundation
 - **[JetBrains](https://www.jetbrains.com/?from=new-api)** for providing free open-source development licenses to the upstream project
 
@@ -210,7 +210,7 @@ Huge thanks to:
 
 <div align="center">
 
-### 💖 Thanks for using Fy-api
+### 💖 Thanks for using TraceNex
 
 <sub>A small overlay on the shoulders of <a href="https://github.com/QuantumNous/new-api">new-api</a>.</sub>
 

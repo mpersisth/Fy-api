@@ -1,6 +1,6 @@
-# Fy-api 部署文档
+# TraceNex 部署文档
 
-本目录收录 Fy-api 在各环境下的部署 runbook，读者为**内部工程师**（运维、后端、SRE）。所有文档遵循"每一步都可复制粘贴"的原则。
+本目录收录 TraceNex 在各环境下的部署 runbook，读者为**内部工程师**（运维、后端、SRE）。所有文档遵循"每一步都可复制粘贴"的原则。
 
 ## 环境一览
 
@@ -20,8 +20,8 @@
 
 ## 读前提醒
 
-1. **SystemName = Fy-api**，但 Go module path 保持 `github.com/QuantumNous/new-api`。所有配置文件里遇到 `new-api` 字样都是历史遗留，**不要改**。
-2. 数据库 schema 差异对 Fy-api 相对上游仅有 overlay 增量字段。所有环境统一用 GORM `AutoMigrate`，首次启动自动建表。
+1. **SystemName = TraceNex**，但 Go module path 保持 `github.com/QuantumNous/new-api`。所有配置文件里遇到 `new-api` 字样都是历史遗留，**不要改**。
+2. 数据库 schema 差异对 TraceNex 相对上游仅有 overlay 增量字段。所有环境统一用 GORM `AutoMigrate`，首次启动自动建表。
 3. 如果从 TraceNex 或老版 new-api 升级部署，**先读 [`../Phase3-DB-migration-runbook.md`](../Phase3-DB-migration-runbook.md)** 做迁移演练。
 4. 发现部署问题在本目录提 issue / 更新文档。留下时间戳便于追溯。
 

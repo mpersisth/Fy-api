@@ -62,7 +62,7 @@ REGION=cn-hangzhou MACHINE_ID=fy-api-prod ./02-install-logtail.sh
 DOMAIN=api.your-domain.com EMAIL=sre@your-domain.com ./03-setup-nginx.sh
 
 # ──────────────────────────────────────────
-# Step 5:登录 ACR 并首次部署 Fy-api 容器
+# Step 5:登录 ACR 并首次部署 TraceNex 容器
 # ──────────────────────────────────────────
 podman login registry-vpc.cn-hangzhou.aliyuncs.com
 IMAGE_TAG=v0.9.5 ./04-deploy-fyapi.sh
@@ -102,7 +102,7 @@ API_BASE=http://127.0.0.1:3001 \
 | 04 | `04-deploy-fyapi.sh` | 拉 ACR 镜像首次启动 `fy-api-blue` | 首次部署 |
 | 05 | `05-enable-rate-limit.sh` | 通过 API 打开 Model Request RateLimit + 配分组 JSON | 首次/改分组 |
 | 06 | `06-deploy-blue-green.sh` | 蓝绿发版,零停机切版本 | 每次发版 |
-| 07 | `07-setup-logrotate.sh` | 安装/刷新所有 Fy-api 日志的轮转规则(Nginx + 容器落盘日志) | 首次 / 日志规则改动后 |
+| 07 | `07-setup-logrotate.sh` | 安装/刷新所有 TraceNex 日志的轮转规则(Nginx + 容器落盘日志) | 首次 / 日志规则改动后 |
 
 ## 关键设计
 

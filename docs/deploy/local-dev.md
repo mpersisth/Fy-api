@@ -1,7 +1,7 @@
 # 本地开发环境
 
 > 读者：后端 / 前端 / 全栈工程师
-> 目标：最快把 Fy-api 跑在自己电脑上做开发
+> 目标：最快把 TraceNex 跑在自己电脑上做开发
 
 有两种模式，按场景选：
 
@@ -25,7 +25,7 @@
 ### 1.2 启动
 
 ```bash
-cd ~/Projects/apiGateway/Fy-api
+cd ~/Projects/apiGateway/TraceNex
 
 # 后端
 go mod tidy
@@ -68,7 +68,7 @@ make all
 如果你本地装了 podman / Docker Desktop / OrbStack：
 
 ```bash
-cd ~/Projects/apiGateway/Fy-api
+cd ~/Projects/apiGateway/TraceNex
 
 # 构建镜像（首次 5-15 分钟）
 podman build -t fy-api:local .

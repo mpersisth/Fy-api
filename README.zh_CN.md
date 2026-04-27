@@ -1,6 +1,6 @@
 <div align="center">
 
-# Fy-api
+# TraceNex
 
 🍥 **AI 网关与资产管理平台 — [new-api](https://github.com/QuantumNous/new-api) 的下游 fork**
 
@@ -26,7 +26,7 @@
 
 <p align="center">
   <a href="#-快速开始">快速开始</a> •
-  <a href="#-fy-api-在-new-api-之上增加了什么">Fy-api 增量</a> •
+  <a href="#-fy-api-在-new-api-之上增加了什么">TraceNex 增量</a> •
   <a href="#-部署">部署</a> •
   <a href="#-上游同步">上游同步</a> •
   <a href="#-许可证与归属">许可证</a>
@@ -34,20 +34,20 @@
 
 </div>
 
-## 📝 关于 Fy-api
+## 📝 关于 TraceNex
 
-Fy-api 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的私有品牌化 fork**，在上游之上叠加了一层小而精的定制。上游提供的一切——40+ LLM 供应商适配、统一 API 网关、额度/计费、管理后台、Subscription、Channel Affinity、Gemini 缓存命中计费——在 Fy-api 里都**完整保留**，并额外增加了几项面向运营人员的功能。
+TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的私有品牌化 fork**，在上游之上叠加了一层小而精的定制。上游提供的一切——40+ LLM 供应商适配、统一 API 网关、额度/计费、管理后台、Subscription、Channel Affinity、Gemini 缓存命中计费——在 TraceNex 里都**完整保留**，并额外增加了几项面向运营人员的功能。
 
 > [!NOTE]
-> - Fy-api 以**月度节奏**从 `upstream/main` 拉取新功能：每一个上游改进（新模型适配、bug 修复、schema 迁移）都会通过 [upstream-sync workflow](./.github/workflows/upstream-sync.yml) 自动流入 Fy-api。
+> - TraceNex 以**月度节奏**从 `upstream/main` 拉取新功能：每一个上游改进（新模型适配、bug 修复、schema 迁移）都会通过 [upstream-sync workflow](./.github/workflows/upstream-sync.yml) 自动流入 TraceNex。
 > - Go module path 保持为 `github.com/QuantumNous/new-api`，这样合并上游补丁时不需要重写数千个 import。
-> - 严格遵守 Apache 2.0 合规：LICENSE、版权头、上游 attribution **完整保留**。Fy-api 专属改动的详细清单见 [`OVERLAY.md`](./OVERLAY.md)。
+> - 严格遵守 Apache 2.0 合规：LICENSE、版权头、上游 attribution **完整保留**。TraceNex 专属改动的详细清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
 ---
 
-## ✨ Fy-api 在 new-api 之上增加了什么
+## ✨ TraceNex 在 new-api 之上增加了什么
 
-以下全部是**增量**——upstream 的所有能力在 Fy-api 中依然完整可用。
+以下全部是**增量**——upstream 的所有能力在 TraceNex 中依然完整可用。
 
 | # | 功能 | 位置 | 状态 |
 |---|------|------|:----:|
@@ -56,7 +56,7 @@ Fy-api 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的�
 | 3 | **`/docs` 内嵌产品文档** | 基于 Markdown 的用户手册（18 张截图），用新的 `NewMarkdownRender` 组件渲染。 | ✅ |
 | 4 | **邮箱/用户名登录按钮前置** | 登录表单重新排序，主要入口不再被 OAuth 按钮遮住。 | ✅ |
 | 5 | **"没有账户？注册" 始终显示** | 去掉了 `self_use_mode` 条件限制（如需禁用注册，仍可在后台配置）。 | ✅ |
-| 6 | **Fy-api 品牌化** | `SystemName` → `Fy-api`，新 logo 和 favicon，7 种语言（zh-CN / zh-TW / en / fr / ja / ru / vi）品牌词统一。 | ✅ |
+| 6 | **TraceNex 品牌化** | `SystemName` → `TraceNex`，新 logo 和 favicon，7 种语言（zh-CN / zh-TW / en / fr / ja / ru / vi）品牌词统一。 | ✅ |
 | 7 | **上游同步 CI** | 两个 GitHub Actions：每周一检测积压 > 100 commits 告警，手动触发的 sync 自动开 PR。 | ✅ |
 
 > 完整源码级改动清单见 [`OVERLAY.md`](./OVERLAY.md)。升级规划与操作手册见 [`docs/`](./docs/)。
@@ -68,9 +68,9 @@ Fy-api 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的�
 ### 使用 Docker Compose（推荐）
 
 ```bash
-# 克隆 Fy-api（不是上游）
+# 克隆 TraceNex（不是上游）
 git clone git@github.com:seraph0017/Fy-api.git
-cd Fy-api
+cd TraceNex
 
 # 按需修改 docker-compose.yml
 nano docker-compose.yml
@@ -100,7 +100,7 @@ bun run build
 
 ## 🚢 部署
 
-Fy-api 可作为 new-api 部署的**无感替换**：同一个端口、同一套环境变量、兼容同一份 SQL schema（再加上游后续增加的若干张表，由 GORM `AutoMigrate` 自动迁移）。
+TraceNex 可作为 new-api 部署的**无感替换**：同一个端口、同一套环境变量、兼容同一份 SQL schema（再加上游后续增加的若干张表，由 GORM `AutoMigrate` 自动迁移）。
 
 ### 系统要求
 
@@ -124,9 +124,9 @@ Fy-api 可作为 new-api 部署的**无感替换**：同一个端口、同一套
 
 ### 环境变量
 
-Fy-api 继承了上游完整的环境变量集合。完整列表以[上游官方文档](https://docs.newapi.pro/zh/docs/installation/config-maintenance/environment-variables)为准。
+TraceNex 继承了上游完整的环境变量集合。完整列表以[上游官方文档](https://docs.newapi.pro/zh/docs/installation/config-maintenance/environment-variables)为准。
 
-Fy-api 新增：
+TraceNex 新增：
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
@@ -136,7 +136,7 @@ Fy-api 新增：
 
 ## 🔄 上游同步
 
-Fy-api 的设计原则是**紧跟上游而不是渐行渐远**。核心理念：
+TraceNex 的设计原则是**紧跟上游而不是渐行渐远**。核心理念：
 
 1. **只做增量定制** —— 定制代码尽量放到新增文件里（如 `controller/log_export.go`、`web/src/pages/FyApiDocs/`），降低合并冲突
 2. **月度同步节奏** —— 冲突成本随 drift 时长呈**指数增长**（~1 个月 0-2 处冲突；~6 个月 20+ 处）。详见 [`docs/Monthly-upstream-sync-runbook.md`](./docs/Monthly-upstream-sync-runbook.md)
@@ -173,7 +173,7 @@ git log HEAD..upstream/main --oneline | head -30
 - 📡 [API 参考](https://docs.newapi.pro/zh/docs/api)
 - ❓ [常见问题](https://docs.newapi.pro/zh/docs/support/faq)
 
-Fy-api 专属文档在 [`docs/`](./docs/) 下：
+TraceNex 专属文档在 [`docs/`](./docs/) 下：
 
 | 文件 | 用途 |
 |------|------|
@@ -187,14 +187,14 @@ Fy-api 专属文档在 [`docs/`](./docs/) 下：
 
 ## 📜 许可证与归属
 
-Fy-api 采用 [GNU Affero 通用公共许可证 v3.0（AGPLv3）](./LICENSE)，继承自上游。
+TraceNex 采用 [GNU Affero 通用公共许可证 v3.0（AGPLv3）](./LICENSE)，继承自上游。
 
 **上游：** [QuantumNous/new-api](https://github.com/QuantumNous/new-api) — AGPLv3
 **原始基础：** [songquanpeng/one-api](https://github.com/songquanpeng/one-api) — MIT
 
-Fy-api 完整保留了上游的版权声明、LICENSE 文件，以及 Go module path `github.com/QuantumNous/new-api`。下游修改的完整范围见 [`OVERLAY.md`](./OVERLAY.md)。
+TraceNex 完整保留了上游的版权声明、LICENSE 文件，以及 Go module path `github.com/QuantumNous/new-api`。下游修改的完整范围见 [`OVERLAY.md`](./OVERLAY.md)。
 
-上游项目的商业授权请联系上游维护者：[support@quantumnous.com](mailto:support@quantumnous.com)。Fy-api 本身作为内部部署，不提供独立的商业授权。
+上游项目的商业授权请联系上游维护者：[support@quantumnous.com](mailto:support@quantumnous.com)。TraceNex 本身作为内部部署，不提供独立的商业授权。
 
 ---
 
@@ -202,7 +202,7 @@ Fy-api 完整保留了上游的版权声明、LICENSE 文件，以及 Go module 
 
 特别感谢：
 
-- **[QuantumNous](https://github.com/QuantumNous)** 及所有 new-api 贡献者——Fy-api 99% 的工作都来自他们
+- **[QuantumNous](https://github.com/QuantumNous)** 及所有 new-api 贡献者——TraceNex 99% 的工作都来自他们
 - **[songquanpeng](https://github.com/songquanpeng)** 提供的 One API 原始基础
 - **[JetBrains](https://www.jetbrains.com/?from=new-api)** 为上游项目提供的免费开源开发授权
 
@@ -210,7 +210,7 @@ Fy-api 完整保留了上游的版权声明、LICENSE 文件，以及 Go module 
 
 <div align="center">
 
-### 💖 感谢使用 Fy-api
+### 💖 感谢使用 TraceNex
 
 <sub>在 <a href="https://github.com/QuantumNous/new-api">new-api</a> 的肩膀上，叠一层轻量 overlay。</sub>
 

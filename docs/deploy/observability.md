@@ -1,4 +1,4 @@
-# Fy-api 日志与监控 Runbook
+# TraceNex 日志与监控 Runbook
 
 > 读者:运维 / SRE
 > 目标:解决三件事 — (1) 日志落盘 (2) 日志接入 SLS 分析 (3) Prometheus 监控告警
@@ -10,11 +10,11 @@
 
 | 需求 | 解决方案 | 涉及文件 |
 |---|---|---|
-| **日志不落盘** | 给容器加 `--log-dir=/app/logs` **Fy-api 自己的 CLI 参数**,挂载 logs 目录出来 | 本文 §1 |
+| **日志不落盘** | 给容器加 `--log-dir=/app/logs` **TraceNex 自己的 CLI 参数**,挂载 logs 目录出来 | 本文 §1 |
 | **日志分析** | 宿主机装 Logtail → SLS;结构化解析 `record consume log` | 本文 §2 |
-| **Prometheus 监控告警** | 装一套 Prometheus + Grafana + Exporter 黑盒栈;Fy-api 没原生 `/metrics`,只能做容器/DB/HTTP 层监控 | 本文 §3,配套 `monitoring/` 目录 |
+| **Prometheus 监控告警** | 装一套 Prometheus + Grafana + Exporter 黑盒栈;TraceNex 没原生 `/metrics`,只能做容器/DB/HTTP 层监控 | 本文 §3,配套 `monitoring/` 目录 |
 
-Fy-api 源码没暴露 `/metrics` 端点,**业务指标的告警(429、5xx 占比、客户消耗)建议走 SLS,不走 Prometheus**。Prometheus 负责基础设施层。两者互补。
+TraceNex 源码没暴露 `/metrics` 端点,**业务指标的告警(429、5xx 占比、客户消耗)建议走 SLS,不走 Prometheus**。Prometheus 负责基础设施层。两者互补。
 
 ---
 
@@ -25,9 +25,9 @@ Fy-api 源码没暴露 `/metrics` 端点,**业务指标的告警(429、5xx 占�
 三个原因叠加(按我们诊断过的):
 
 1. **容器 ENTRYPOINT 是 `/new-api`,没传 `--log-dir`**
-   - Fy-api 的 LogDir 是**命令行 flag**,不是环境变量(见 `common/init.go:21`)
+   - TraceNex 的 LogDir 是**命令行 flag**,不是环境变量(见 `common/init.go:21`)
    - 不传就走默认 `./logs`,在容器工作目录 `/data/logs` 下
-2. **`~/Fy-api/logs` 挂载路径不对**
+2. **`~/TraceNex/logs` 挂载路径不对**
    - 挂载的是宿主机的 `logs/`,但容器并没有把日志写到这个位置
 3. **日志驱动是 journald**
    - podman 容器层的 stdout 被 journald 吞了,你在宿主 `logs/` 自然看不到
@@ -39,13 +39,13 @@ Fy-api 源码没暴露 `/metrics` 端点,**业务指标的告警(429、5xx 占�
 podman stop fy-api && podman rm fy-api
 
 # 重新起,两个关键点:
-#   1) 在镜像后面追加 --log-dir=/app/logs(这是 Fy-api 的 CLI 参数)
+#   1) 在镜像后面追加 --log-dir=/app/logs(这是 TraceNex 的 CLI 参数)
 #   2) 把宿主机 logs 目录挂到容器 /app/logs
 podman run -d --name fy-api \
   --restart=unless-stopped \
   -p 3000:3000 \
-  -v /root/Fy-api/logs:/app/logs:Z \
-  -v /root/Fy-api/data:/data:Z \
+  -v /root/TraceNex/logs:/app/logs:Z \
+  -v /root/TraceNex/data:/data:Z \
   -e SQL_DSN="..." \
   -e REDIS_CONN_STRING="..." \
   -e ERROR_LOG_ENABLED=true \
@@ -54,7 +54,7 @@ podman run -d --name fy-api \
   --log-opt max-size=100m \
   --log-opt max-file=5 \
   <镜像名> \
-  --log-dir=/app/logs        # ← Fy-api 自己的参数,镜像名之后
+  --log-dir=/app/logs        # ← TraceNex 自己的参数,镜像名之后
 ```
 
 ### 1.3 验证
@@ -65,8 +65,8 @@ podman exec fy-api ls -l /app/logs
 # 期望看到 oneapi-20260426xxxxxx.log
 
 # 宿主机
-ls -lh /root/Fy-api/logs/
-tail -f /root/Fy-api/logs/oneapi-*.log
+ls -lh /root/TraceNex/logs/
+tail -f /root/TraceNex/logs/oneapi-*.log
 ```
 
 文件内容(实测样本):
@@ -78,19 +78,19 @@ tail -f /root/Fy-api/logs/oneapi-*.log
 
 ### 1.4 日志轮转(避免打爆磁盘)
 
-Fy-api 不自己轮转。启动后文件会一直涨。两种办法:
+TraceNex 不自己轮转。启动后文件会一直涨。两种办法:
 
 **A. 宿主机 logrotate(推荐)**
 
 ```bash
 sudo tee /etc/logrotate.d/fy-api > /dev/null <<'EOF'
-/root/Fy-api/logs/oneapi-*.log {
+/root/TraceNex/logs/oneapi-*.log {
     daily
     rotate 14
     compress
     missingok
     notifempty
-    copytruncate           # 不动 fd,Fy-api 继续写
+    copytruncate           # 不动 fd,TraceNex 继续写
     maxsize 500M
 }
 EOF
@@ -98,12 +98,12 @@ EOF
 sudo logrotate -d /etc/logrotate.d/fy-api   # dry-run 检查
 ```
 
-**B. 让 Fy-api 每次启动换新文件**
+**B. 让 TraceNex 每次启动换新文件**
 
-Fy-api 的日志名带时间戳,`podman restart fy-api` 就会新建一个新文件。配合 cron:
+TraceNex 的日志名带时间戳,`podman restart fy-api` 就会新建一个新文件。配合 cron:
 
 ```cron
-0 0 * * * podman restart fy-api && find /root/Fy-api/logs -name 'oneapi-*.log' -mtime +14 -delete
+0 0 * * * podman restart fy-api && find /root/TraceNex/logs -name 'oneapi-*.log' -mtime +14 -delete
 ```
 
 ---
@@ -142,7 +142,7 @@ sudo systemctl status ilogtaild
 #### Step 3:SLS 控制台建采集配置
 
 - **数据源**:文本日志
-- **日志路径**:`/root/Fy-api/logs/  **/oneapi-*.log`
+- **日志路径**:`/root/TraceNex/logs/  **/oneapi-*.log`
 - **模式**:先用"极简模式"跑通,后面加解析
 
 对 `record consume log` 这种结构化日志,加一条**正则提取**:
@@ -188,7 +188,7 @@ SLS 控制台 → 告警中心,建这 5 条:
 
 ## 三、Prometheus 监控与告警
 
-### 3.1 重要前提 — Fy-api 没原生 `/metrics`
+### 3.1 重要前提 — TraceNex 没原生 `/metrics`
 
 看源码:`middleware/stats.go` 只在内部做 `activeConnections` 计数,没暴露 HTTP 端点。`go.mod` 里虽有 `prometheus/client_golang`,但没被主程序使用。
 
@@ -205,9 +205,9 @@ SLS 控制台 → 告警中心,建这 5 条:
 ### 3.2 完整栈一键起(本目录 `monitoring/`)
 
 ```bash
-cd /root/Fy-api/monitoring/
+cd /root/TraceNex/monitoring/
 
-# 1) 先让 Fy-api 加入同一个网络,便于 Prometheus 抓取
+# 1) 先让 TraceNex 加入同一个网络,便于 Prometheus 抓取
 podman network create fy-api-net 2>/dev/null || true
 podman network connect fy-api-net fy-api
 
@@ -246,10 +246,10 @@ monitoring/
 |---|---|---|
 | Prometheus | 9090 | 时序 DB + 采集器,保留 30d |
 | Alertmanager | 9093 | 告警分发去重 |
-| Grafana | **3001** | 可视化(避开 Fy-api 的 3000) |
+| Grafana | **3001** | 可视化(避开 TraceNex 的 3000) |
 | Node Exporter | 9100(host) | 宿主机指标,host 网络 |
 | cAdvisor | 8080 | 每个容器资源 |
-| Blackbox Exporter | 9115 | Fy-api 的 `/api/status` 和 TLS 证书 |
+| Blackbox Exporter | 9115 | TraceNex 的 `/api/status` 和 TLS 证书 |
 | mysqld-exporter | 9104 | RDS MySQL |
 | redis-exporter | 9121 | 云 Redis |
 
@@ -301,7 +301,7 @@ FLUSH PRIVILEGES;
 ### 3.7 告警通道(钉钉示例)
 
 1. 钉钉群 → 设置 → 智能群助手 → 添加机器人 → **自定义 webhook**
-2. 安全设置选"自定义关键词",填 `Fy-api`(告警消息里必须含这个词)
+2. 安全设置选"自定义关键词",填 `TraceNex`(告警消息里必须含这个词)
 3. 拿到 webhook URL,填进 `alertmanager.yml` 的 `YOUR_DINGTALK_TOKEN`
 
 测试:
@@ -309,8 +309,8 @@ FLUSH PRIVILEGES;
 ```bash
 curl -X POST "http://localhost:9093/api/v2/alerts" \
   -H "Content-Type: application/json" \
-  -d '[{"labels":{"alertname":"TestAlert","severity":"warning","instance":"Fy-api-test"},
-       "annotations":{"summary":"this is a Fy-api test alert"}}]'
+  -d '[{"labels":{"alertname":"TestAlert","severity":"warning","instance":"TraceNex-test"},
+       "annotations":{"summary":"this is a TraceNex test alert"}}]'
 ```
 
 钉钉群里应该能看到消息。
@@ -337,7 +337,7 @@ curl -X POST "http://localhost:9093/api/v2/alerts" \
 
 ### 日志落盘
 - [ ] `podman exec fy-api ls -l /app/logs` 有 `oneapi-*.log`
-- [ ] 宿主机 `/root/Fy-api/logs/` 能看到同名文件
+- [ ] 宿主机 `/root/TraceNex/logs/` 能看到同名文件
 - [ ] 装了 logrotate 或 cron 轮转
 - [ ] 磁盘用量监控已配(见 Prometheus `NodeDiskAlmostFull`)
 
@@ -366,7 +366,7 @@ curl -X POST "http://localhost:9093/api/v2/alerts" \
 | Prometheus target DOWN | exporter 不通 / 防火墙 | `curl target:9xxx/metrics` |
 | cAdvisor 找不到容器 | Podman 存储路径不同 | 挂载 `/var/lib/containers` 而非 `/var/lib/docker` |
 | MySQL exporter 报 auth 错 | RDS 白名单没加 ECS | RDS 控制台 → 白名单 → 加 ECS IP |
-| 告警不通 | 钉钉关键词没中 | 消息体必须含 `Fy-api`;检查 `alertmanager.yml` |
+| 告警不通 | 钉钉关键词没中 | 消息体必须含 `TraceNex`;检查 `alertmanager.yml` |
 
 ---
 

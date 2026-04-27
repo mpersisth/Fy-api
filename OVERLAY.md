@@ -1,10 +1,10 @@
-# Fy-api 定制清单（OVERLAY.md）
+# TraceNex 定制清单（OVERLAY.md）
 
 > 最后更新：2026-04-22
 > 维护人：<你的名字>
 > 上游基线：new-api @ `f995a868` (2026-04-18)
 
-本文件记录所有 Fy-api 相对于 `upstream/main` (QuantumNous/new-api) 的私有改动。
+本文件记录所有 TraceNex 相对于 `upstream/main` (QuantumNous/new-api) 的私有改动。
 每次从上游 merge 时对照本清单处理冲突。
 
 ---
@@ -21,7 +21,7 @@
 
 ### B-1 [brand] 系统名
 - **文件**：`common/constants.go`
-- **修改**：`var SystemName = "Fy-api"`（原 `"New API"`）
+- **修改**：`var SystemName = "TraceNex"`（原 `"New API"`）
 - **新增变量**：`var MaxLogExportItems = 50000`
 - **冲突风险**：低（上游很少改这两行）
 - **Merge 策略**：如果 upstream 又加了变量，手动合并到此文件
@@ -30,7 +30,7 @@
 ### B-1.1 [brand] 启动日志品牌化
 - **文件**：`main.go` 第 ~52 行
 - **修改**：`common.SysLog("New API " + ...)` → `common.SysLog(common.SystemName + " " + ...)`
-- **目的**：让启动日志 `Fy-api started` 跟随 SystemName，避免写两处
+- **目的**：让启动日志 `TraceNex started` 跟随 SystemName，避免写两处
 - **冲突风险**：低（单行，带 `// Fy-api overlay:` 注释）
 
 ### B-2 [csv-export] 日志 CSV 导出（新增）
@@ -71,9 +71,9 @@
 
 ### F-1 [brand] 浏览器 tab + icon
 - **文件**：`web/index.html`
-- **修改**：`<title>Fy-api</title>` + `<link rel="icon" href="/new_logo.png?v=2" />`
+- **修改**：`<title>TraceNex</title>` + `<link rel="icon" href="/new_logo.png?v=2" />`
 - **冲突风险**：中（上游会改 meta description）
-- **Merge 策略**：title 和 icon 两处坚持用 Fy-api；meta description 可接受 upstream
+- **Merge 策略**：title 和 icon 两处坚持用 TraceNex；meta description 可接受 upstream
 
 ### F-2 [brand] Logo 和 favicon
 - **新增**：`web/public/new_logo.png` (3.4 MB)
@@ -82,14 +82,14 @@
 
 ### F-3 [i18n] 品牌词替换
 - **修改文件**：`web/src/i18n/locales/{zh-CN,zh-TW,en,fr,ja,ru,vi}.json`
-- **变化**：所有 value 中 `New API` → `Fy-api`，`TraceNex` → `Fy-api`（历史遗留）
+- **变化**：所有 value 中 `New API` → `TraceNex`，`TraceNex` → `TraceNex`（历史遗留）
 - **冲突风险**：高（上游每月增改几十个翻译 key）
 - **Merge 策略**：
   ```bash
   # 每次 merge 上游的 locales 之后：
   for lang in zh-CN zh-TW en fr ja ru vi; do
     f="web/src/i18n/locales/${lang}.json"
-    jq '(.translation |= with_entries(.value |= gsub("New API"; "Fy-api")))' "$f" > "/tmp/rebrand-${lang}.json"
+    jq '(.translation |= with_entries(.value |= gsub("New API"; "TraceNex")))' "$f" > "/tmp/rebrand-${lang}.json"
     cp "/tmp/rebrand-${lang}.json" "$f"
   done
   ```
@@ -99,7 +99,7 @@
 - **新增文件**：
   - `web/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs）
   - `web/src/components/common/NewMarkdownRender/NewMarkdownRender.jsx`
-  - `web/public/product-docs/Fy-api.md`
+  - `web/public/product-docs/TraceNex.md`
   - `web/public/product-docs/images/image1.png` ~ `image18.png`
 - **修改文件**：`web/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
@@ -154,7 +154,7 @@
 
 ### ~~P-1 GroupRatioSettings 双维 port~~（已决议：不做）
 - **状态**：**CLOSED**（2026-04-22）
-- **原因**：Fy-api 基线的 `GroupRatioSettings.jsx` 已经同时提供「可视化编辑」和「手动 JSON 编辑」两种模式，且可视化模式下使用 `GroupTable` / `AutoGroupList` / `GroupGroupRatioRules` / `GroupSpecialUsableRules` 四个表格化子组件（基于 `CardTable + InputNumber + Checkbox`），是 TraceNex 当年 +976 行表格 UI 的完整**超集**（还多出 AutoGroups / DefaultUseAutoGroup / 内嵌使用说明 SideSheet 等能力）。TraceNex 的改动是在它 fork 时的老 new-api 上自己造的表格；上游官方随后也做了这个能力并做得更全。port 过来只会丢失新能力，价值为零。
+- **原因**：TraceNex 基线的 `GroupRatioSettings.jsx` 已经同时提供「可视化编辑」和「手动 JSON 编辑」两种模式，且可视化模式下使用 `GroupTable` / `AutoGroupList` / `GroupGroupRatioRules` / `GroupSpecialUsableRules` 四个表格化子组件（基于 `CardTable + InputNumber + Checkbox`），是 TraceNex 当年 +976 行表格 UI 的完整**超集**（还多出 AutoGroups / DefaultUseAutoGroup / 内嵌使用说明 SideSheet 等能力）。TraceNex 的改动是在它 fork 时的老 new-api 上自己造的表格；上游官方随后也做了这个能力并做得更全。port 过来只会丢失新能力，价值为零。
 - **参考子计划（已作废）**：`docs/Phase2.5-GroupRatioSettings-port-plan.md`
 
 ### P-2 存量 OAuth 用户迁移脚本

@@ -21,7 +21,7 @@ import NewMarkdownRenderer from '../../components/common/NewMarkdownRender/NewMa
 
 // MD手册的服务器路径（域名+MD文件路径）
 // Fy-api overlay: 物理目录命名为 product-docs 避开 SPA 路由 /docs
-const MD_MANUAL_URL = '/product-docs/Fy-api.md';
+const MD_MANUAL_URL = '/product-docs/TraceNex.md';
 
 export default function FyApiDocs() {
   const [mdContent, setMdContent] = useState('');
@@ -62,7 +62,7 @@ export default function FyApiDocs() {
   if (loading) {
     return (
       <div style={{ padding: '50px', textAlign: 'center' }}>
-        <h3>正在加载 Fy-api 说明手册...</h3>
+        <h3>正在加载 TraceNex 说明手册...</h3>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export default function FyApiDocs() {
         fontWeight: '600',
         fontFamily: 'Microsoft YaHei", sans-serif',
         color: 'rgb(31, 35, 41)'
-      }}>Fy-api 说明手册</h1>
+      }}>TraceNex 说明手册</h1>
       <NewMarkdownRenderer
         content={mdContent}
         loading={false}

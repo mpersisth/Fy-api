@@ -17,7 +17,7 @@
 3. [ECS 初始化](#三ecs-初始化)
 4. [阿里云 RDS / Redis 准备](#四阿里云-rds--redis-准备)
 5. [镜像构建与推送(ACR)](#五镜像构建与推送acr)
-6. [部署 Fy-api 容器](#六部署-fy-api-容器)
+6. [部署 TraceNex 容器](#六部署-fy-api-容器)
 7. [日志落盘(关键,本 runbook 的重点)](#七日志落盘关键本-runbook-的重点)
 8. [日志接入阿里云 SLS](#八日志接入阿里云-sls)
 9. [Nginx + SSL + 对外发布](#九nginx--ssl--对外发布)
@@ -78,7 +78,7 @@
 │   └─────────────────────────────────┘   │
 │                                         │
 │   systemd ilogtaild ──────────────┐     │
-│   读 /root/Fy-api/logs/*.log      │     │
+│   读 /root/TraceNex/logs/*.log      │     │
 └───────────────────────────────────┼─────┘
                                     │
                                     ▼
@@ -116,7 +116,7 @@
 
 **规格选型说明**:
 
-- **ECS 16c32g**:分配给 Fy-api 容器 12c/22g,剩余 4c/10g 给 Nginx / Logtail / 监控栈 / 系统缓冲。
+- **ECS 16c32g**:分配给 TraceNex 容器 12c/22g,剩余 4c/10g 给 Nginx / Logtail / 监控栈 / 系统缓冲。
 - **RDS 升到 4c8g**:2c4g 扛不住 2000 RPS 的写入频率(每请求 3 条写)。`max_connections` 也要从 500 提到 1000。
 - **Redis 升到 1GB**:256MB 够用但没 LRU 淘汰 buffer,起量后 key 多了会被 evict,影响限流准确性。
 - **EIP 按量付费**:AI 流式吃带宽(每响应 50-500KB),峰值可达 100 Mbps,按固定带宽反而贵。
@@ -249,7 +249,7 @@ GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'exporter'@'%';
 FLUSH PRIVILEGES;
 ```
 
-**(强烈建议)开启专属代理**:RDS 控制台 → 数据库代理 → 开启。之后 Fy-api 连代理域名而非 RDS 直连。理由见 [`prod-ack.md`](./prod-ack.md) §3.5。
+**(强烈建议)开启专属代理**:RDS 控制台 → 数据库代理 → 开启。之后 TraceNex 连代理域名而非 RDS 直连。理由见 [`prod-ack.md`](./prod-ack.md) §3.5。
 
 ### 4.2 R-KVStore Redis
 
@@ -294,7 +294,7 @@ podman login registry.cn-hangzhou.aliyuncs.com
 
 ```bash
 # 本地 / CI 构建机上
-cd ~/Projects/apiGateway/Fy-api
+cd ~/Projects/apiGateway/TraceNex
 VERSION=$(cat VERSION)                        # 比如 v0.9.4
 GIT_SHA=$(git rev-parse --short HEAD)         # 比如 a1b2c3d4
 IMAGE_BASE=registry.cn-hangzhou.aliyuncs.com/fy-api/fy-api
@@ -323,7 +323,7 @@ podman pull registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.4
 
 ---
 
-## 六、部署 Fy-api 容器
+## 六、部署 TraceNex 容器
 
 本节给**两种启动方式**,按需选择:
 
@@ -415,7 +415,7 @@ podman run -d --name fy-api-blue \
   --memory=22g --memory-swap=22g \
   --cpus=12 \
   $IMAGE \
-  --log-dir=/app/logs           # ← 关键,Fy-api CLI 参数
+  --log-dir=/app/logs           # ← 关键,TraceNex CLI 参数
 ```
 
 几点要点:
@@ -431,7 +431,7 @@ podman run -d --name fy-api-blue \
 
 ```bash
 # 仓库里的 compose.prod.yml 是现成模板
-cd /path/to/Fy-api     # git clone 下来,或只把 compose.prod.yml + config/ 同步过去
+cd /path/to/TraceNex     # git clone 下来,或只把 compose.prod.yml + config/ 同步过去
 
 # 通过 ACR_IMAGE 环境变量指定镜像 tag,不写死在 yml 里
 export ACR_IMAGE=registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.4
@@ -537,7 +537,7 @@ sudo tee /etc/logrotate.d/fy-api > /dev/null <<'EOF'
     delaycompress
     missingok
     notifempty
-    copytruncate           # 不改变 fd,Fy-api 继续往同一个 inode 写
+    copytruncate           # 不改变 fd,TraceNex 继续往同一个 inode 写
     maxsize 500M
     su root root
 }
@@ -607,7 +607,7 @@ sudo logrotate -d /etc/logrotate.d/fy-api 2>&1 | grep -i fy-api
 | 对象 | 名称 | 用途 | 保留 |
 |---|---|---|---|
 | Project | `fy-api-prod` | 项目容器 | — |
-| Logstore | `fy-api-app` | Fy-api 应用日志(`oneapi-*.log`) | 30 天 |
+| Logstore | `fy-api-app` | TraceNex 应用日志(`oneapi-*.log`) | 30 天 |
 | Logstore | `fy-api-nginx-access` | Nginx 访问日志 | 30 天 |
 | Logstore | `fy-api-nginx-error` | Nginx 错误日志 | 30 天 |
 | Logstore | `fy-api-consume` | 计费日志(record consume log),结构化单独存 | 180 天 |
@@ -648,7 +648,7 @@ SLS 控制台 → 项目 `fy-api-prod` → 机器组 → 创建:
   sudo /etc/init.d/ilogtaild restart
   ```
 
-**Step 2:采集配置(Fy-api 应用日志)**
+**Step 2:采集配置(TraceNex 应用日志)**
 
 SLS 控制台 → Logstore `fy-api-app` → 接入数据 → 文本日志 → 下一步:
 
@@ -660,7 +660,7 @@ SLS 控制台 → Logstore `fy-api-app` → 接入数据 → 文本日志 → �
 | 采集模式 | **单行 - 正则模式**(下方给正则) |
 | 多行起始正则 | `^\[(INFO\|WARN\|ERROR\|GIN\|DEBUG\|FATAL)\]` |
 
-**正则提取**(提取 Fy-api 日志里的结构字段):
+**正则提取**(提取 TraceNex 日志里的结构字段):
 
 ```
 ^\[(?<level>\w+)\]\s+(?<ts>[\d/]+\s+-\s+[\d:]+)(?:\s+\|\s+(?<request_id>\S+))?(?:\s+\|\s+(?<message>.*))?$
@@ -680,7 +680,7 @@ params.user_id: long
 
 **Step 3:把机器组挂上这个配置** — 应用即可。
 
-**Step 4:验证** — 往 Fy-api 发一个请求,2-5 分钟内 SLS Logstore 查询页面就能看到数据。
+**Step 4:验证** — 往 TraceNex 发一个请求,2-5 分钟内 SLS Logstore 查询页面就能看到数据。
 
 ### 8.5 SLS 查询示例(实战)
 
@@ -737,7 +737,7 @@ SLS 告警中心 → 新建:
 **钉钉 webhook 配置**:
 
 1. 钉钉群 → 智能群助手 → 添加机器人 → 自定义 webhook
-2. 安全设置选"自定义关键词",填 `Fy-api`
+2. 安全设置选"自定义关键词",填 `TraceNex`
 3. 把 webhook URL 填到 SLS 告警的"通知"选项
 
 ### 8.7 SLS 数据长期归档到 OSS(省费)
@@ -806,7 +806,7 @@ server {
     proxy_http_version        1.1;
     proxy_set_header Connection "";
 
-    # 真实 IP 给 Fy-api 看(限流用)
+    # 真实 IP 给 TraceNex 看(限流用)
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -984,7 +984,7 @@ chmod +x /opt/fy-api/scripts/deploy.sh
 
 - 安全组只开 22 / 80 / 443
 - 22 端口仅白名单 IP(你的办公出口 + 堡垒机)
-- Fy-api 容器只绑 `127.0.0.1:3001`,不直接对外
+- TraceNex 容器只绑 `127.0.0.1:3001`,不直接对外
 
 ### 12.2 凭据
 
@@ -1003,7 +1003,7 @@ trivy image registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api:v0.9.4
 
 ### 12.4 审计日志
 
-- Fy-api `record consume log` 已记录每次 API 调用的 userId + 计费
+- TraceNex `record consume log` 已记录每次 API 调用的 userId + 计费
 - Nginx access log 记录所有 HTTP 请求
 - 两者都进 SLS 180 天归档
 
@@ -1018,7 +1018,7 @@ sudo dnf install -y fail2ban
 
 ## 十三、监控与告警(引用)
 
-Fy-api 本身没有原生 `/metrics`(见 [`observability.md`](./observability.md) §3.1)。
+TraceNex 本身没有原生 `/metrics`(见 [`observability.md`](./observability.md) §3.1)。
 
 **监控分工**:
 

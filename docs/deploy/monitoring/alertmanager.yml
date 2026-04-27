@@ -19,7 +19,7 @@ route:
 
 receivers:
   # 钉钉机器人(普通)
-  # 需要先在钉钉群建 webhook,并在钉钉侧配关键字 "Fy-api"
+  # 需要先在钉钉群建 webhook,并在钉钉侧配关键字 "TraceNex"
   - name: default-dingtalk
     webhook_configs:
       - url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_DINGTALK_TOKEN"

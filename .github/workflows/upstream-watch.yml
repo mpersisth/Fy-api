@@ -50,10 +50,10 @@ jobs:
       - name: Emit warning if drift exceeds threshold
         if: steps.drift.outputs.behind > 100
         run: |
-          echo "::warning ::Fy-api is ${{ steps.drift.outputs.behind }} commits behind upstream. Schedule the monthly sync (docs/Monthly-upstream-sync-runbook.md)."
+          echo "::warning ::TraceNex is ${{ steps.drift.outputs.behind }} commits behind upstream. Schedule the monthly sync (docs/Monthly-upstream-sync-runbook.md)."
 
       - name: Fail if drift extremely high (>500)
         if: steps.drift.outputs.behind > 500
         run: |
-          echo "::error ::Fy-api is dangerously far behind upstream (${{ steps.drift.outputs.behind }} commits). Merge conflicts will be painful; prioritize sync this week."
+          echo "::error ::TraceNex is dangerously far behind upstream (${{ steps.drift.outputs.behind }} commits). Merge conflicts will be painful; prioritize sync this week."
           exit 1

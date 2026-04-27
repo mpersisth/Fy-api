@@ -27,7 +27,7 @@ jobs:
       - name: Configure git
         run: |
           git config user.email "fyapi-bot@users.noreply.github.com"
-          git config user.name  "Fy-api bot"
+          git config user.name  "TraceNex bot"
 
       - name: Add upstream and fetch
         run: |
@@ -55,20 +55,21 @@ jobs:
           # Continue even on conflicts — we still want the branch pushed so a human can resolve.
           set -e
 
-      - name: Re-apply Fy-api i18n brand override
+      - name: Re-apply TraceNex i18n brand override
         if: steps.merge.outputs.rc == '0'
         run: |
           for lang in zh-CN zh-TW en fr ja ru vi; do
             f="web/src/i18n/locales/${lang}.json"
             [ -f "$f" ] || continue
-            jq '(.translation |= with_entries(.value |= gsub("New API"; "Fy-api")))' "$f" > "/tmp/rebrand-${lang}.json"
+            # Rebrand both upstream's "New API" and any stale "Fy-api" to "TraceNex"
+            jq '(.translation |= with_entries(.value |= (gsub("New API"; "TraceNex") | gsub("Fy-api"; "TraceNex"))))' "$f" > "/tmp/rebrand-${lang}.json"
             if jq . "/tmp/rebrand-${lang}.json" > /dev/null; then
               cp "/tmp/rebrand-${lang}.json" "$f"
             fi
           done
           if ! git diff --quiet web/src/i18n/locales; then
             git add web/src/i18n/locales
-            git commit -m "chore(sync): re-apply Fy-api brand override in i18n"
+            git commit -m "chore(sync): re-apply TraceNex brand override in i18n"
           fi
 
       - name: Push branch

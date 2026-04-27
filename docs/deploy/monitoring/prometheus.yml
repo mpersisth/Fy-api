@@ -31,8 +31,8 @@ scrape_configs:
     static_configs:
       - targets: ["cadvisor:8080"]
 
-  # ─── Fy-api HTTP 黑盒探测 ────────────────────────────────
-  # Fy-api 本身没 /metrics,只能探 /api/status 的存活和延迟
+  # ─── TraceNex HTTP 黑盒探测 ────────────────────────────────
+  # TraceNex 本身没 /metrics,只能探 /api/status 的存活和延迟
   - job_name: blackbox-fy-api
     metrics_path: /probe
     params:

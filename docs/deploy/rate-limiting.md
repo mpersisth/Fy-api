@@ -1,7 +1,7 @@
 # 限流开启与配置指南
 
 > 读者：运维 / SRE / 运营管理员
-> 目标：搞清楚 Fy-api 的 7 套限流,**哪几个可以后台点点不重启就开,哪几个必须改启动配置才能开**,以及核心的"按客户分组"限流怎么落地。
+> 目标：搞清楚 TraceNex 的 7 套限流,**哪几个可以后台点点不重启就开,哪几个必须改启动配置才能开**,以及核心的"按客户分组"限流怎么落地。
 > 最近更新：2026-04-26
 
 ---
@@ -19,7 +19,7 @@
 
 ---
 
-## 二、Fy-api 七套限流一览
+## 二、TraceNex 七套限流一览
 
 全部限流中间件都定义在 `middleware/rate-limit.go`、`middleware/model-rate-limit.go`、`middleware/email-verification-rate-limit.go`。
 
@@ -131,7 +131,7 @@ SET value = '{"default":[120,60],"customer_acme":[2000,1000]}'
 WHERE `key` = 'ModelRequestRateLimitGroup';
 ```
 
-⚠️ **注意**:直接改 options 表时 Fy-api 需要**轮询重读配置**才能看到,默认每 `SYNC_FREQUENCY`(60 秒)同步一次。如果想立即生效,用上面 §3.4 的 API 接口,它会同时改 DB 和内存。
+⚠️ **注意**:直接改 options 表时 TraceNex 需要**轮询重读配置**才能看到,默认每 `SYNC_FREQUENCY`(60 秒)同步一次。如果想立即生效,用上面 §3.4 的 API 接口,它会同时改 DB 和内存。
 
 ### 3.6 把客户绑到分组
 
@@ -226,7 +226,7 @@ CRITICAL_RATE_LIMIT_DURATION=600
 重启容器让改动生效:
 
 ```bash
-cd ~/Fy-api
+cd ~/TraceNex
 podman-compose -f compose.test.yml up -d --force-recreate fy-api
 # 或者
 podman restart fy-api
@@ -330,7 +330,7 @@ if !inMemoryRateLimiter.Request(key, 10, 3600) { ... }
 可能原因(按概率排序):
 
 1. **分组没配对**:确认该用户的 `users.group` 字段确实指向某个在 `ModelRequestRateLimitGroup` JSON 里的 key
-2. **Redis 没连上**:没 Redis 时 Fy-api 退化为进程内存计数,**多副本不共享**,单副本看起来也可能像"没限住";执行 `podman exec fy-api env \| grep REDIS_CONN_STRING` 确认
+2. **Redis 没连上**:没 Redis 时 TraceNex 退化为进程内存计数,**多副本不共享**,单副本看起来也可能像"没限住";执行 `podman exec fy-api env \| grep REDIS_CONN_STRING` 确认
 3. **配额是 `[0, 0]`**:在代码里 `totalCount=0` 被当成"不限",所以 VIP 想要"无限"可以用这个
 4. **token 级分组覆盖了**:token 上如果单独设了 group,会覆盖用户分组,查 `tokens.group`
 
@@ -340,7 +340,7 @@ if !inMemoryRateLimiter.Request(key, 10, 3600) { ... }
 
 ### Q3:滑动窗口是"严格滚动"还是"固定窗口"?
 
-Fy-api 实现的是**近似滑动窗口**:Redis 里用 List 存每次请求时间戳,查询时对比最旧和当前时间差。边界附近有小抖动(几秒级),对业务无感。
+TraceNex 实现的是**近似滑动窗口**:Redis 里用 List 存每次请求时间戳,查询时对比最旧和当前时间差。边界附近有小抖动(几秒级),对业务无感。
 
 ### Q4:命中限流时的响应是什么?
 

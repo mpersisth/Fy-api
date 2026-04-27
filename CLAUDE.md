@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Identity
 
-This is **Fy-api**, a downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) with a small overlay of customizations. Everything the gateway itself does (provider adapters, relay, billing, admin dashboard, subscription, channel affinity, etc.) comes from upstream and is kept in sync on a monthly cadence.
+This is **TraceNex**, a downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) with a small overlay of customizations. Everything the gateway itself does (provider adapters, relay, billing, admin dashboard, subscription, channel affinity, etc.) comes from upstream and is kept in sync on a monthly cadence.
 
-**Before changing anything, read [`OVERLAY.md`](./OVERLAY.md).** It is the single source of truth for which files are Fy-api customizations vs pure upstream, and what will/won't conflict on the next `upstream/main` merge. Preserving its accuracy is as important as the code changes themselves.
+**Before changing anything, read [`OVERLAY.md`](./OVERLAY.md).** It is the single source of truth for which files are TraceNex customizations vs pure upstream, and what will/won't conflict on the next `upstream/main` merge. Preserving its accuracy is as important as the code changes themselves.
 
 Upstream remote is configured read-only:
 ```
@@ -149,7 +149,7 @@ web/           React + Vite frontend. Bun is the toolchain.
 - Translation files are flat JSON under `web/src/i18n/locales/{lang}.json`, wrapped under a `translation` key; **keys are Chinese source strings**
 - Usage: `const { t } = useTranslation(); t('中文 key')`
 - Semi UI locale synced via `SemiLocaleWrapper`
-- Fy-api brand rebrand (`New API` → `Fy-api`) is re-applied automatically by the upstream-sync CI; do not bake brand words into keys
+- TraceNex brand rebrand (`New API` → `TraceNex`) is re-applied automatically by the upstream-sync CI; do not bake brand words into keys
 
 ## Rules
 
@@ -201,7 +201,7 @@ When implementing a new channel:
 
 ### Rule 5: Upstream Attribution — Preserve Apache 2.0 Compliance
 
-Fy-api is a downstream fork of **new-api** (`github.com/QuantumNous/new-api`, AGPLv3). The following **upstream attribution** MUST be preserved:
+TraceNex is a downstream fork of **new-api** (`github.com/QuantumNous/new-api`, AGPLv3). The following **upstream attribution** MUST be preserved:
 
 - `LICENSE` file — keep as-is
 - `NOTICE` file (if present) — keep all upstream notices intact
@@ -209,13 +209,13 @@ Fy-api is a downstream fork of **new-api** (`github.com/QuantumNous/new-api`, AG
 - Go module path `github.com/QuantumNous/new-api` — **never rename** (would break merge-ability with upstream)
 - Docker image labels / LICENSE references / README sections attributing upstream
 
-The following are **downstream customizations for Fy-api** and MAY be changed:
+The following are **downstream customizations for TraceNex** and MAY be changed:
 
 - `common.SystemName` (user-facing brand name)
 - Footer / Header brand text
-- i18n locale files (brand words only — CI re-applies `New API` → `Fy-api`)
+- i18n locale files (brand words only — CI re-applies `New API` → `TraceNex`)
 - `web/public/new_logo.png` and favicon
-- README additions describing Fy-api-specific features
+- README additions describing TraceNex-specific features
 - `package.json` name field in `electron/` and `web/`
 
 When in doubt, preserve both sides rather than picking one.
@@ -230,18 +230,18 @@ For request structs that are parsed from client JSON and then re-marshaled to up
   - field explicitly set to zero/false → non-`nil` pointer → must still be sent upstream
 - Avoid non-pointer scalars with `omitempty` for optional request parameters; zero values (`0`, `0.0`, `false`) will be silently dropped during marshal
 
-## Fy-api Customization Strategy
+## TraceNex Customization Strategy
 
 When adding new functionality:
 
 1. **Prefer new files over edits to upstream files.** Example: CSV log export lives in `controller/log_export.go` + `model/log_export.go` + `web/src/components/table/usage-logs/UsageLogsExportButton.jsx`, not as edits to existing upstream files. This keeps future upstream merges conflict-free.
 2. **When an upstream file must be touched**, tag the change with `// Fy-api overlay:` (Go) or `{/* Fy-api overlay: */}` (JSX) comments so it's findable during merges.
 3. **Update `OVERLAY.md`** in the same commit. If a customization isn't listed there, it is considered drift and may be lost on the next upstream sync.
-4. **Don't introduce brand words in i18n keys.** The rebrand runs as a value-side `gsub("New API", "Fy-api")` after each sync.
+4. **Don't introduce brand words in i18n keys.** The rebrand runs as a value-side `gsub("New API", "TraceNex")` after each sync.
 
 ## Documentation Index
 
-Fy-api-specific operational docs live under [`docs/`](./docs/):
+TraceNex-specific operational docs live under [`docs/`](./docs/):
 
 - `Phase3-DB-migration-runbook.md` — zero-downtime DB migration (from older deployments)
 - `Phase4-Build-runbook.md` — build-from-source + dependency upgrade notes

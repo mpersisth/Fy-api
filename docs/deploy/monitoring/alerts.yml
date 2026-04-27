@@ -2,13 +2,13 @@ groups:
   - name: fy-api-availability
     interval: 30s
     rules:
-      # Fy-api HTTP 可用性(黑盒探测)
+      # TraceNex HTTP 可用性(黑盒探测)
       - alert: FyApiDown
         expr: probe_success{job="blackbox-fy-api"} == 0
         for: 2m
         labels: { severity: critical, team: sre }
         annotations:
-          summary: "Fy-api {{ $labels.instance }} 不可达超过 2 分钟"
+          summary: "TraceNex {{ $labels.instance }} 不可达超过 2 分钟"
           description: "probe_success=0,立刻查容器状态和日志"
 
       # 响应时间
@@ -17,7 +17,7 @@ groups:
         for: 5m
         labels: { severity: warning, team: sre }
         annotations:
-          summary: "Fy-api 响应延迟 > 2s 持续 5min"
+          summary: "TraceNex 响应延迟 > 2s 持续 5min"
           description: "{{ $labels.instance }} duration={{ $value }}s"
 
       # TLS 证书 15 天内到期
@@ -26,7 +26,7 @@ groups:
         for: 1h
         labels: { severity: warning, team: sre }
         annotations:
-          summary: "Fy-api TLS 证书剩余 < 15 天"
+          summary: "TraceNex TLS 证书剩余 < 15 天"
 
   - name: fy-api-resources
     interval: 30s
@@ -55,7 +55,7 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} {{ $labels.mountpoint }} 磁盘 > 85%"
 
-      # Fy-api 容器占用
+      # TraceNex 容器占用
       - alert: FyApiContainerHighCPU
         expr: rate(container_cpu_usage_seconds_total{name=~"fy-api.*"}[5m]) * 100 > 80
         for: 10m
@@ -87,7 +87,7 @@ groups:
         for: 5m
         labels: { severity: warning, team: dba }
         annotations:
-          summary: "MySQL 连接占用 > 70%,检查 Fy-api SQL_MAX_OPEN_CONNS"
+          summary: "MySQL 连接占用 > 70%,检查 TraceNex SQL_MAX_OPEN_CONNS"
 
       # MySQL 慢查询速率
       - alert: MySQLSlowQueriesHigh
@@ -118,5 +118,5 @@ groups:
         labels: { severity: critical, team: sre }
 
   # ─── 业务指标(从 SLS 补充,这里只占位说明)───────────────
-  # Fy-api 目前没有原生 /metrics,业务级别的 429 / 5xx /
+  # TraceNex 目前没有原生 /metrics,业务级别的 429 / 5xx /
   # 客户消耗量等指标建议在 SLS 里配告警,不走 Prometheus

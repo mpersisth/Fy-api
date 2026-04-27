@@ -1,7 +1,7 @@
 # 测试环境部署 Runbook（Podman）
 
 > 读者：负责测试环境的工程师
-> 目标：从零到 Fy-api 在测试服务器上跑起来、能供 QA 点击、持续 14 天以上稳定运行
+> 目标：从零到 TraceNex 在测试服务器上跑起来、能供 QA 点击、持续 14 天以上稳定运行
 > 数据库：**连远端阿里云 RDS**（与生产同构，验证 schema 兼容）
 > 运行时：**Podman**（rootless，生产级的兼容测试；本地可用 Docker Desktop / OrbStack 等效验证）
 
@@ -90,7 +90,7 @@ PGPASSWORD=$DB_PASSWORD psql -h$DB_HOST -p$DB_PORT -U$DB_USER -d$DB_NAME -c "SEL
 ```bash
 cd ~
 git clone git@github.com:seraph0017/Fy-api.git
-cd Fy-api
+cd TraceNex
 git log -1 --format="%h %s"    # 记录当前 commit，便于回滚
 ```
 
@@ -98,11 +98,11 @@ git log -1 --format="%h %s"    # 记录当前 commit，便于回滚
 
 ### 2.2 写测试环境 compose 文件
 
-在 `~/Fy-api/` 新建 `compose.test.yml`（这个文件已加 `.gitignore`，每台服务器可以有不同配置）：
+在 `~/TraceNex/` 新建 `compose.test.yml`（这个文件已加 `.gitignore`，每台服务器可以有不同配置）：
 
 ```yaml
-# compose.test.yml — Fy-api 测试环境（podman + 远端 RDS，无 Redis）
-# 单节点测试环境不需要 Redis——Fy-api 会自动用内存缓存。
+# compose.test.yml — TraceNex 测试环境（podman + 远端 RDS，无 Redis）
+# 单节点测试环境不需要 Redis——TraceNex 会自动用内存缓存。
 # 多节点 / staging 验证多 pod 会话时，Redis 建议走阿里云 Redis 实例而不是本地容器
 # （podman-compose 对 network_mode: service:xxx 的支持不稳定，跨容器 DNS 也偶发）。
 services:
@@ -149,7 +149,7 @@ SQL_DSN=fy_api_app:YOUR_PASSWORD_HERE@tcp(rm-xxxxxxx.mysql.rds.aliyuncs.com:3306
 # SQL_DSN=postgres://fy_api_app:YOUR_PASSWORD_HERE@rm-xxxxxxx.pg.rds.aliyuncs.com:5432/fy_api_test?sslmode=require
 
 # ========== Redis（可选）==========
-# 单节点测试不配 Redis，Fy-api 自动用内存缓存。
+# 单节点测试不配 Redis，TraceNex 自动用内存缓存。
 # 多节点或需要跨 pod 会话共享时，才配阿里云 Redis 实例的内网地址：
 # REDIS_CONN_STRING=redis://:password@r-xxxxxxx.redis.rds.aliyuncs.com:6379
 
@@ -186,7 +186,7 @@ echo "CRYPTO_SECRET=$(openssl rand -hex 32)"
 ### 3.1 服务器直接构建（推荐）
 
 ```bash
-cd ~/Fy-api
+cd ~/TraceNex
 
 # Dockerfile 是多阶段：bun(frontend) → go(backend) → debian(runtime)
 # 首次构建 5-15 分钟（主要在 bun install + vite build + golang module download）
@@ -227,7 +227,7 @@ rm /tmp/fy-api.tar
 ## 四、首次启动
 
 ```bash
-cd ~/Fy-api
+cd ~/TraceNex
 mkdir -p data logs                      # :Z 挂载前预建，避免 root 拥有
 
 podman-compose -f compose.test.yml up -d
@@ -243,8 +243,8 @@ podman logs -f fy-api
 [SYS] xxxx/xx/xx | using MySQL (or PostgreSQL) as database
 [SYS] xxxx/xx/xx | database migration started
 [SYS] xxxx/xx/xx | i18n initialized with languages: zh-CN, zh-TW, en
-[SYS] xxxx/xx/xx | Fy-api ... started
-  ➜  Fy-api  ready in xxx ms
+[SYS] xxxx/xx/xx | TraceNex ... started
+  ➜  TraceNex  ready in xxx ms
 ```
 
 **启动失败排障**：
@@ -290,7 +290,7 @@ curl -sf $HOST/api/status | grep -q '"success":true' && echo "✅ status OK" || 
 
 # 2. 品牌词
 curl -s $HOST/api/status | grep -o '"system_name":"[^"]*"'
-# 期望：{"system_name":"Fy-api"}
+# 期望：{"system_name":"TraceNex"}
 
 # 3. Request-ID 响应头
 curl -sI $HOST/api/status | grep -i "X-Oneapi-Request-Id"
@@ -298,10 +298,10 @@ curl -sI $HOST/api/status | grep -i "X-Oneapi-Request-Id"
 
 # 4. 前端 HTML
 curl -s $HOST/ | grep -oE "<title>[^<]*</title>"
-# 期望：<title>Fy-api</title>
+# 期望：<title>TraceNex</title>
 
 # 5. 内嵌产品文档
-curl -s -o /dev/null -w "HTTP %{http_code}\n" $HOST/product-docs/Fy-api.md
+curl -s -o /dev/null -w "HTTP %{http_code}\n" $HOST/product-docs/TraceNex.md
 # 期望：HTTP 200
 
 # 6. Setup 状态
@@ -313,7 +313,7 @@ curl -s $HOST/api/setup | python3 -m json.tool
 
 ## 六、首次初始化 root 管理员
 
-Fy-api 首次启动时没有 root 用户，必须通过 `/api/setup` 接口建立：
+TraceNex 首次启动时没有 root 用户，必须通过 `/api/setup` 接口建立：
 
 ```bash
 # 准备账号密码，至少 8 位
@@ -339,19 +339,19 @@ unset ROOT_PASS
 
 ---
 
-## 七、回归测试清单（Fy-api overlay 验收）
+## 七、回归测试清单（TraceNex overlay 验收）
 
 | 功能 | 路径 | 通过条件 |
 |------|------|----------|
-| 品牌词 | `/api/status` JSON | `system_name:"Fy-api"` |
-| 页面 title | 任意页 | `<title>Fy-api</title>` |
+| 品牌词 | `/api/status` JSON | `system_name:"TraceNex"` |
+| 页面 title | 任意页 | `<title>TraceNex</title>` |
 | Favicon | `/favicon.ico` | 200，内容非空 |
 | Logo | `/new_logo.png` | 200 |
 | 登录按钮排序 | `/login` 浏览器 | 邮箱/用户名登录按钮在最上方；"没有账户？注册"**始终**显示 |
-| 产品文档 | `/docs` 浏览器 | 渲染"Fy-api 说明手册"，18 张截图全部加载 |
+| 产品文档 | `/docs` 浏览器 | 渲染"TraceNex 说明手册"，18 张截图全部加载 |
 | 管理后台 CSV 导出 | 用量日志页面 | 顶部有"导出 CSV"按钮，点击下载 UTF-8+BOM 文件 |
 | 后端 CSV API | `GET /api/log/export?type=0` | 带 cookie + `New-Api-User: 1` header，返回 200 CSV，**表头含 `request_id` 列** |
-| i18n 切换 | 管理后台右上角 | zh-CN / zh-TW / en / ja / ru / fr / vi 七种语言，品牌词均为 Fy-api |
+| i18n 切换 | 管理后台右上角 | zh-CN / zh-TW / en / ja / ru / fr / vi 七种语言，品牌词均为 TraceNex |
 
 验证 CSV 导出端到端（admin cookie 已登录）：
 ```bash
@@ -386,7 +386,7 @@ tail -f logs/error.log
 ### 8.2 发版 / 更新代码
 
 ```bash
-cd ~/Fy-api
+cd ~/TraceNex
 git pull origin main
 
 # 重建镜像（利用 bun/go 层缓存，通常 1-3 分钟）
@@ -456,7 +456,7 @@ sudo loginctl enable-linger $USER
 | # | 优化点 | 典型症状 | 提速幅度 |
 |---|-------|---------|---------|
 | 1 | **Podman 网络栈** 换成 pasta 或 rootful + `--net=host` | IP 限流全落一个 IP / localhost 吞吐 < 100Mbps | 3-10× |
-| 2 | **Fy-api 连接池 / 批量写** 打开并调大 | p99 高 / MySQL CPU 飙升 | 2-5× |
+| 2 | **TraceNex 连接池 / 批量写** 打开并调大 | p99 高 / MySQL CPU 飙升 | 2-5× |
 | 3 | **数据库别用 SQLite**(连测试也换 MySQL) | 并发 >20 就卡 | 5-20× |
 | 4 | **Linux 内核** TCP / 文件句柄调优 | 大量 TIME_WAIT / `too many open files` | 1.5× |
 
@@ -465,7 +465,7 @@ sudo loginctl enable-linger $USER
 **现象**:rootless Podman 默认用 `slirp4netns`(用户态 TCP 栈),有两个坏毛病:
 
 1. 吞吐只有宿主网卡的 1/5 左右
-2. **不保留真实客户端 IP** — Fy-api 的 IP 限流会把所有请求记到同一个 SNAT 地址,撞 `GLOBAL_API_RATE_LIMIT` 墙
+2. **不保留真实客户端 IP** — TraceNex 的 IP 限流会把所有请求记到同一个 SNAT 地址,撞 `GLOBAL_API_RATE_LIMIT` 墙
 
 三个方案任选:
 
@@ -504,7 +504,7 @@ sudo podman-compose -f compose.test.yml up -d
 services:
   fy-api:
     network_mode: host     # 跳过整个网络栈,直接复用宿主机
-    # 此时 ports: 段会被忽略,由 Fy-api 的 PORT 环境变量控制
+    # 此时 ports: 段会被忽略,由 TraceNex 的 PORT 环境变量控制
     environment:
       - PORT=3000
 ```
@@ -515,7 +515,7 @@ services:
 - 需要保留真实 IP 做限流验收 → **方案 A**
 - 单机压测想榨性能 → **方案 C**
 
-### 9.3 Fy-api 环境变量加速(复制进 `.env.test`)
+### 9.3 TraceNex 环境变量加速(复制进 `.env.test`)
 
 测试机上把下面这些加到 `.env.test`,是 `prod-ack.md` §6.2 里生产级配置的"测试机缩小版":
 
@@ -526,7 +526,7 @@ GOMAXPROCS=4
 # 软内存上限,比容器内存低 ~15% 防 OOM
 GOMEMLIMIT=3500MiB
 
-# ── 上游转发连接池(Fy-api → OpenAI/Gemini/Kimi 的 keep-alive)──
+# ── 上游转发连接池(TraceNex → OpenAI/Gemini/Kimi 的 keep-alive)──
 # 默认 500/100 偏小,测试机调大几乎无副作用
 RELAY_MAX_IDLE_CONNS=5000
 RELAY_MAX_IDLE_CONNS_PER_HOST=500
@@ -555,9 +555,9 @@ GIN_MODE=release
 
 ### 9.4 日志驱动换掉 journald
 
-Podman 默认 `--log-driver=journald`,高并发下 journald 会成为瓶颈,而且你已经见过 `~/Fy-api/logs/` 为空的现象 — 日志全进了 journal,不落盘。
+Podman 默认 `--log-driver=journald`,高并发下 journald 会成为瓶颈,而且你已经见过 `~/TraceNex/logs/` 为空的现象 — 日志全进了 journal,不落盘。
 
-在 `compose.test.yml` 里给 Fy-api 服务加:
+在 `compose.test.yml` 里给 TraceNex 服务加:
 
 ```yaml
 services:
@@ -573,7 +573,7 @@ services:
 
 ### 9.5 如果还在用 SQLite,换掉
 
-Fy-api 每个请求至少 3 次写(usage、log、quota),SQLite 单写锁直接被打穿。
+TraceNex 每个请求至少 3 次写(usage、log、quota),SQLite 单写锁直接被打穿。
 测试环境也建议连 RDS(跟生产同构,参考 §二的 `SQL_DSN`)。
 
 连不到 RDS 的本地场景,加个 MySQL sidecar:
@@ -633,7 +633,7 @@ podman run --ulimit nofile=1048576:1048576 ...
 # 装 hey(简易 HTTP 压测)
 go install github.com/rakyll/hey@latest
 
-# 你的 Fy-api token
+# 你的 TraceNex token
 export KEY=sk-xxxxxxxxxxxxxxxx
 
 # 200 并发、共 2000 请求
@@ -667,7 +667,7 @@ hey -n 2000 -c 200 \
 |------|-----------|-------|
 | 容器 CPU 打满、宿主机看不出高负载 | `GOMAXPROCS` 没限,Go 在宿主机 N 核上抢调度 | `podman exec fy-api cat /proc/1/status \| grep Cpus_allowed_list` |
 | 大量 TIME_WAIT | 上游 keep-alive 没生效 | `ss -ant \| awk '{print $1}' \| sort \| uniq -c` |
-| Fy-api 日志 `too many connections` | `SQL_MAX_OPEN_CONNS` < DB 真实连接用量 | MySQL 里 `SHOW STATUS LIKE 'Threads_connected';` |
+| TraceNex 日志 `too many connections` | `SQL_MAX_OPEN_CONNS` < DB 真实连接用量 | MySQL 里 `SHOW STATUS LIKE 'Threads_connected';` |
 | 偶发 502 | 连接池命中上限或上游 TLS 握手失败 | `podman logs fy-api \| grep -i upstream` |
 | IP 限流全落同一 IP | rootless slirp4netns SNAT | 换 pasta(§9.2 方案 A) |
 | logs/ 目录空,但 journal 里有内容 | 默认日志驱动是 journald | 换 `k8s-file`(§9.4) |
@@ -692,7 +692,7 @@ hey -n 2000 -c 200 \
 ## 十一、停用环境（退役）
 
 ```bash
-cd ~/Fy-api
+cd ~/TraceNex
 podman-compose -f compose.test.yml down
 rm -rf data/ logs/
 
@@ -706,7 +706,7 @@ rm -f ~/.config/systemd/user/container-fy-api.service
 systemctl --user daemon-reload
 
 # 代码仓库
-rm -rf ~/Fy-api
+rm -rf ~/TraceNex
 ```
 
 ---

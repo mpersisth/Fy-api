@@ -1,7 +1,7 @@
 # 正式环境部署 Runbook（阿里云 ACK）
 
 > 读者：运维 / SRE
-> 目标：Fy-api 跑在阿里云 ACK 集群上，Deployment + HPA + Nginx Ingress + cert-manager 完整生产栈
+> 目标：TraceNex 跑在阿里云 ACK 集群上，Deployment + HPA + Nginx Ingress + cert-manager 完整生产栈
 > 依赖：阿里云 RDS + Redis + OSS + ACR + ACK + 备案域名
 > 最近更新：2026-04-26（补齐性能调优参数、RDS 专属代理、流式 SSE 通路、拓扑打散）
 
@@ -188,7 +188,7 @@ kubectl -n fy-api run --rm -it db-check --image=mysql:8 --restart=Never -- \
 
 ### 3.4 参数组（强烈建议改,上线前做一次）
 
-在 RDS 控制台新建一个参数组 `fy-api-prod-pg`,针对 Fy-api 的写密集型日志场景改下面这些:
+在 RDS 控制台新建一个参数组 `fy-api-prod-pg`,针对 TraceNex 的写密集型日志场景改下面这些:
 
 | 参数 | 值 | 理由 |
 |------|------|------|
@@ -213,8 +213,8 @@ RDS 控制台 → 数据库代理 → 开启。然后在 §6.1 的 Secret 里把
 ```
 
 代理会给你:
-1. **连接复用** — Fy-api 端不用把 `SQL_MAX_OPEN_CONNS` 开特别大,真实 RDS 连接数可以降到 1/5
-2. **读写分离** — `SELECT`(占 Fy-api 流量 70%+,日志和配置查询)自动走只读实例
+1. **连接复用** — TraceNex 端不用把 `SQL_MAX_OPEN_CONNS` 开特别大,真实 RDS 连接数可以降到 1/5
+2. **读写分离** — `SELECT`(占 TraceNex 流量 70%+,日志和配置查询)自动走只读实例
 3. **主备切换透明** — 主库故障时 Pod 不用重连,代理层处理
 
 如果暂时没开代理,`SQL_MAX_OPEN_CONNS × 副本数 ≤ RDS max_connections × 0.7`,自己把算账做好。
@@ -262,7 +262,7 @@ podman login registry.cn-hangzhou.aliyuncs.com
 # 密码：ACR 凭证密码
 
 # 构建（注意：ACK 节点多为 linux/amd64）
-cd ~/Fy-api
+cd ~/TraceNex
 VERSION=$(cat VERSION)                           # 如 v0.9.3
 GIT_SHA=$(git rev-parse --short HEAD)           # 如 7ffcc5c4
 IMAGE_BASE=registry.cn-hangzhou.aliyuncs.com/fy-api/fy-api
@@ -279,7 +279,7 @@ podman push $IMAGE_BASE:sha-$GIT_SHA
 podman push $IMAGE_BASE:latest
 
 # 记录本次发版
-cat >> ~/Fy-api/deploy-log.md <<EOF
+cat >> ~/TraceNex/deploy-log.md <<EOF
 ## $VERSION (sha-$GIT_SHA) - $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 - build by: $(whoami)@$(hostname)
 - pushed: $IMAGE_BASE:$VERSION
@@ -292,7 +292,7 @@ EOF
 
 ## 六、Kubernetes Manifests
 
-在 `~/Fy-api/deploy/k8s/` 下放下列文件（这些目录已进 `.gitignore`，写个人版本；推荐每个团队维护自己的 GitOps 仓库）：
+在 `~/TraceNex/deploy/k8s/` 下放下列文件（这些目录已进 `.gitignore`，写个人版本；推荐每个团队维护自己的 GitOps 仓库）：
 
 ### 6.1 命名空间与 Secret
 
@@ -346,7 +346,7 @@ data:
   GOMEMLIMIT: "1700MiB"
 
   # ─── 性能:上游转发连接池 ─────────────────────────────────────────────────
-  # Fy-api → OpenAI/Anthropic/Gemini 的 http.Transport keep-alive 池
+  # TraceNex → OpenAI/Anthropic/Gemini 的 http.Transport keep-alive 池
   # 默认 500/100 对高并发偏低,调大几乎无副作用
   RELAY_MAX_IDLE_CONNS: "5000"
   RELAY_MAX_IDLE_CONNS_PER_HOST: "500"
@@ -582,7 +582,7 @@ metadata:
     # 长连接超时放宽,跟 proxy-read-timeout 对齐
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
     # ── 真实 IP ───────────────────────────────────────────────────────
-    # 让 Fy-api 的 IP 限流看到真实客户端 IP,而不是 nginx-ingress 的内网 IP
+    # 让 TraceNex 的 IP 限流看到真实客户端 IP,而不是 nginx-ingress 的内网 IP
     nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
     nginx.ingress.kubernetes.io/enable-real-ip: "true"
     # ── 安全 ───────────────────────────────────────────────────────────
@@ -665,7 +665,7 @@ spec:
 ## 七、首次部署
 
 ```bash
-cd ~/Fy-api/deploy/k8s
+cd ~/TraceNex/deploy/k8s
 
 # 按顺序 apply
 kubectl apply -f 00-namespace.yaml
@@ -720,7 +720,7 @@ H=https://api.<your-domain>.com
 
 curl -sf $H/api/status | grep -q '"success":true' && echo "✅ status"
 curl -sI $H/api/status | grep -q "X-Oneapi-Request-Id" && echo "✅ request-id"
-curl -s $H/ | grep -q "<title>Fy-api</title>" && echo "✅ brand"
+curl -s $H/ | grep -q "<title>TraceNex</title>" && echo "✅ brand"
 curl -sI $H/ | grep -qi "strict-transport-security" && echo "✅ HSTS"
 ```
 
@@ -733,7 +733,7 @@ curl -sI $H/ | grep -qi "strict-transport-security" && echo "✅ HSTS"
 ```bash
 # 1. 本地 build + push（§5.2）
 export VERSION=v0.9.4
-cd ~/Fy-api
+cd ~/TraceNex
 git fetch --tags
 git checkout $VERSION
 
@@ -752,7 +752,7 @@ kubectl -n fy-api rollout status deploy/fy-api --timeout=300s
 # 4. 冒烟（§7.3）
 
 # 5. 记录发版 log
-echo "$VERSION deployed at $(date -u)" >> ~/Fy-api/deploy-log.md
+echo "$VERSION deployed at $(date -u)" >> ~/TraceNex/deploy-log.md
 ```
 
 ### 8.1 灰度（按 Pod 比例）
@@ -786,7 +786,7 @@ kubectl -n fy-api rollout undo deploy/fy-api --to-revision=3
 > 这一节讲**为什么 §6.2 的 ConfigMap 那样配**,以及出现性能瓶颈时该动哪里。
 > 推荐全员阅读一次,之后只改值不改结构。
 
-### 9.1 Fy-api 的四大性能瓶颈(按命中频率排序)
+### 9.1 TraceNex 的四大性能瓶颈(按命中频率排序)
 
 | # | 瓶颈 | 症状 | 解决参数 |
 |---|------|------|---------|
@@ -804,7 +804,7 @@ kubectl -n fy-api rollout undo deploy/fy-api --to-revision=3
 
 **DB 连接池**(§6.2 `SQL_MAX_OPEN_CONNS`)
 - 副本数 × `SQL_MAX_OPEN_CONNS` ≤ RDS `max_connections × 0.7`
-- 开了专属代理后,代理会复用真实 RDS 连接,Fy-api 端可以不用开到天花板
+- 开了专属代理后,代理会复用真实 RDS 连接,TraceNex 端可以不用开到天花板
 - 没开代理时,10 副本 × 300 = 3000 就接近 RDS 2000 `max_connections` 上限,直接改 200 × 10 = 2000 还是高,降到 150
 
 **GOMAXPROCS / GOMEMLIMIT**
@@ -998,7 +998,7 @@ kubectl delete namespace fy-api
 ## 附录 B：一次 dry-run 所有 manifest
 
 ```bash
-cd ~/Fy-api/deploy/k8s
+cd ~/TraceNex/deploy/k8s
 for f in 00-namespace.yaml 10-configmap.yaml 20-deployment.yaml \
          30-ingress.yaml 40-pdb.yaml; do
   echo "--- $f ---"

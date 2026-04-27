@@ -1,0 +1,24 @@
+# Logrotate rules for all Fy-api nginx logs
+# Covers:
+#   /var/log/nginx/fy-api-*.log          — main domain (api.tracenex.cn)
+#   /var/log/nginx/*_tracenex_*.log      — alias domains from 03c
+#   /var/log/nginx/*_access.log          — fallback glob for other custom names
+#
+# daily + 14 days + compress = ~1.4 GB max budget for API-gateway volume
+# (adjust `rotate` if traffic is heavy)
+
+/var/log/nginx/fy-api-*.log
+/var/log/nginx/*_tracenex_*.log
+{
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    sharedscripts
+    create 0644 www-data adm
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) || true
+    endscript
+}

@@ -1,0 +1,25 @@
+# Logrotate rules for Fy-api container disk logs
+#
+# Fy-api writes /app/logs/oneapi-YYYY-MM-DD.log inside the container,
+# which maps to /opt/fy-api/logs/oneapi-*.log on the host (via volume mount).
+#
+# copytruncate is REQUIRED:
+#   The Go process keeps the file descriptor open and won't reopen on USR1.
+#   copytruncate copies the file, then truncates the original in-place so the
+#   Go process keeps writing to the same (now empty) inode.
+#
+# Why not size-based? Fy-api already names files by date, so daily rotation
+# maps 1:1 to Fy-api's own file cadence.
+
+/opt/fy-api/logs/oneapi-*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    maxsize 500M
+    dateext
+    dateformat -%Y%m%d
+}

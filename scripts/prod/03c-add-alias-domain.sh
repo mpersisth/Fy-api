@@ -31,8 +31,20 @@ CONF_FILE=/etc/nginx/conf.d/alias-${ALIAS}.conf
 REDIRECT_CONF=/etc/nginx/conf.d/redirect-${ALIAS}.conf
 CERT_DIR=/etc/letsencrypt/live/$ALIAS
 WEBROOT=/var/www/html
+LOG_FORMAT_FILE=/etc/nginx/conf.d/00-fy-api-log-format.conf
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_FORMAT_SNIPPET="$SCRIPT_DIR/nginx/00-fy-api-log-format.conf"
 
 mkdir -p "$WEBROOT"
+
+# ─────────────────────────────────────────────────────────
+# 前置:log_format fy_api_main 必须已存在(03 脚本会装,这里做个兜底)
+# ─────────────────────────────────────────────────────────
+if [ ! -f "$LOG_FORMAT_FILE" ]; then
+  [ -f "$LOG_FORMAT_SNIPPET" ] || err "缺少 $LOG_FORMAT_FILE 且找不到 $LOG_FORMAT_SNIPPET,请先跑 03-setup-nginx.sh"
+  log "未检测到 $LOG_FORMAT_FILE,从 repo 复制..."
+  cp "$LOG_FORMAT_SNIPPET" "$LOG_FORMAT_FILE"
+fi
 
 # ─────────────────────────────────────────────────────────
 # 0) 如果之前用 03b 把这个域名配成 301 跳转了,先删掉

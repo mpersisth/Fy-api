@@ -17,6 +17,10 @@ ACTIVE_PORT="${ACTIVE_PORT:-3001}"  # 蓝绿的当前活跃端口,默认 blue=30
 
 CONF_FILE=/etc/nginx/conf.d/fy-api.conf
 CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_FORMAT_SNIPPET="$SCRIPT_DIR/nginx/00-fy-api-log-format.conf"
+
+[ -f "$LOG_FORMAT_SNIPPET" ] || err "缺少 nginx 片段文件: $LOG_FORMAT_SNIPPET (请 git pull 或检查 scripts/prod/nginx/)"
 
 # ─────────────────────────────────────────────────────────
 # 1) 先写一个 HTTP-only 临时配置,让 certbot 能走 HTTP-01 challenge
@@ -52,15 +56,15 @@ fi
 # ─────────────────────────────────────────────────────────
 log "步骤 3: 写生产 HTTPS 配置,活跃端口=$ACTIVE_PORT"
 
-# log_format 必须放在 http 块里,不能在 server 里
+# log_format 必须放在 http 块里(不能在 server 里)
 # conf.d/*.conf 都在 http 块内加载,文件名 00- 开头保证先于 fy-api.conf 加载
-cat > /etc/nginx/conf.d/00-fy-api-log-format.conf <<'LOGEOF'
-log_format fy_api_main '$remote_addr - $remote_user [$time_local] "$request" '
-                       '$status $body_bytes_sent "$http_referer" '
-                       '"$http_user_agent" "$http_x_forwarded_for" '
-                       'rt=$request_time uct="$upstream_connect_time" '
-                       'urt="$upstream_response_time"';
-LOGEOF
+#
+# 注意:log_format 的格式字符串必须是单行,任何字面换行都会被原样写进日志,
+#       导致每条 access log 跨多行,SLS 正则解析会直接崩。
+#       这里从 repo 里的 nginx/00-fy-api-log-format.conf 直接 cp,绕开所有
+#       终端粘贴 / heredoc 引号转义 / vi 换行的坑。
+log "  → 安装 log_format 片段到 /etc/nginx/conf.d/00-fy-api-log-format.conf"
+cp "$LOG_FORMAT_SNIPPET" /etc/nginx/conf.d/00-fy-api-log-format.conf
 
 cat > $CONF_FILE <<EOF
 # Fy-api 生产反代配置 — 蓝绿 upstream

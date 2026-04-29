@@ -3,11 +3,11 @@
  TraceNex 提示 ／ TraceNex Notice
  本檔案為上游 new-api 的原始 README（繁體中文），TraceNex 尚未本地化此語系。
  如需瀏覽 TraceNex 的品牌化 README，請查看：
-   - README.md       (English, TraceNex 品牌化)
-   - README.zh_CN.md (簡體中文，TraceNex 品牌化)
+   - README.md       (簡體中文，TraceNex 品牌化 — 預設)
+   - README.en.md    (English, branded for TraceNex)
 
  TraceNex 是 https://github.com/QuantumNous/new-api 的下游 fork，
- Apache 2.0 合規地保留了上游 attribution。關於 TraceNex 特有的變更請見
+ AGPLv3 合規地保留了上游 attribution。關於 TraceNex 特有的變更請見
  OVERLAY.md 與 docs/ 目錄。
 =========================================================================
 -->
@@ -22,8 +22,8 @@
 
 <p align="center">
   繁體中文 |
-  <a href="./README.zh_CN.md">简体中文</a> |
-  <a href="./README.md">English</a> |
+  <a href="./README.md">简体中文</a> |
+  <a href="./README.en.md">English</a> |
   <a href="./README.fr.md">Français</a> |
   <a href="./README.ja.md">日本語</a>
 </p>

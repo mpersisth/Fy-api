@@ -5,11 +5,11 @@
  TraceNex はまだこの言語をローカライズしていません。
 
  TraceNex のブランド化バージョンは以下をご覧ください：
-   - README.md       (English, TraceNex ブランド)
-   - README.zh_CN.md (簡体字中国語, TraceNex ブランド)
+   - README.md       (簡体字中国語, TraceNex ブランド — デフォルト)
+   - README.en.md    (English, TraceNex ブランド)
 
  TraceNex は https://github.com/QuantumNous/new-api のダウンストリーム fork
- であり、Apache 2.0 に準拠して上流の帰属を保持しています。
+ であり、AGPLv3 に準拠して上流の帰属を保持しています。
  TraceNex 固有の変更については OVERLAY.md および docs/ ディレクトリを
  参照してください。
 =========================================================================
@@ -24,9 +24,9 @@
 🍥 **次世代大規模モデルゲートウェイとAI資産管理システム**
 
 <p align="center">
-  <a href="./README.zh_CN.md">简体中文</a> |
+  <a href="./README.md">简体中文</a> |
   <a href="./README.zh_TW.md">繁體中文</a> |
-  <a href="./README.md">English</a> |
+  <a href="./README.en.md">English</a> |
   <a href="./README.fr.md">Français</a> |
   <strong>日本語</strong>
 </p>

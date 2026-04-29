@@ -5,11 +5,11 @@
  TraceNex n'a pas encore localisé cette langue.
 
  Pour la version TraceNex adaptée :
-   - README.md       (English, branded TraceNex)
-   - README.zh_CN.md (Simplified Chinese, branded TraceNex)
+   - README.md       (Simplified Chinese, branded TraceNex — default)
+   - README.en.md    (English, branded TraceNex)
 
  TraceNex is a downstream fork of https://github.com/QuantumNous/new-api
- that preserves upstream attribution per Apache 2.0. See OVERLAY.md and
+ that preserves upstream attribution per AGPLv3. See OVERLAY.md and
  the docs/ directory for TraceNex-specific changes.
 =========================================================================
 -->
@@ -23,9 +23,9 @@
 🍥 **Passerelle de modèles étendus de nouvelle génération et système de gestion d'actifs d'IA**
 
 <p align="center">
-  <a href="./README.zh_CN.md">简体中文</a> |
+  <a href="./README.md">简体中文</a> |
   <a href="./README.zh_TW.md">繁體中文</a> |
-  <a href="./README.md">English</a> |
+  <a href="./README.en.md">English</a> |
   <strong>Français</strong> |
   <a href="./README.ja.md">日本語</a>
 </p>

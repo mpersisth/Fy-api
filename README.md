@@ -2,14 +2,14 @@
 
 # TraceNex
 
-🍥 **AI Gateway & Asset Management Platform — downstream fork of [new-api](https://github.com/QuantumNous/new-api)**
+🍥 **AI 网关与资产管理平台 — [new-api](https://github.com/QuantumNous/new-api) 的下游 fork**
 
 <p align="center">
-  <a href="./README.zh_CN.md">简体中文</a> |
-  <strong>English</strong> |
-  <a href="./README.zh_TW.md">繁體中文 (upstream)</a> |
-  <a href="./README.fr.md">Français (upstream)</a> |
-  <a href="./README.ja.md">日本語 (upstream)</a>
+  <strong>简体中文</strong> |
+  <a href="./README.en.md">English</a> |
+  <a href="./README.zh_TW.md">繁體中文（上游）</a> |
+  <a href="./README.fr.md">Français（上游）</a> |
+  <a href="./README.ja.md">日本語（上游）</a>
 </p>
 
 <p align="center">
@@ -25,251 +25,251 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-what-tracenex-adds-on-top-of-new-api">What TraceNex Adds</a> •
-  <a href="#-production-deployment">Production Deployment</a> •
-  <a href="#-upstream-sync">Upstream Sync</a> •
-  <a href="#-license--attribution">License</a>
+  <a href="#-快速开始">快速开始</a> •
+  <a href="#-tracenex-在-new-api-之上增加了什么">TraceNex 增量</a> •
+  <a href="#-生产环境部署">生产环境部署</a> •
+  <a href="#-上游同步">上游同步</a> •
+  <a href="#-许可证与归属">许可证</a>
 </p>
 
 </div>
 
-## 📝 About TraceNex
+## 📝 关于 TraceNex
 
-TraceNex is a private-branded **downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api)** with a small overlay of customizations on top. It preserves everything upstream offers (40+ LLM providers, unified API gateway, quota/billing, admin dashboard, Subscription, Channel Affinity, Gemini cached-token billing, etc.) and adds a handful of operator-friendly features plus a full production deployment toolchain.
+TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的私有品牌化 fork**，在上游之上叠加了一层小而精的定制。上游提供的一切——40+ LLM 供应商适配、统一 API 网关、额度/计费、管理后台、Subscription、Channel Affinity、Gemini 缓存命中计费——在 TraceNex 里都**完整保留**，并额外增加了几项面向运营人员的功能，以及一整套可直接投产的部署工具链。
 
 > [!NOTE]
-> - **Repository identity**: the code and GitHub repo are named `Fy-api` for continuity (remote: `github.com/seraph0017/Fy-api`); **TraceNex is the product brand** displayed to end users (`SystemName = "TraceNex"`, UI, docs). The two names are deliberately distinct — see `CLAUDE.md` for the design decision.
-> - TraceNex tracks `upstream/main` on a monthly cadence — every upstream improvement (new model adapters, bug fixes, schema migrations) flows into TraceNex via the automated [upstream-sync workflow](./.github/workflows/upstream-sync.yml).
-> - The Go module path stays `github.com/QuantumNous/new-api` so that merging upstream patches does not require rewriting thousands of imports.
-> - Upstream attribution (LICENSE, copyright headers) is preserved per AGPLv3 compliance. See [`OVERLAY.md`](./OVERLAY.md) for the full list of TraceNex-specific changes.
+> - **仓库身份**：代码和 GitHub 仓库名沿用 `Fy-api`（远端：`github.com/seraph0017/Fy-api`）以保持连续性；**TraceNex 是对外的产品品牌**（`SystemName = "TraceNex"`，体现在 UI、文档、用户界面）。两个名字是故意区分开的——设计原因见 `CLAUDE.md`。
+> - TraceNex 以**月度节奏**从 `upstream/main` 拉取新功能：每一个上游改进（新模型适配、bug 修复、schema 迁移）都会通过 [upstream-sync workflow](./.github/workflows/upstream-sync.yml) 自动流入 TraceNex。
+> - Go module path 保持为 `github.com/QuantumNous/new-api`，这样合并上游补丁时不需要重写数千个 import。
+> - 严格遵守 AGPLv3 合规：LICENSE、版权头、上游 attribution **完整保留**。TraceNex 专属改动的详细清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
 ---
 
-## ✨ What TraceNex Adds on Top of new-api
+## ✨ TraceNex 在 new-api 之上增加了什么
 
-All of these are **additive** — `upstream/main` still works exactly the same through TraceNex.
+以下全部是**增量**——upstream 的所有能力在 TraceNex 中依然完整可用。
 
-### Product layer
+### 产品层
 
-| # | Feature | Surface | Status |
-|---|---------|---------|:------:|
-| 1 | **CSV log export** | `GET /api/log/export` (admin) + `GET /api/log/self/export` (user). UTF-8 + BOM, includes `request_id` column. | ✅ |
-| 2 | **Export button on the Usage Logs page** | One-click CSV download that respects the active filter and up to `MaxLogExportItems=50000` rows. | ✅ |
-| 3 | **Embedded product docs at `/docs`** | Markdown-driven manual with screenshots, rendered via a `NewMarkdownRender` component. | ✅ |
-| 4 | **Email/username login shown first** | Login form reordered so the primary affordance isn't hidden behind OAuth buttons. | ✅ |
-| 5 | **Register link always visible** | Removed the `self_use_mode` gate on the "Sign up" link (operators can still disable registration via backend setting). | ✅ |
-| 6 | **TraceNex branding** | `SystemName` → `TraceNex`, logo + favicon + HTML title, all 7 locales (zh-CN / zh-TW / en / fr / ja / ru / vi) rebranded. | ✅ |
+| # | 功能 | 位置 | 状态 |
+|---|------|------|:----:|
+| 1 | **日志 CSV 导出** | `GET /api/log/export`（管理员）+ `GET /api/log/self/export`（用户）。UTF-8 + BOM，包含 `request_id` 列。 | ✅ |
+| 2 | **用量日志页的「导出」按钮** | 一键下载当前筛选条件下的 CSV，上限 `MaxLogExportItems=50000` 行。 | ✅ |
+| 3 | **`/docs` 内嵌产品文档** | 基于 Markdown 的用户手册（附截图），用新的 `NewMarkdownRender` 组件渲染。 | ✅ |
+| 4 | **邮箱/用户名登录按钮前置** | 登录表单重新排序，主要入口不再被 OAuth 按钮遮住。 | ✅ |
+| 5 | **「没有账户？注册」 始终显示** | 去掉了 `self_use_mode` 条件限制（如需禁用注册，仍可在后台配置）。 | ✅ |
+| 6 | **TraceNex 品牌化** | `SystemName` → `TraceNex`，新 logo / favicon / 浏览器 title，7 种语言（zh-CN / zh-TW / en / fr / ja / ru / vi）品牌词统一。 | ✅ |
 
-### Platform layer
+### 平台层
 
-| # | Feature | Surface | Status |
-|---|---------|---------|:------:|
-| 7 | **Upstream sync CI** | Two GitHub Actions — a weekly watch that warns when drift exceeds 100 commits, and a manual sync that opens a conflict-ready PR and re-applies the brand rewrite. | ✅ |
-| 8 | **Production deployment toolkit** | Seven idempotent scripts under [`scripts/prod/`](./scripts/prod/) that take a fresh Aliyun ECS from zero to a blue/green, HTTPS-terminated, log-shipped, rate-limited production in ~30 minutes. | ✅ |
-| 9 | **Blue-green deploy automation** | [`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) — detect active color, pull new image, health check, swap Nginx upstream, drain, stop old. Zero-downtime. | ✅ |
-| 10 | **Deployment runbooks** | Full coverage under [`docs/deploy/`](./docs/deploy/): ACK (Kubernetes), single-host Podman, observability (SLS + Prometheus), rate limiting, local dev. | ✅ |
+| # | 功能 | 位置 | 状态 |
+|---|------|------|:----:|
+| 7 | **上游同步 CI** | 两个 GitHub Actions：每周一检测积压 > 100 commits 告警；手动触发的 sync 自动合并、重跑品牌替换、开 PR。 | ✅ |
+| 8 | **生产部署工具链** | [`scripts/prod/`](./scripts/prod/) 下 7 个幂等脚本，从裸 ECS 到完整蓝绿 + HTTPS + 日志接入 + 限流的生产环境，**~30 分钟完成**。 | ✅ |
+| 9 | **蓝绿发版自动化** | [`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) —— 自动检测活跃色、拉新镜像、健康检查、切 Nginx upstream、连接排空、停旧容器。**零中断**。 | ✅ |
+| 10 | **部署 runbook 完整覆盖** | [`docs/deploy/`](./docs/deploy/) 下涵盖 ACK（Kubernetes）、单机 Podman、可观测性（SLS + Prometheus）、限流、本地开发。 | ✅ |
 
-> For the full source-level diff see [`OVERLAY.md`](./OVERLAY.md).
+> 完整源码级改动清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
-### Option 1 — Docker / Podman (testing)
+### 方式 1 — Docker / Podman（测试环境）
 
 ```bash
 git clone git@github.com:seraph0017/Fy-api.git
 cd Fy-api
 
-# Start with the dev compose file (SQLite + in-memory cache)
+# 开发环境 compose（SQLite + 内存 cache）
 docker compose up -d
-# or with podman
+# 或用 podman
 podman-compose up -d
 ```
 
-Visit <http://localhost:3000>. Default admin credentials follow the upstream convention (first-user setup at `/api/setup`).
+访问 <http://localhost:3000>。默认管理员账号通过首次访问 `/api/setup` 创建，沿用上游约定。
 
-### Option 2 — Build from source
+### 方式 2 — 从源码构建
 
 ```bash
-# Backend
+# 后端
 go mod tidy
 go build -o bin/tracenex
 
-# Frontend (bun is the preferred toolchain — see CLAUDE.md Rule 3)
+# 前端（CLAUDE.md Rule 3 约定使用 bun）
 cd web
 bun install
 bun run build
 ```
 
-The three-stage `Dockerfile` (bun → golang → debian) handles this automatically for container builds, so you don't need bun or Go installed on the host if you're going via `docker build` / `podman build`.
+仓库根目录的三阶段 `Dockerfile`（bun → golang → debian）会自动处理这些步骤，所以如果你用 `docker build` / `podman build`，**宿主机无需安装 bun 或 Go**。
 
-See [`docs/deploy/local-dev.md`](./docs/deploy/local-dev.md) for the full local development setup.
+本地开发完整指引见 [`docs/deploy/local-dev.md`](./docs/deploy/local-dev.md)。
 
 ---
 
-## 🚢 Production Deployment
+## 🚢 生产环境部署
 
-TraceNex ships with a **production-grade deployment toolchain** validated on Alibaba Cloud single-host (ECS 16c32g) and Kubernetes (ACK). The single-host path is documented end-to-end; the Kubernetes path uses standard Helm-style values.
+TraceNex 附带**经过生产验证的部署工具链**，在阿里云单机（ECS 16c32g）和 Kubernetes（ACK）两种拓扑上都有完整 runbook。单机部署有端到端验证；Kubernetes 侧使用标准 Helm-style values。
 
-### Supported topologies
+### 支持的拓扑
 
-| Topology | Status | Guide |
-|----------|:------:|-------|
-| **Single-host Podman** (ECS / bare metal) | ✅ Production-proven | [`docs/deploy/prod-podman-single.md`](./docs/deploy/prod-podman-single.md) |
-| **Aliyun ACK (Kubernetes)** | ✅ Documented | [`docs/deploy/prod-ack.md`](./docs/deploy/prod-ack.md) |
-| **Local Podman (test)** | ✅ For QA | [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) |
+| 拓扑 | 状态 | 指南 |
+|------|:----:|------|
+| **单机 Podman**（阿里云 ECS / 物理机） | ✅ 生产验证通过 | [`docs/deploy/prod-podman-single.md`](./docs/deploy/prod-podman-single.md) |
+| **阿里云 ACK（Kubernetes）** | ✅ 完整文档 | [`docs/deploy/prod-ack.md`](./docs/deploy/prod-ack.md) |
+| **本地 Podman（测试）** | ✅ QA 用 | [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) |
 
-### One-shot setup on a fresh ECS
+### 裸 ECS 一键建站
 
-Copy [`scripts/prod/`](./scripts/prod/) to the server and run the scripts in order. Each is **idempotent** and **fails loudly on the first error**. Typical total time: **~30 minutes** including Let's Encrypt issuance.
+把 [`scripts/prod/`](./scripts/prod/) 整个目录拷到服务器，按编号顺序执行。每个脚本都是**幂等的**，且**第一时间失败并红字提示**。典型总耗时：**~30 分钟**（含 Let's Encrypt 签发）。
 
 ```bash
-# On your laptop
+# 在本地
 scp -r scripts/prod config/fy-api.env.example root@<ECS-IP>:/root/
 
-# On the ECS (as root)
+# 在 ECS 上（root 执行）
 cd /root/prod
 
-sudo ./01-setup-system.sh                     # kernel params, ulimits, podman, nginx, firewall
-./02-install-logtail.sh                       # Aliyun SLS log agent
+sudo ./01-setup-system.sh                     # 内核参数、ulimit、podman、nginx、防火墙
+./02-install-logtail.sh                       # 阿里云 SLS 日志 agent
 sudo DOMAIN=api.example.com EMAIL=... \
   ./03-setup-nginx.sh                         # Nginx + Let's Encrypt (HTTPS)
-#  optional: ./03b-add-redirect-domain.sh     # www → api 301 redirect
-#  optional: ./03c-add-alias-domain.sh        # www as a parallel alias
-IMAGE_TAG=v0.9.6 ./04-deploy-fyapi.sh         # first deploy of the blue container
-./05-enable-rate-limit.sh                     # turn on model-request rate-limit + group quotas
-sudo ./07-setup-logrotate.sh                  # log rotation for nginx + container logs
+#  可选: ./03b-add-redirect-domain.sh         # www → api 301 跳转
+#  可选: ./03c-add-alias-domain.sh            # www 作为并列别名域
+IMAGE_TAG=v0.9.6 ./04-deploy-fyapi.sh         # 首次起 blue 容器
+./05-enable-rate-limit.sh                     # 打开模型请求限流 + 分组配额
+sudo ./07-setup-logrotate.sh                  # nginx + 容器日志轮转
 
-# Every subsequent release (zero-downtime)
+# 以后每次发版（零中断）
 ./06-deploy-blue-green.sh v0.9.7
 ```
 
-See [`scripts/prod/README.md`](./scripts/prod/README.md) for the full checklist, prerequisites, and rollback procedure.
+完整清单、前置要求、回滚步骤见 [`scripts/prod/README.md`](./scripts/prod/README.md)。
 
-### Blue-green deploy at a glance
+### 蓝绿发版原理
 
-[`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) implements zero-downtime rollouts:
+[`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) 实现零中断发版：
 
-1. Detects the currently active color (`blue` @ 3001 or `green` @ 3002)
-2. Pulls the new image from Aliyun ACR
-3. Starts the standby container with the new image
-4. Health-checks `/api/status` for up to 60 seconds
-5. Rewrites Nginx upstream port → `nginx -t` → `systemctl reload nginx`
-6. Sleeps 30 seconds to drain old connections
-7. Stops (but does not remove) the old container — available for rollback
+1. 检测当前活跃色（`blue` @ 3001 或 `green` @ 3002）
+2. 从阿里云 ACR 拉新镜像
+3. 启动备用容器
+4. 健康检查 `/api/status`，最多 60 秒
+5. 改写 Nginx upstream 端口 → `nginx -t` → `systemctl reload nginx`
+6. 睡眠 30 秒等旧连接排空
+7. 停旧容器（但保留,以便紧急回滚）
 
-### Observability
+### 可观测性
 
-- **Logs to disk** — `--log-dir=/app/logs` on `podman run`; rotated daily via `logrotate`
-- **Logs to Aliyun SLS** — Logtail picks up both container stdout and disk logs, split across four logstores (`app`, `consume`, `nginx-access`, `nginx-error`)
-- **Metrics** — Prometheus stack defined under [`docs/deploy/monitoring/`](./docs/deploy/monitoring/) (Prometheus + Alertmanager + Blackbox + Grafana datasources + 15 alert rules)
+- **日志落盘** —— 启动容器时带 `--log-dir=/app/logs`；`logrotate` 每日轮转
+- **日志接入阿里云 SLS** —— Logtail 同时采集容器 stdout 和落盘日志，分为 4 个 logstore（`app`、`consume`、`nginx-access`、`nginx-error`）
+- **指标监控** —— Prometheus 技术栈见 [`docs/deploy/monitoring/`](./docs/deploy/monitoring/)（Prometheus + Alertmanager + Blackbox + Grafana 数据源 + 15 条告警规则）
 
-See [`docs/deploy/observability.md`](./docs/deploy/observability.md) for the full data path and dashboards.
+完整数据链路与看板见 [`docs/deploy/observability.md`](./docs/deploy/observability.md)。
 
-### Rate limiting (hot-reloadable)
+### 限流配置（热更新）
 
-Per-user and per-group quotas (e.g. `default: 60/min`, `vip: 5000/min`) are set via the admin API and take effect immediately without restarting the container. See [`docs/deploy/rate-limiting.md`](./docs/deploy/rate-limiting.md) and [`05-enable-rate-limit.sh`](./scripts/prod/05-enable-rate-limit.sh).
+按用户和按分组的配额（例如 `default: 60/min`、`vip: 5000/min`）通过管理后台 API 设置，**立即生效、无需重启容器**。详见 [`docs/deploy/rate-limiting.md`](./docs/deploy/rate-limiting.md) 和 [`05-enable-rate-limit.sh`](./scripts/prod/05-enable-rate-limit.sh)。
 
-### Production validation
+### 生产验收数据
 
-A formal load test was performed on 2026-04-28 against the single-host Aliyun deployment (ECS 16c32g):
+2026-04-28 在阿里云单机（ECS 16c32g）上完成了一次正式压测：
 
-- **2,477 requests** across 5 prompt-length tiers (1K / 6K / 9K / 16K / 50K tokens)
-- **32 concurrent workers** against `kimi-k2.5` via Moonshot
-- **100% success rate** from the client, **0 5xx** on the server
-- **Peak container resource**: CPU 6.5% / MEM 58MB — roughly **16× CPU headroom** on this node size
-- Zero panics, zero DB errors, zero Redis pool timeouts
+- **2,477 个请求**，5 档 prompt 长度（1K / 6K / 9K / 16K / 50K tokens）
+- **32 并发**，模型 `kimi-k2.5`（通过 Moonshot）
+- **客户端 100% 成功率**，**服务端 0 个 5xx**
+- **容器资源峰值**：CPU 6.5% / 内存 58MB —— **约 16 倍 CPU 余量**
+- 0 panic、0 DB 错误、0 Redis 池超时
 
-See [upstream deployment docs](./docs/deploy/) for full methodology and detail.
+完整方法论和细节见 [部署文档目录](./docs/deploy/)。
 
 ---
 
-## 🔄 Upstream Sync
+## 🔄 上游同步
 
-TraceNex is designed to stay close to upstream rather than drift. The philosophy:
+TraceNex 的设计原则是**紧跟上游而不是渐行渐远**。核心理念：
 
-1. **Additive customizations only** — customizations live in overlay files (e.g. `controller/log_export.go`, `web/src/pages/FyApiDocs/`) to minimize merge conflicts.
-2. **Monthly sync cadence** — conflict cost grows exponentially with drift (~1 month → 0-2 conflicts; ~6 months → 20+).
-3. **Automated watch** — `.github/workflows/upstream-watch.yml` runs every Monday and warns when TraceNex is > 100 commits behind; fails hard at > 500.
-4. **One-click sync PR** — `.github/workflows/upstream-sync.yml` (manual trigger) merges `upstream/main`, re-applies the i18n rebrand (`New API` → `TraceNex`), and opens a PR.
+1. **只做增量定制** —— 定制代码尽量放到新增文件里（如 `controller/log_export.go`、`web/src/pages/FyApiDocs/`），降低合并冲突
+2. **月度同步节奏** —— 冲突成本随 drift 时长呈**指数增长**（~1 个月 0-2 处冲突；~6 个月 20+ 处）
+3. **自动监控** —— `.github/workflows/upstream-watch.yml` 每周一自动跑，积压 > 100 commits 时告警；> 500 直接 fail
+4. **一键同步 PR** —— `.github/workflows/upstream-sync.yml`（手动触发）合并 `upstream/main`、重新应用 i18n 品牌替换（`New API` → `TraceNex`）、开 PR 等人工 review
 
 ```bash
-# Check drift locally
+# 本地查看 drift
 git fetch upstream
 git rev-list --count HEAD..upstream/main
 
-# See what's new
+# 看看新增了什么
 git log HEAD..upstream/main --oneline | head -30
 ```
 
-### What customizations survive a sync
+### 哪些定制能扛过一次 sync
 
-See [`OVERLAY.md`](./OVERLAY.md). Briefly:
+详见 [`OVERLAY.md`](./OVERLAY.md)。简要分类：
 
-- **Zero-conflict** (new files): CSV export backend + frontend, FyApiDocs page, Markdown renderer, GitHub Actions, production scripts, deployment docs, OVERLAY.md itself
-- **Low-conflict** (small inline markers `// Fy-api overlay:`): `common/constants.go` `SystemName`, `web/index.html` title, `web/src/App.jsx` route wiring, `LoginForm.jsx` reordering
-- **Automatable** (CI re-runs the transformation): i18n rebrand via the upstream-sync workflow
+- **零冲突**（新增文件）：CSV 导出后端 + 前端、FyApiDocs 页面、Markdown 渲染组件、GitHub Actions、生产脚本、部署文档、OVERLAY.md 本身
+- **低冲突**（带 `// Fy-api overlay:` 标记的小改动）：`common/constants.go` 的 `SystemName`、`web/index.html` 的 title、`web/src/App.jsx` 路由注册、`LoginForm.jsx` 重排
+- **可自动化**（CI 自动重新应用）：i18n 品牌替换，由 upstream-sync workflow 处理
 
 ---
 
-## 📚 Upstream Documentation
+## 📚 上游文档
 
-For everything the gateway itself does (channels, relay protocols, billing formulas, admin settings, API reference, etc.) refer to the **upstream documentation** — nothing there has been removed or re-pointed:
+网关本身的所有能力（通道、relay 协议、计费公式、管理后台、API 参考等）请参考**上游文档**——所有链接均未改动、未重定向：
 
-- 📘 [new-api Official Docs](https://docs.newapi.pro/en/docs)
+- 📘 [new-api 官方文档](https://docs.newapi.pro/zh/docs)
 - 🧪 [DeepWiki](https://deepwiki.com/QuantumNous/new-api)
-- 🚀 [Installation Guide](https://docs.newapi.pro/en/docs/installation)
-- ⚙️ [Environment Variables](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables)
-- 📡 [API Reference](https://docs.newapi.pro/en/docs/api)
-- ❓ [FAQ](https://docs.newapi.pro/en/docs/support/faq)
+- 🚀 [部署指南](https://docs.newapi.pro/zh/docs/installation)
+- ⚙️ [环境变量](https://docs.newapi.pro/zh/docs/installation/config-maintenance/environment-variables)
+- 📡 [API 参考](https://docs.newapi.pro/zh/docs/api)
+- ❓ [常见问题](https://docs.newapi.pro/zh/docs/support/faq)
 
-### TraceNex-specific docs
+### TraceNex 专属文档
 
-| File | Purpose |
-|------|---------|
-| [`OVERLAY.md`](./OVERLAY.md) | Source-of-truth list of every TraceNex customization vs upstream |
-| [`CLAUDE.md`](./CLAUDE.md) | Architecture overview + Rules for AI-assisted development |
-| [`scripts/prod/README.md`](./scripts/prod/README.md) | Production deployment scripts overview |
-| [`docs/deploy/prod-podman-single.md`](./docs/deploy/prod-podman-single.md) | Full single-host production runbook |
-| [`docs/deploy/prod-ack.md`](./docs/deploy/prod-ack.md) | Kubernetes (Aliyun ACK) deployment |
-| [`docs/deploy/observability.md`](./docs/deploy/observability.md) | Logs, metrics, alerts, dashboards |
-| [`docs/deploy/rate-limiting.md`](./docs/deploy/rate-limiting.md) | Per-user and per-group quota configuration |
-| [`docs/deploy/local-dev.md`](./docs/deploy/local-dev.md) | Local development setup |
-| [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) | QA/staging Podman setup |
+| 文件 | 用途 |
+|------|------|
+| [`OVERLAY.md`](./OVERLAY.md) | TraceNex 相对于上游所有定制的**权威清单** |
+| [`CLAUDE.md`](./CLAUDE.md) | 架构概览 + AI 辅助开发的规则 |
+| [`scripts/prod/README.md`](./scripts/prod/README.md) | 生产部署脚本总览 |
+| [`docs/deploy/prod-podman-single.md`](./docs/deploy/prod-podman-single.md) | 单机生产部署完整 runbook |
+| [`docs/deploy/prod-ack.md`](./docs/deploy/prod-ack.md) | Kubernetes（阿里云 ACK）部署 |
+| [`docs/deploy/observability.md`](./docs/deploy/observability.md) | 日志、指标、告警、看板 |
+| [`docs/deploy/rate-limiting.md`](./docs/deploy/rate-limiting.md) | 按用户/分组的限流配置详解 |
+| [`docs/deploy/local-dev.md`](./docs/deploy/local-dev.md) | 本地开发环境搭建 |
+| [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) | QA/staging 的 Podman 部署 |
 
-Cross-project analysis, DB migration runbooks, and historical post-mortems (spanning multiple sibling projects such as legacy forks and pure upstream) live under `~/Projects/apiGateway/docs/` in the workspace parent directory, outside this repo.
-
----
-
-## 📜 License & Attribution
-
-TraceNex is distributed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE), inheriting the upstream license.
-
-- **Upstream**: [QuantumNous/new-api](https://github.com/QuantumNous/new-api) — AGPLv3
-- **Original base**: [songquanpeng/one-api](https://github.com/songquanpeng/one-api) — MIT
-
-TraceNex preserves all upstream copyright notices, the LICENSE file, and the Go module path `github.com/QuantumNous/new-api`. See [`OVERLAY.md`](./OVERLAY.md) for the exact scope of downstream modifications.
-
-For commercial licensing of the upstream project, contact the upstream maintainers at [support@quantumnous.com](mailto:support@quantumnous.com). TraceNex itself is an internal deployment and does not offer separate commercial licensing.
+跨项目的对比分析、DB 迁移 runbook、历史 bug 复盘等文档（横跨多个 sibling 项目如历史 fork、纯上游副本）位于 workspace 父目录的 `~/Projects/apiGateway/docs/` 下，不在本仓库内部。
 
 ---
 
-## 🙏 Acknowledgements
+## 📜 许可证与归属
 
-Huge thanks to:
+TraceNex 采用 [GNU Affero 通用公共许可证 v3.0（AGPLv3）](./LICENSE)，继承自上游。
 
-- **[QuantumNous](https://github.com/QuantumNous)** and all new-api contributors — TraceNex is 99% their work
-- **[songquanpeng](https://github.com/songquanpeng)** for the original One API foundation
-- **[JetBrains](https://www.jetbrains.com/?from=new-api)** for providing free open-source development licenses to the upstream project
+- **上游**：[QuantumNous/new-api](https://github.com/QuantumNous/new-api) — AGPLv3
+- **原始基础**：[songquanpeng/one-api](https://github.com/songquanpeng/one-api) — MIT
+
+TraceNex 完整保留了上游的版权声明、LICENSE 文件，以及 Go module path `github.com/QuantumNous/new-api`。下游修改的完整范围见 [`OVERLAY.md`](./OVERLAY.md)。
+
+上游项目的商业授权请联系上游维护者：[support@quantumnous.com](mailto:support@quantumnous.com)。TraceNex 本身作为内部部署，不提供独立的商业授权。
+
+---
+
+## 🙏 致谢
+
+特别感谢：
+
+- **[QuantumNous](https://github.com/QuantumNous)** 及所有 new-api 贡献者——TraceNex 99% 的工作都来自他们
+- **[songquanpeng](https://github.com/songquanpeng)** 提供的 One API 原始基础
+- **[JetBrains](https://www.jetbrains.com/?from=new-api)** 为上游项目提供的免费开源开发授权
 
 ---
 
 <div align="center">
 
-### 💖 Thanks for using TraceNex
+### 💖 感谢使用 TraceNex
 
-<sub>A small overlay on the shoulders of <a href="https://github.com/QuantumNous/new-api">new-api</a>.</sub>
+<sub>在 <a href="https://github.com/QuantumNous/new-api">new-api</a> 的肩膀上，叠一层轻量 overlay。</sub>
 
 </div>

@@ -58,13 +58,14 @@ bun run i18n:lint
 The root `fabfile.py` implements the current deployment flow: local git push, server git fetch/checkout, server Podman build, push to intranet ACR, then blue-green deploy using `scripts/prod/06-deploy-blue-green.sh`.
 
 ```bash
-conda run -n fy-api-deploy fab check
-conda run -n fy-api-deploy fab release --tag=v0.9.8 --ref=origin/main
-conda run -n fy-api-deploy fab deploy --tag=v0.9.8
-conda run -n fy-api-deploy fab rollback --tag=v0.9.7
-conda run -n fy-api-deploy fab status
-conda run -n fy-api-deploy fab logs --tail=200
-conda run -n fy-api-deploy fab health
+conda run -n fy-api-deploy fab check --target=cn
+conda run -n fy-api-deploy fab release --target=cn --tag=v0.9.8 --ref=origin/main
+conda run -n fy-api-deploy fab deploy --target=cn --tag=v0.9.8
+conda run -n fy-api-deploy fab rollback --target=cn --tag=v0.9.7
+conda run -n fy-api-deploy fab status --target=cn
+conda run -n fy-api-deploy fab logs --target=cn --tail=200
+conda run -n fy-api-deploy fab health --target=cn
+conda run -n fy-api-deploy fab bootstrap-system --target=sg
 ```
 
 ### Upstream sync orientation

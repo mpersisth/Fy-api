@@ -67,8 +67,8 @@
 
 ### B-6 [deploy] Fabric 服务端构建发布自动化
 - **新增文件**：`fabfile.py`
-- **用途**：本地只执行 Fabric；远端 ECS 拉取 Git ref、Podman 构建镜像、推送内网 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布
-- **默认连接**：`root@8.136.146.211:58422`，密钥路径 `~/.ssh/tracenex_XN.pem`；均可用 `FYAPI_*` 环境变量覆盖
+- **用途**：本地只执行 Fabric；远端 ECS 在 `/root/Fy-api` 拉取 Git ref，用 `git archive` 生成干净临时构建目录后 Podman 构建镜像、推送内网 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布
+- **默认连接**：`root@8.136.146.211:58422`，密钥路径 `~/.ssh/tracenex_XN.pem`；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
 - **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
 - **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
 

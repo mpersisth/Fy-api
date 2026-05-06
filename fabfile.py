@@ -26,7 +26,7 @@ Defaults match:
 
 Override with environment variables when needed:
     FYAPI_HOST, FYAPI_PORT, FYAPI_USER, FYAPI_KEY
-    FYAPI_REPO_URL, FYAPI_SRC_DIR
+    FYAPI_REPO_URL, FYAPI_SRC_DIR, FYAPI_BUILD_DIR
     FYAPI_REGISTRY, FYAPI_NAMESPACE, FYAPI_REPO
 """
 
@@ -45,7 +45,8 @@ SSH_USER = os.getenv("FYAPI_USER", "root")
 SSH_KEY = os.path.expanduser(os.getenv("FYAPI_KEY", "~/.ssh/tracenex_XN.pem"))
 
 APP_DIR = os.getenv("FYAPI_APP_DIR", "/opt/fy-api")
-SRC_DIR = os.getenv("FYAPI_SRC_DIR", f"{APP_DIR}/src")
+SRC_DIR = os.getenv("FYAPI_SRC_DIR", "/root/Fy-api")
+BUILD_DIR = os.getenv("FYAPI_BUILD_DIR", "/tmp/fy-api-build")
 ENV_FILE = os.getenv("FYAPI_ENV_FILE", f"{APP_DIR}/config/fy-api.env")
 NGINX_CONF = os.getenv("FYAPI_NGINX_CONF", "/etc/nginx/conf.d/fy-api.conf")
 REPO_URL = os.getenv("FYAPI_REPO_URL", "git@github.com:seraph0017/Fy-api.git")
@@ -122,7 +123,6 @@ def _checkout_ref(c: Connection, ref: str):
                 "git fetch origin --tags --prune",
                 f"git checkout -f {quoted_ref}",
                 f"git reset --hard {quoted_ref}",
-                "git clean -fdx",
                 "git rev-parse --short HEAD",
             ]
         ),
@@ -135,6 +135,7 @@ def info(ctx):
     print(f"host:      {SSH_USER}@{SSH_HOST}:{SSH_PORT}")
     print(f"key:       {SSH_KEY}")
     print(f"src:       {SRC_DIR}")
+    print(f"build_dir: {BUILD_DIR}")
     print(f"repo_url:  {REPO_URL}")
     print(f"image:     {ACR_REGISTRY}/{ACR_NAMESPACE}/{ACR_REPO}:<tag>")
     print(f"env_file:  {ENV_FILE}")
@@ -187,7 +188,22 @@ def build(ctx, tag, ref="", pull=True, no_cache=False):
 
     image = _q(_image(tag))
     flag_str = " ".join(flags)
-    _run(c, f"cd {_q(SRC_DIR)} && podman build {flag_str} -t {image} .")
+    build_dir = _q(BUILD_DIR)
+    src_dir = _q(SRC_DIR)
+    _run(
+        c,
+        " && ".join(
+            [
+                f"rm -rf {build_dir}",
+                f"mkdir -p {build_dir}",
+                f"cd {src_dir}",
+                f"git archive --format=tar HEAD | tar -x -C {build_dir}",
+                f"cd {build_dir}",
+                f"podman build {flag_str} -t {image} .",
+                f"rm -rf {build_dir}",
+            ]
+        ),
+    )
 
 
 @task(help={"tag": "image tag to push to ACR"})

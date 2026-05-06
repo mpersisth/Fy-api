@@ -47,9 +47,9 @@
 - **冲突风险**：高（上游 Rule 5 会持续维护）
 - **Merge 策略**：每次 upstream 改 Rule 5 都需要人工对齐，保留 Apache 2.0 合规措辞
 
-### B-4 [gitignore] `.cursor/` 和 `*.log`
+### B-4 [gitignore] `.cursor/`、`*.log` 和 Python 缓存
 - **文件**：`.gitignore`
-- **修改**：新增 `.cursor/` 和 `*.log`
+- **修改**：新增 `.cursor/`、`*.log` 和 `__pycache__/`
 - **冲突风险**：极低
 
 ### B-5 [docker] Dockerfile 国内部署适配
@@ -64,6 +64,13 @@
 - **兜底**：供应链完整性由 `go.sum` / `bun.lock` 保证，base image 小浮动不影响产物
 - **冲突风险**：低（上游偶尔刷 SHA；GOPROXY 注入属于 build-env 配置，不太可能冲突）
 - **Merge 策略**：上游 bump SHA 时，把新 SHA 更新到文件顶部注释里；保留 tag-only 的 FROM 行和 GOPROXY ENV
+
+### B-6 [deploy] Fabric 服务端构建发布自动化
+- **新增文件**：`fabfile.py`
+- **用途**：本地只执行 Fabric；远端 ECS 拉取 Git ref、Podman 构建镜像、推送内网 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布
+- **默认连接**：`root@8.136.146.211:58422`，密钥路径 `~/.ssh/tracenex_XN.pem`；均可用 `FYAPI_*` 环境变量覆盖
+- **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
+- **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
 
 ---
 

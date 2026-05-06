@@ -24,6 +24,7 @@ plans
 .claude
 .cursor/
 *.log
+__pycache__/
 
 electron/node_modules
 electron/dist

@@ -66,7 +66,7 @@ TARGETS = {
         "src_dir": "/root/Fy-api",
         "build_dir": "/tmp/fy-api-build",
         "registry": "transnext-acr-ee-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com",
-        "namespace": "transnext",
+        "namespace": "ai_transnext",
         "repo": "fy-api",
         "repo_url": "https://github.com/seraph0017/Fy-api.git",
     },

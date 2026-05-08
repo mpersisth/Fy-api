@@ -1,0 +1,17 @@
+# Python venv / uv cache
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test output
+loadtest-results/
+htmlcov/
+.coverage

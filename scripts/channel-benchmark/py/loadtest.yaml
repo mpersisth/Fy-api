@@ -1,0 +1,36 @@
+# Fy-api load-test example config
+#
+# Copy to loadtest.local.yaml, fill in env vars, run:
+#   fy-loadtest -c loadtest.local.yaml
+#
+# This tool is BILLED to gateway.user_token — it sends real chat requests to
+# your Fy-api over /v1/chat/completions. Cap the user's quota as a safety net.
+
+gateway:
+  base_url: "${FY_API_URL:-http://localhost:3000}"
+  user_token: "${FY_API_USER_TOKEN}"
+
+load:
+  model: gpt-4o-mini
+  prompt: "Reply with the single word: pong."
+  max_tokens: 64
+  temperature: 0.0
+  stream: true
+
+  # Concurrency sweep. Short runs for smoke; extend for capacity planning.
+  # Rule of thumb: each level is ~(requests_per_level × avg_e2e_s / C) seconds.
+  concurrency_levels: [1, 5, 10, 25]
+  requests_per_level: 30
+  warmup_requests: 3
+  request_timeout_sec: 120
+
+# Optional. When set, 'goodput' = req/s that meet ALL specified thresholds.
+# Leave thresholds as null to skip; any present threshold is enforced.
+slo:
+  ttft_p95_ms: 2000
+  itl_p95_ms: 100
+  e2e_p95_ms: null
+
+export:
+  formats: [json, csv, markdown]
+  output_dir: "loadtest-results"

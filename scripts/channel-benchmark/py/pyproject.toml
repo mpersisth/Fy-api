@@ -1,0 +1,50 @@
+[project]
+name = "fy-loadtest"
+version = "0.1.0"
+description = "Concurrency-ramp load tester for Fy-api channels (OpenAI-compatible endpoints)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0" }
+authors = [{ name = "Fy-api team" }]
+
+# Kept minimal on purpose. No pandas, no Ray, no transformers — this tool
+# generates load and measures latency; it does not train anything.
+dependencies = [
+    "httpx>=0.27",           # async HTTP + SSE
+    "pyyaml>=6.0",           # config
+    "rich>=13.7",            # pretty CLI output / summary tables
+]
+
+[project.optional-dependencies]
+# Local-tokenizer mode: only needed when the upstream server does NOT return
+# `usage` in responses and we need to tokenize locally. Fy-api should always
+# return usage, so this stays optional.
+tiktoken = ["tiktoken>=0.7"]
+
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+fy-loadtest = "fy_loadtest.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fy_loadtest"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "ASYNC"]
+ignore = ["E501"]  # long lines in docstrings and test fixtures are fine

@@ -1,0 +1,45 @@
+# Example fy-quality config. Copy to quality.local.yaml and fill in env vars.
+#
+#   fy-quality -c quality.local.yaml
+
+channels:
+  # Each entry is one (name,model,token,base_url) quad. The Fy-api `token`
+  # determines which upstream channel the request gets routed to (via the
+  # token's group). If you want to pin channel N, use a token whose group
+  # maps 1:1 to that channel.
+  - name: openai-direct
+    model: gpt-4o-mini
+    token: "${FY_TOKEN_OPENAI}"
+    base_url: "${FY_API_URL:-http://localhost:3000}"
+  - name: anthropic-direct
+    model: claude-3-5-haiku-20241022
+    token: "${FY_TOKEN_ANTHROPIC}"
+    base_url: "${FY_API_URL:-http://localhost:3000}"
+
+dataset: fy_quality/datasets/quality.jsonl
+
+# LLM-as-judge backends. Two judges enables dual-judge mode for rubric grader —
+# a rubric test passes only if BOTH judges rate it >= pass_score.
+# Leave empty to skip rubric grading entirely (deterministic graders still work).
+judges:
+  - label: haiku
+    base_url: https://api.anthropic.com
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: claude-3-5-haiku-20241022
+  - label: gemini-flash
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key: "${GEMINI_API_KEY}"
+    model: gemini-2.5-flash
+
+# Embedding endpoint for the similarity grader. Omit the whole block to skip.
+embedding:
+  base_url: https://api.openai.com
+  api_key: "${OPENAI_API_KEY}"
+  model: text-embedding-3-small
+
+concurrency: 4
+request_timeout_sec: 120
+pass_score: 4                    # rubric: both judges must be >= 4 (out of 5)
+similarity_threshold: 0.80       # embedding cosine threshold
+output_dir: quality-results
+cache_dir: .cache-quality

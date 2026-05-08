@@ -1,0 +1,40 @@
+# Example fy-canary config.
+#
+# Workflow:
+#   1. Point `source` at a TRUSTED endpoint (e.g. the real vendor API).
+#      Run `fy-canary baseline -c canary-vendor.yaml` to record baselines.
+#   2. Point `source` at the SUSPECT endpoint (your Fy-api channel) while
+#      keeping `source.name` the same. Run `fy-canary audit -c canary-suspect.yaml`.
+#      A diff below per-method thresholds flags the channel.
+#
+# For each channel you want to audit, expect two config files:
+#   canary-<channel>-baseline.yaml  (source.base_url = vendor direct)
+#   canary-<channel>-audit.yaml     (source.base_url = Fy-api gateway)
+# Both with the same `source.name` so they share a baseline file.
+
+source:
+  name: openai-gpt-4o-mini         # stable label; baseline file is keyed on this
+  model: gpt-4o-mini
+  base_url: "${CANARY_BASE_URL:-https://api.openai.com}"
+  api_key: "${CANARY_API_KEY}"
+
+dataset: fy_canary/datasets/canaries.jsonl
+
+baselines_dir: canary-baselines
+output_dir: canary-results
+
+# Drift probe requires an embedding endpoint. Can be any OpenAI-compatible one;
+# typically you point it at a trusted embeddings provider, NOT at the channel
+# being audited. Leave as null to skip drift probes.
+embedding:
+  base_url: https://api.openai.com
+  api_key: "${OPENAI_API_KEY}"
+  model: text-embedding-3-small
+
+# MMD test — requires `pip install -e .[canary]` which pulls torch (~1.5GB).
+# Set to false to skip MMD entirely; alignment + drift still work.
+mmd_enabled: false
+mmd_n_samples: 10
+
+concurrency: 4
+request_timeout_sec: 120

@@ -1,0 +1,59 @@
+# Fy-api channel-benchmark example config
+#
+# Copy this to your own file (e.g. channel-benchmark.local.yaml), fill in real
+# credentials — or, better, reference env vars with ${VAR} — and run:
+#
+#   ./channel-benchmark -config channel-benchmark.local.yaml
+#
+# The tool hits /v1/chat/completions using gateway.user_token (same path real
+# traffic takes), so runs are billed to that user. Keep the user's quota
+# modest — it doubles as your budget cap.
+
+gateway:
+  base_url: "${FY_API_URL:-http://localhost:3000}"
+
+  # Admin credentials — only used for GET /api/channel/ to resolve channel
+  # names. Auth is sent as `Authorization: <token>` (no Bearer) plus the
+  # `New-Api-User` header. See middleware/auth.go.
+  admin_token:    "${FY_API_ADMIN_TOKEN}"
+  admin_user_id:  "${FY_API_ADMIN_USER_ID}"   # numeric user id (e.g. "1")
+
+  # User token — this is the sk-... key from /panel/token; billed as real usage.
+  user_token:     "${FY_API_USER_TOKEN}"
+
+test:
+  concurrency:     4      # worker pool size
+  reps_per_case:   3      # repetitions per (channel, model, stream/non-stream)
+  timeout_seconds: 60     # per-request ceiling
+  max_tokens:      64     # cap generation to keep cost small
+  stream:          true
+  non_stream:      true
+
+  # Smoke prompt: deterministic, single-token answer. Replace per use case.
+  prompt: "Reply with the single word: pong."
+
+# The channels to test. Look up IDs via the admin UI or:
+#   curl -H "Authorization: $FY_API_ADMIN_TOKEN" -H "New-Api-User: 1" \
+#     "$FY_API_URL/api/channel/?p=1&page_size=200" | jq '.data.items[] | {id,name,models}'
+channels:
+  - id: 1
+    name: OpenAI
+    test_models:
+      - gpt-4o-mini
+  - id: 2
+    name: Anthropic
+    test_models:
+      - claude-3-5-haiku-20241022
+  # - id: 3
+  #   name: Gemini
+  #   test_models:
+  #     - gemini-1.5-flash
+
+export:
+  formats:
+    - json
+    - csv
+  output_dir: "benchmark-results"
+
+metrics:
+  latency_percentiles: [50, 95, 99]

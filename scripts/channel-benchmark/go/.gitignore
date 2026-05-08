@@ -1,0 +1,9 @@
+# Compiled binary (local artifact)
+/channel-benchmark
+
+# Output artifacts
+/benchmark-results/
+
+# Go's default test cache / coverage
+*.out
+*.test

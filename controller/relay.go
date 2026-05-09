@@ -111,7 +111,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
 			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
 		} else {
-			newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest)
+			// Fy-api overlay: a validation/unmarshal failure on the client
+			// request body is a 4xx by HTTP semantics, not a 5xx. Upstream
+			// new-api defaults this to 500 via NewError, which (a) breaks
+			// client retry/circuit-breaker behaviour and (b) hides a real
+			// bug behind "looks like the server is broken". Pin to 400.
+			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 		return
 	}

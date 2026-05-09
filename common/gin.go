@@ -126,7 +126,9 @@ func UnmarshalBodyReusable(c *gin.Context, v any) error {
 		// TODO: someday non json request have variant model, we will need to implementation this
 	}
 	if err != nil {
-		return err
+		// Fy-api overlay: strip Go struct field paths from stdlib JSON
+		// errors before bubbling them up. See common/json_error_sanitizer.go.
+		return SanitizeJSONUnmarshalError(err)
 	}
 	// Reset request body
 	if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {

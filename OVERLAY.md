@@ -119,6 +119,19 @@
 - **冲突风险**：低（结构体新增一行字段；过滤函数新增一段独立 `if`，带 `// Fy-api overlay:` 注释）
 - **Merge 策略**：若 upstream 后续自行补上同样的过滤（推测会用同名字段 `AllowContextManagement`），merge 时直接 take theirs 即可；若它选了别的字段名，按 upstream 命名重写本 overlay
 
+### B-10 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
+- **新增文件**：
+  - `common/json_error_sanitizer.go`（`SanitizeJSONUnmarshalError`：把 stdlib `*json.UnmarshalTypeError` / `*json.SyntaxError` / 字符串型 wrapped 错误转成用户安全格式 `invalid type for field "X": expected <json type>, got <json type>`，去掉 Go 结构体路径）
+  - `common/json_error_sanitizer_test.go`（13 sub-test：典型类型错误 / syntax error / wrapped string fallback / unrelated passthrough / nil-safe）
+  - `common/gin_unmarshal_test.go`（黑盒验证 `UnmarshalBodyReusable` 不再向调用方泄露 Go 路径）
+- **修改文件**：
+  - `common/gin.go`（`UnmarshalBodyReusable` 错误返回前过 `SanitizeJSONUnmarshalError`）
+  - `controller/relay.go`（顶层 dispatcher 把 `ErrorCodeInvalidRequest` 用 `NewErrorWithStatusCode(... StatusBadRequest)` 显式钉到 400，原 `NewError` 默认 500 是 upstream 遗留 bug）
+- **背景**：客户端传错参数类型（如 `max_tokens="abc"`）时，upstream new-api 在 `controller/relay.go:114` 用 `types.NewError(err, ErrorCodeInvalidRequest)` 没指定 statusCode → 默认 500。响应组装路径（`controller/relay.go:91 SetMessage(newAPIError.Error())`）跳过了 `MaskSensitiveError`，把 stdlib 错误 `json: cannot unmarshal string into Go struct field GeneralOpenAIRequest.max_tokens of type uint` 原样吐给客户端，既破坏 HTTP 语义（4xx 客户端错被当 5xx 服务端错，触发客户端误重试 / 误熔断），又泄露 Go 内部结构。客户的 v2.1 测试报告里 17 条 500 错误都是这一个根因
+- **upstream 现状**：仓库里 `compatible_handler.go / claude_handler.go / gemini_handler.go / image_handler.go / rerank_handler.go / embedding_handler.go` 6 处都正确用了 `NewErrorWithStatusCode(... StatusBadRequest)`，唯独顶层 dispatcher 漏了一处。stdlib 错误脱敏 upstream 完全没做。**不向 upstream 提 PR**
+- **冲突风险**：低（顶层 dispatcher 改 1 行；UnmarshalBodyReusable 错误处加 1 行；新增的 sanitizer 是独立文件）
+- **Merge 策略**：若 upstream 修了同一行（用同样的 `NewErrorWithStatusCode`），merge 时 take theirs 即可；sanitizer 独立文件不会冲突
+
 ---
 
 ## 前端定制

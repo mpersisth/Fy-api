@@ -1,275 +1,459 @@
 <div align="center">
 
-# TraceNex
+![new-api](/web/default/public/logo.png)
 
-🍥 **AI Gateway & Asset Management Platform — downstream fork of [new-api](https://github.com/QuantumNous/new-api)**
+# New API
+
+🍥 **Next-Generation Large Model Gateway and AI Asset Management System**
 
 <p align="center">
-  <a href="./README.md">简体中文</a> |
-  <strong>English</strong> |
-  <a href="./README.zh_TW.md">繁體中文 (upstream)</a> |
-  <a href="./README.fr.md">Français (upstream)</a> |
-  <a href="./README.ja.md">日本語 (upstream)</a>
+  <a href="./README.md">中文</a> | 
+  <strong>English</strong> | 
+  <a href="./README.fr.md">Français</a> | 
+  <a href="./README.ja.md">日本語</a>
 </p>
 
 <p align="center">
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
-  </a><!--
-  --><a href="https://github.com/seraph0017/Fy-api/commits/main">
-    <img src="https://img.shields.io/github/last-commit/seraph0017/Fy-api?color=brightgreen" alt="last commit">
-  </a><!--
-  --><a href="https://github.com/QuantumNous/new-api">
-    <img src="https://img.shields.io/badge/upstream-QuantumNous%2Fnew--api-blue" alt="upstream">
+  <a href="https://raw.githubusercontent.com/Calcium-Ion/new-api/main/LICENSE">
+    <img src="https://img.shields.io/github/license/Calcium-Ion/new-api?color=brightgreen" alt="license">
+  </a>
+  <a href="https://github.com/Calcium-Ion/new-api/releases/latest">
+    <img src="https://img.shields.io/github/v/release/Calcium-Ion/new-api?color=brightgreen&include_prereleases" alt="release">
+  </a>
+  <a href="https://github.com/users/Calcium-Ion/packages/container/package/new-api">
+    <img src="https://img.shields.io/badge/docker-ghcr.io-blue" alt="docker">
+  </a>
+  <a href="https://hub.docker.com/r/CalciumIon/new-api">
+    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
+  </a>
+  <a href="https://goreportcard.com/report/github.com/Calcium-Ion/new-api">
+    <img src="https://goreportcard.com/badge/github.com/Calcium-Ion/new-api" alt="GoReportCard">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://trendshift.io/repositories/8227" target="_blank">
+    <img src="https://trendshift.io/api/badge/repositories/8227" alt="Calcium-Ion%2Fnew-api | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
   </a>
 </p>
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-what-tracenex-adds-on-top-of-new-api">What TraceNex Adds</a> •
-  <a href="#-production-deployment">Production Deployment</a> •
-  <a href="#-upstream-sync">Upstream Sync</a> •
-  <a href="#-license--attribution">License</a>
+  <a href="#-key-features">Key Features</a> •
+  <a href="#-deployment">Deployment</a> •
+  <a href="#-documentation">Documentation</a> •
+  <a href="#-help-support">Help</a>
 </p>
 
 </div>
 
-## 📝 About TraceNex
+## 📝 Project Description
 
-TraceNex is a private-branded **downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api)** with a small overlay of customizations on top. It preserves everything upstream offers (40+ LLM providers, unified API gateway, quota/billing, admin dashboard, Subscription, Channel Affinity, Gemini cached-token billing, etc.) and adds a handful of operator-friendly features plus a full production deployment toolchain.
+> [!NOTE]  
+> This is an open-source project developed based on [One API](https://github.com/songquanpeng/one-api)
 
-> [!NOTE]
-> - **Repository identity**: the code and GitHub repo are named `Fy-api` for continuity (remote: `github.com/seraph0017/Fy-api`); **TraceNex is the product brand** displayed to end users (`SystemName = "TraceNex"`, UI, docs). The two names are deliberately distinct — see `CLAUDE.md` for the design decision.
-> - TraceNex tracks `upstream/main` on a monthly cadence — every upstream improvement (new model adapters, bug fixes, schema migrations) flows into TraceNex via the automated [upstream-sync workflow](./.github/workflows/upstream-sync.yml).
-> - The Go module path stays `github.com/QuantumNous/new-api` so that merging upstream patches does not require rewriting thousands of imports.
-> - Upstream attribution (LICENSE, copyright headers) is preserved per AGPLv3 compliance. See [`OVERLAY.md`](./OVERLAY.md) for the full list of TraceNex-specific changes.
+> [!IMPORTANT]  
+> - This project is for personal learning purposes only, with no guarantee of stability or technical support
+> - Users must comply with OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use) and **applicable laws and regulations**, and must not use it for illegal purposes
+> - According to the [《Interim Measures for the Management of Generative Artificial Intelligence Services》](http://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm), please do not provide any unregistered generative AI services to the public in China.
 
 ---
 
-## ✨ What TraceNex Adds on Top of new-api
+## 🤝 Trusted Partners
 
-All of these are **additive** — `upstream/main` still works exactly the same through TraceNex.
+<p align="center">
+  <em>No particular order</em>
+</p>
 
-### Product layer
+<p align="center">
+  <a href="https://www.cherry-ai.com/" target="_blank">
+    <img src="./docs/images/cherry-studio.png" alt="Cherry Studio" height="80" />
+  </a>
+  <a href="https://bda.pku.edu.cn/" target="_blank">
+    <img src="./docs/images/pku.png" alt="Peking University" height="80" />
+  </a>
+  <a href="https://www.compshare.cn/?ytag=GPU_yy_gh_newapi" target="_blank">
+    <img src="./docs/images/ucloud.png" alt="UCloud" height="80" />
+  </a>
+  <a href="https://www.aliyun.com/" target="_blank">
+    <img src="./docs/images/aliyun.png" alt="Alibaba Cloud" height="80" />
+  </a>
+  <a href="https://io.net/" target="_blank">
+    <img src="./docs/images/io-net.png" alt="IO.NET" height="80" />
+  </a>
+</p>
 
-| # | Feature | Surface | Status |
-|---|---------|---------|:------:|
-| 1 | **CSV log export** | `GET /api/log/export` (admin) + `GET /api/log/self/export` (user). UTF-8 + BOM, includes `request_id` column. | ✅ |
-| 2 | **Export button on the Usage Logs page** | One-click CSV download that respects the active filter and up to `MaxLogExportItems=50000` rows. | ✅ |
-| 3 | **Embedded product docs at `/docs`** | Markdown-driven manual with screenshots, rendered via a `NewMarkdownRender` component. | ✅ |
-| 4 | **Email/username login shown first** | Login form reordered so the primary affordance isn't hidden behind OAuth buttons. | ✅ |
-| 5 | **Register link always visible** | Removed the `self_use_mode` gate on the "Sign up" link (operators can still disable registration via backend setting). | ✅ |
-| 6 | **TraceNex branding** | `SystemName` → `TraceNex`, logo + favicon + HTML title, all 7 locales (zh-CN / zh-TW / en / fr / ja / ru / vi) rebranded. | ✅ |
+---
 
-### Platform layer
+## 🙏 Special Thanks
 
-| # | Feature | Surface | Status |
-|---|---------|---------|:------:|
-| 7 | **Upstream sync CI** | Two GitHub Actions — a weekly watch that warns when drift exceeds 100 commits, and a manual sync that opens a conflict-ready PR and re-applies the brand rewrite. | ✅ |
-| 8 | **Production deployment toolkit** | Seven idempotent scripts under [`scripts/prod/`](./scripts/prod/) that take a fresh Aliyun ECS from zero to a blue/green, HTTPS-terminated, log-shipped, rate-limited production in ~30 minutes. | ✅ |
-| 9 | **Blue-green deploy automation** | [`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) — detect active color, pull new image, health check, swap Nginx upstream, drain, stop old. Zero-downtime. | ✅ |
-| 10 | **Deployment runbooks** | Full coverage under [`docs/deploy/`](./docs/deploy/): ACK (Kubernetes), single-host Podman, observability (SLS + Prometheus), rate limiting, local dev. | ✅ |
+<p align="center">
+  <a href="https://www.jetbrains.com/?from=new-api" target="_blank">
+    <img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.png" alt="JetBrains Logo" width="120" />
+  </a>
+</p>
 
-> For the full source-level diff see [`OVERLAY.md`](./OVERLAY.md).
+<p align="center">
+  <strong>Thanks to <a href="https://www.jetbrains.com/?from=new-api">JetBrains</a> for providing free open-source development license for this project</strong>
+</p>
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1 — Docker / Podman (testing)
+### Using Docker Compose (Recommended)
 
 ```bash
-git clone git@github.com:seraph0017/Fy-api.git
-cd Fy-api
+# Clone the project
+git clone https://github.com/QuantumNous/new-api.git
+cd new-api
 
-# Start with the dev compose file (SQLite + in-memory cache)
-docker compose up -d
-# or with podman
-podman-compose up -d
+# Edit docker-compose.yml configuration
+nano docker-compose.yml
+
+# Start the service
+docker-compose up -d
 ```
 
-Visit <http://localhost:3000>. Default admin credentials follow the upstream convention (first-user setup at `/api/setup`).
-
-### Option 2 — Build from source
+<details>
+<summary><strong>Using Docker Commands</strong></summary>
 
 ```bash
-# Backend
-go mod tidy
-go build -o bin/tracenex
+# Pull the latest image
+docker pull calciumion/new-api:latest
 
-# Frontend (bun is the preferred toolchain — see CLAUDE.md Rule 3)
-cd web
-bun install
-bun run build
+# Using SQLite (default)
+docker run --name new-api -d --restart always \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v ./data:/data \
+  calciumion/new-api:latest
+
+# Using MySQL
+docker run --name new-api -d --restart always \
+  -p 3000:3000 \
+  -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
+  -e TZ=Asia/Shanghai \
+  -v ./data:/data \
+  calciumion/new-api:latest
 ```
 
-The three-stage `Dockerfile` (bun → golang → debian) handles this automatically for container builds, so you don't need bun or Go installed on the host if you're going via `docker build` / `podman build`.
+> **💡 Tip:** `-v ./data:/data` will save data in the `data` folder of the current directory, you can also change it to an absolute path like `-v /your/custom/path:/data`
 
-See [`docs/deploy/local-dev.md`](./docs/deploy/local-dev.md) for the full local development setup.
+</details>
 
 ---
 
-## 🚢 Production Deployment
+🎉 After deployment is complete, visit `http://localhost:3000` to start using!
 
-TraceNex ships with a **production-grade deployment toolchain** validated on Alibaba Cloud single-host (ECS 16c32g) and Kubernetes (ACK). The single-host path is documented end-to-end; the Kubernetes path uses standard Helm-style values.
+📖 For more deployment methods, please refer to [Deployment Guide](https://docs.newapi.pro/en/docs/installation)
 
-### Supported topologies
+---
 
-| Topology | Status | Guide |
-|----------|:------:|-------|
-| **Single-host Podman** (ECS / bare metal) | ✅ Production-proven | [`docs/deploy/prod-podman-single.md`](./docs/deploy/prod-podman-single.md) |
-| **Aliyun ACK (Kubernetes)** | ✅ Documented | [`docs/deploy/prod-ack.md`](./docs/deploy/prod-ack.md) |
-| **Local Podman (test)** | ✅ For QA | [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) |
+## 📚 Documentation
 
-### One-shot setup on a fresh ECS
+<div align="center">
 
-Copy [`scripts/prod/`](./scripts/prod/) to the server and run the scripts in order. Each is **idempotent** and **fails loudly on the first error**. Typical total time: **~30 minutes** including Let's Encrypt issuance.
+### 📖 [Official Documentation](https://docs.newapi.pro/en/docs) | [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/QuantumNous/new-api)
+
+</div>
+
+**Quick Navigation:**
+
+| Category | Link |
+|------|------|
+| 🚀 Deployment Guide | [Installation Documentation](https://docs.newapi.pro/en/docs/installation) |
+| ⚙️ Environment Configuration | [Environment Variables](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables) |
+| 📡 API Documentation | [API Documentation](https://docs.newapi.pro/en/docs/api) |
+| ❓ FAQ | [FAQ](https://docs.newapi.pro/en/docs/support/faq) |
+| 💬 Community Interaction | [Communication Channels](https://docs.newapi.pro/en/docs/support/community-interaction) |
+
+---
+
+## ✨ Key Features
+
+> For detailed features, please refer to [Features Introduction](https://docs.newapi.pro/en/docs/guide/wiki/basic-concepts/features-introduction)
+
+### 🎨 Core Functions
+
+| Feature | Description |
+|------|------|
+| 🎨 New UI | Modern user interface design |
+| 🌍 Multi-language | Supports Chinese, English, French, Japanese |
+| 🔄 Data Compatibility | Fully compatible with the original One API database |
+| 📈 Data Dashboard | Visual console and statistical analysis |
+| 🔒 Permission Management | Token grouping, model restrictions, user management |
+
+### 💰 Payment and Billing
+
+- ✅ Online recharge (EPay, Stripe)
+- ✅ Pay-per-use model pricing
+- ✅ Cache billing support (OpenAI, Azure, DeepSeek, Claude, Qwen and all supported models)
+- ✅ Flexible billing policy configuration
+
+### 🔐 Authorization and Security
+
+- 😈 Discord authorization login
+- 🤖 LinuxDO authorization login
+- 📱 Telegram authorization login
+- 🔑 OIDC unified authentication
+
+### 🚀 Advanced Features
+
+**API Format Support:**
+- ⚡ [OpenAI Responses](https://docs.newapi.pro/en/docs/api/ai-model/chat/openai/create-response)
+- ⚡ [OpenAI Realtime API](https://docs.newapi.pro/en/docs/api/ai-model/realtime/create-realtime-session) (including Azure)
+- ⚡ [Claude Messages](https://docs.newapi.pro/en/docs/api/ai-model/chat/create-message)
+- ⚡ [Google Gemini](https://doc.newapi.pro/en/api/google-gemini-chat)
+- 🔄 [Rerank Models](https://docs.newapi.pro/en/docs/api/ai-model/rerank/create-rerank) (Cohere, Jina)
+
+**Intelligent Routing:**
+- ⚖️ Channel weighted random
+- 🔄 Automatic retry on failure
+- 🚦 User-level model rate limiting
+
+**Format Conversion:**
+- 🔄 **OpenAI Compatible ⇄ Claude Messages**
+- 🔄 **OpenAI Compatible → Google Gemini**
+- 🔄 **Google Gemini → OpenAI Compatible** - Text only, function calling not supported yet
+- 🚧 **OpenAI Compatible ⇄ OpenAI Responses** - In development
+- 🔄 **Thinking-to-content functionality**
+
+**Reasoning Effort Support:**
+
+<details>
+<summary>View detailed configuration</summary>
+
+**OpenAI series models:**
+- `o3-mini-high` - High reasoning effort
+- `o3-mini-medium` - Medium reasoning effort
+- `o3-mini-low` - Low reasoning effort
+- `gpt-5-high` - High reasoning effort
+- `gpt-5-medium` - Medium reasoning effort
+- `gpt-5-low` - Low reasoning effort
+
+**Claude thinking models:**
+- `claude-3-7-sonnet-20250219-thinking` - Enable thinking mode
+
+**Google Gemini series models:**
+- `gemini-2.5-flash-thinking` - Enable thinking mode
+- `gemini-2.5-flash-nothinking` - Disable thinking mode
+- `gemini-2.5-pro-thinking` - Enable thinking mode
+- `gemini-2.5-pro-thinking-128` - Enable thinking mode with thinking budget of 128 tokens
+- You can also append `-low`, `-medium`, or `-high` to any Gemini model name to request the corresponding reasoning effort (no extra thinking-budget suffix needed).
+
+</details>
+
+---
+
+## 🤖 Model Support
+
+> For details, please refer to [API Documentation - Relay Interface](https://docs.newapi.pro/en/docs/api)
+
+| Model Type | Description | Documentation |
+|---------|------|------|
+| 🤖 OpenAI GPTs | gpt-4-gizmo-* series | - |
+| 🎨 Midjourney-Proxy | [Midjourney-Proxy(Plus)](https://github.com/novicezk/midjourney-proxy) | [Documentation](https://doc.newapi.pro/en/api/midjourney-proxy-image) |
+| 🎵 Suno-API | [Suno API](https://github.com/Suno-API/Suno-API) | [Documentation](https://doc.newapi.pro/en/api/suno-music) |
+| 🔄 Rerank | Cohere, Jina | [Documentation](https://docs.newapi.pro/en/docs/api/ai-model/rerank/create-rerank) |
+| 💬 Claude | Messages format | [Documentation](https://docs.newapi.pro/en/docs/api/ai-model/chat/create-message) |
+| 🌐 Gemini | Google Gemini format | [Documentation](https://doc.newapi.pro/en/api/google-gemini-chat) |
+| 🔧 Dify | ChatFlow mode | - |
+| 🎯 Custom | Supports complete call address | - |
+
+### 📡 Supported Interfaces
+
+<details>
+<summary>View complete interface list</summary>
+
+- [Chat Interface (Chat Completions)](https://docs.newapi.pro/en/docs/api/ai-model/chat/openai/create-chat-completion)
+- [Response Interface (Responses)](https://docs.newapi.pro/en/docs/api/ai-model/chat/openai/create-response)
+- [Image Interface (Image)](https://docs.newapi.pro/en/docs/api/ai-model/images/openai/v1-images-generations--post)
+- [Audio Interface (Audio)](https://docs.newapi.pro/en/docs/api/ai-model/audio/openai/create-transcription)
+- [Video Interface (Video)](https://docs.newapi.pro/en/docs/api/ai-model/videos/create-video-generation)
+- [Embedding Interface (Embeddings)](https://docs.newapi.pro/en/docs/api/ai-model/embeddings/create-embedding)
+- [Rerank Interface (Rerank)](https://docs.newapi.pro/en/docs/api/ai-model/rerank/create-rerank)
+- [Realtime Conversation (Realtime)](https://docs.newapi.pro/en/docs/api/ai-model/realtime/create-realtime-session)
+- [Claude Chat](https://docs.newapi.pro/en/docs/api/ai-model/chat/create-message)
+- [Google Gemini Chat](https://doc.newapi.pro/en/api/google-gemini-chat)
+
+</details>
+
+---
+
+## 🚢 Deployment
+
+> [!TIP]
+> **Latest Docker image:** `calciumion/new-api:latest`
+
+### 📋 Deployment Requirements
+
+| Component | Requirement |
+|------|------|
+| **Local database** | SQLite (Docker must mount `/data` directory)|
+| **Remote database** | MySQL ≥ 5.7.8 or PostgreSQL ≥ 9.6 |
+| **Container engine** | Docker / Docker Compose |
+
+### ⚙️ Environment Variable Configuration
+
+<details>
+<summary>Common environment variable configuration</summary>
+
+| Variable Name | Description | Default Value |
+|--------|------|--------|
+| `SESSION_SECRET` | Session secret (required for multi-machine deployment) | - |
+| `CRYPTO_SECRET` | Encryption secret (required for Redis) | - |
+| `SQL_DSN` | Database connection string | - |
+| `REDIS_CONN_STRING` | Redis connection string | - |
+| `STREAMING_TIMEOUT` | Streaming timeout (seconds) | `300` |
+| `STREAM_SCANNER_MAX_BUFFER_MB` | Max per-line buffer (MB) for the stream scanner; increase when upstream sends huge image/base64 payloads | `64` |
+| `MAX_REQUEST_BODY_MB` | Max request body size (MB, counted **after decompression**; prevents huge requests/zip bombs from exhausting memory). Exceeding it returns `413` | `32` |
+| `AZURE_DEFAULT_API_VERSION` | Azure API version | `2025-04-01-preview` |
+| `ERROR_LOG_ENABLED` | Error log switch | `false` |
+| `PYROSCOPE_URL` | Pyroscope server address | - |
+| `PYROSCOPE_APP_NAME` | Pyroscope application name | `new-api` |
+| `PYROSCOPE_BASIC_AUTH_USER` | Pyroscope basic auth user | - |
+| `PYROSCOPE_BASIC_AUTH_PASSWORD` | Pyroscope basic auth password | - |
+| `PYROSCOPE_MUTEX_RATE` | Pyroscope mutex sampling rate | `5` |
+| `PYROSCOPE_BLOCK_RATE` | Pyroscope block sampling rate | `5` |
+| `HOSTNAME` | Hostname tag for Pyroscope | `new-api` |
+
+📖 **Complete configuration:** [Environment Variables Documentation](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables)
+
+</details>
+
+### 🔧 Deployment Methods
+
+<details>
+<summary><strong>Method 1: Docker Compose (Recommended)</strong></summary>
 
 ```bash
-# On your laptop
-scp -r scripts/prod config/fy-api.env.example root@<ECS-IP>:/root/
+# Clone the project
+git clone https://github.com/QuantumNous/new-api.git
+cd new-api
 
-# On the ECS (as root)
-cd /root/prod
+# Edit configuration
+nano docker-compose.yml
 
-sudo ./01-setup-system.sh                     # kernel params, ulimits, podman, nginx, firewall
-./02-install-logtail.sh                       # Aliyun SLS log agent
-sudo DOMAIN=api.example.com EMAIL=... \
-  ./03-setup-nginx.sh                         # Nginx + Let's Encrypt (HTTPS)
-#  optional: ./03b-add-redirect-domain.sh     # www → api 301 redirect
-#  optional: ./03c-add-alias-domain.sh        # www as a parallel alias
-IMAGE_TAG=v0.9.6 ./04-deploy-fyapi.sh         # first deploy of the blue container
-./05-enable-rate-limit.sh                     # turn on model-request rate-limit + group quotas
-sudo ./07-setup-logrotate.sh                  # log rotation for nginx + container logs
-
-# Every subsequent release (zero-downtime)
-./06-deploy-blue-green.sh v0.9.7
+# Start service
+docker-compose up -d
 ```
 
-See [`scripts/prod/README.md`](./scripts/prod/README.md) for the full checklist, prerequisites, and rollback procedure.
+</details>
 
-### Blue-green deploy at a glance
+<details>
+<summary><strong>Method 2: Docker Commands</strong></summary>
 
-[`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) implements zero-downtime rollouts:
-
-1. Detects the currently active color (`blue` @ 3001 or `green` @ 3002)
-2. Pulls the new image from Aliyun ACR
-3. Starts the standby container with the new image
-4. Health-checks `/api/status` for up to 60 seconds
-5. Rewrites Nginx upstream port → `nginx -t` → `systemctl reload nginx`
-6. Sleeps 30 seconds to drain old connections
-7. Stops (but does not remove) the old container — available for rollback
-
-### Observability
-
-- **Logs to disk** — `--log-dir=/app/logs` on `podman run`; rotated daily via `logrotate`
-- **Logs to Aliyun SLS** — Logtail picks up both container stdout and disk logs, split across four logstores (`app`, `consume`, `nginx-access`, `nginx-error`)
-- **Metrics** — Prometheus stack defined under [`docs/deploy/monitoring/`](./docs/deploy/monitoring/) (Prometheus + Alertmanager + Blackbox + Grafana datasources + 15 alert rules)
-
-See [`docs/deploy/observability.md`](./docs/deploy/observability.md) for the full data path and dashboards.
-
-### Rate limiting (hot-reloadable)
-
-Per-user and per-group quotas (e.g. `default: 60/min`, `vip: 5000/min`) are set via the admin API and take effect immediately without restarting the container. See [`docs/deploy/rate-limiting.md`](./docs/deploy/rate-limiting.md) and [`05-enable-rate-limit.sh`](./scripts/prod/05-enable-rate-limit.sh).
-
-### Production validation
-
-A formal load test was performed on 2026-04-28 against the single-host Aliyun deployment (ECS 16c32g):
-
-- **2,477 requests** across 5 prompt-length tiers (1K / 6K / 9K / 16K / 50K tokens)
-- **32 concurrent workers** against `kimi-k2.5` via Moonshot
-- **100% success rate** from the client, **0 5xx** on the server
-- **Peak container resource**: CPU 6.5% / MEM 58MB — roughly **16× CPU headroom** on this node size
-- Zero panics, zero DB errors, zero Redis pool timeouts
-
-See [upstream deployment docs](./docs/deploy/) for full methodology and detail.
-
----
-
-## 🔄 Upstream Sync
-
-TraceNex is designed to stay close to upstream rather than drift. The philosophy:
-
-1. **Additive customizations only** — customizations live in overlay files (e.g. `controller/log_export.go`, `web/src/pages/FyApiDocs/`) to minimize merge conflicts.
-2. **Monthly sync cadence** — conflict cost grows exponentially with drift (~1 month → 0-2 conflicts; ~6 months → 20+).
-3. **Automated watch** — `.github/workflows/upstream-watch.yml` runs every Monday and warns when TraceNex is > 100 commits behind; fails hard at > 500.
-4. **One-click sync PR** — `.github/workflows/upstream-sync.yml` (manual trigger) merges `upstream/main`, re-applies the i18n rebrand (`New API` → `TraceNex`), and opens a PR.
-
+**Using SQLite:**
 ```bash
-# Check drift locally
-git fetch upstream
-git rev-list --count HEAD..upstream/main
-
-# See what's new
-git log HEAD..upstream/main --oneline | head -30
+docker run --name new-api -d --restart always \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v ./data:/data \
+  calciumion/new-api:latest
 ```
 
-### What customizations survive a sync
+**Using MySQL:**
+```bash
+docker run --name new-api -d --restart always \
+  -p 3000:3000 \
+  -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
+  -e TZ=Asia/Shanghai \
+  -v ./data:/data \
+  calciumion/new-api:latest
+```
 
-See [`OVERLAY.md`](./OVERLAY.md). Briefly:
+> **💡 Path explanation:** 
+> - `./data:/data` - Relative path, data saved in the data folder of the current directory
+> - You can also use absolute path, e.g.: `/your/custom/path:/data`
 
-- **Zero-conflict** (new files): CSV export backend + frontend, FyApiDocs page, Markdown renderer, GitHub Actions, production scripts, deployment docs, OVERLAY.md itself
-- **Low-conflict** (small inline markers `// Fy-api overlay:`): `common/constants.go` `SystemName`, `web/index.html` title, `web/src/App.jsx` route wiring, `LoginForm.jsx` reordering
-- **Automatable** (CI re-runs the transformation): i18n rebrand via the upstream-sync workflow
+</details>
 
----
+<details>
+<summary><strong>Method 3: BaoTa Panel</strong></summary>
 
-## 📚 Upstream Documentation
+1. Install BaoTa Panel (≥ 9.2.0 version)
+2. Search for **New-API** in the application store
+3. One-click installation
 
-For everything the gateway itself does (channels, relay protocols, billing formulas, admin settings, API reference, etc.) refer to the **upstream documentation** — nothing there has been removed or re-pointed:
+📖 [Tutorial with images](./docs/BT.md)
 
-- 📘 [new-api Official Docs](https://docs.newapi.pro/en/docs)
-- 🧪 [DeepWiki](https://deepwiki.com/QuantumNous/new-api)
-- 🚀 [Installation Guide](https://docs.newapi.pro/en/docs/installation)
-- ⚙️ [Environment Variables](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables)
-- 📡 [API Reference](https://docs.newapi.pro/en/docs/api)
-- ❓ [FAQ](https://docs.newapi.pro/en/docs/support/faq)
+</details>
 
-### TraceNex-specific docs
+### ⚠️ Multi-machine Deployment Considerations
 
-| File | Purpose |
-|------|---------|
-| [`OVERLAY.md`](./OVERLAY.md) | Source-of-truth list of every TraceNex customization vs upstream |
-| [`CLAUDE.md`](./CLAUDE.md) | Architecture overview + Rules for AI-assisted development |
-| [`scripts/prod/README.md`](./scripts/prod/README.md) | Production deployment scripts overview |
-| [`docs/deploy/prod-podman-single.md`](./docs/deploy/prod-podman-single.md) | Full single-host production runbook |
-| [`docs/deploy/prod-ack.md`](./docs/deploy/prod-ack.md) | Kubernetes (Aliyun ACK) deployment |
-| [`docs/deploy/observability.md`](./docs/deploy/observability.md) | Logs, metrics, alerts, dashboards |
-| [`docs/deploy/rate-limiting.md`](./docs/deploy/rate-limiting.md) | Per-user and per-group quota configuration |
-| [`docs/deploy/local-dev.md`](./docs/deploy/local-dev.md) | Local development setup |
-| [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) | QA/staging Podman setup |
+> [!WARNING]
+> - **Must set** `SESSION_SECRET` - Otherwise login status inconsistent
+> - **Shared Redis must set** `CRYPTO_SECRET` - Otherwise data cannot be decrypted
 
-Cross-project analysis, DB migration runbooks, and historical post-mortems (spanning multiple sibling projects such as legacy forks and pure upstream) live under `~/Projects/apiGateway/docs/` in the workspace parent directory, outside this repo.
+### 🔄 Channel Retry and Cache
 
----
+**Retry configuration:** `Settings → Operation Settings → General Settings → Failure Retry Count`
 
-## 📜 License & Attribution
-
-TraceNex is distributed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE), inheriting the upstream license.
-
-- **Upstream**: [QuantumNous/new-api](https://github.com/QuantumNous/new-api) — AGPLv3
-- **Original base**: [songquanpeng/one-api](https://github.com/songquanpeng/one-api) — MIT
-
-TraceNex preserves all upstream copyright notices, the LICENSE file, and the Go module path `github.com/QuantumNous/new-api`. See [`OVERLAY.md`](./OVERLAY.md) for the exact scope of downstream modifications.
-
-For commercial licensing of the upstream project, contact the upstream maintainers at [support@quantumnous.com](mailto:support@quantumnous.com). TraceNex itself is an internal deployment and does not offer separate commercial licensing.
+**Cache configuration:**
+- `REDIS_CONN_STRING`: Redis cache (recommended)
+- `MEMORY_CACHE_ENABLED`: Memory cache
 
 ---
 
-## 🙏 Acknowledgements
+## 🔗 Related Projects
 
-Huge thanks to:
+### Upstream Projects
 
-- **[QuantumNous](https://github.com/QuantumNous)** and all new-api contributors — TraceNex is 99% their work
-- **[songquanpeng](https://github.com/songquanpeng)** for the original One API foundation
-- **[JetBrains](https://www.jetbrains.com/?from=new-api)** for providing free open-source development licenses to the upstream project
+| Project | Description |
+|------|------|
+| [One API](https://github.com/songquanpeng/one-api) | Original project base |
+| [Midjourney-Proxy](https://github.com/novicezk/midjourney-proxy) | Midjourney interface support |
+
+### Supporting Tools
+
+| Project | Description |
+|------|------|
+| [neko-api-key-tool](https://github.com/Calcium-Ion/neko-api-key-tool) | Key quota query tool |
+| [new-api-horizon](https://github.com/Calcium-Ion/new-api-horizon) | New API high-performance optimized version |
+
+---
+
+## 💬 Help Support
+
+### 📖 Documentation Resources
+
+| Resource | Link |
+|------|------|
+| 📘 FAQ | [FAQ](https://docs.newapi.pro/en/docs/support/faq) |
+| 💬 Community Interaction | [Communication Channels](https://docs.newapi.pro/en/docs/support/community-interaction) |
+| 🐛 Issue Feedback | [Issue Feedback](https://docs.newapi.pro/en/docs/support/feedback-issues) |
+| 📚 Complete Documentation | [Official Documentation](https://docs.newapi.pro/en/docs) |
+
+### 🤝 Contribution Guide
+
+Welcome all forms of contribution!
+
+- 🐛 Report Bugs
+- 💡 Propose New Features
+- 📝 Improve Documentation
+- 🔧 Submit Code
+
+---
+
+## 🌟 Star History
+
+<div align="center">
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Calcium-Ion/new-api&type=Date)](https://star-history.com/#Calcium-Ion/new-api&Date)
+
+</div>
 
 ---
 
 <div align="center">
 
-### 💖 Thanks for using TraceNex
+### 💖 Thank you for using New API
 
-<sub>A small overlay on the shoulders of <a href="https://github.com/QuantumNous/new-api">new-api</a>.</sub>
+If this project is helpful to you, welcome to give us a ⭐️ Star！
+
+**[Official Documentation](https://docs.newapi.pro/en/docs)** • **[Issue Feedback](https://github.com/Calcium-Ion/new-api/issues)** • **[Latest Release](https://github.com/Calcium-Ion/new-api/releases)**
+
+<sub>Built with ❤️ by QuantumNous</sub>
 
 </div>

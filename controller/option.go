@@ -198,6 +198,20 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "theme.frontend":
+		// Fy-api overlay: TraceNex ships only the classic frontend, so reject
+		// any attempt to flip the theme to "default" via the admin UI / API.
+		// The runtime value is also force-pinned in
+		// setting/system_setting/theme.go::syncThemeToCommon. To allow
+		// switching (path-B migration), delete this guard and remove the
+		// override in syncThemeToCommon.
+		if option.Value != "classic" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "TraceNex 当前仅支持 classic 主题，default 主题已构建但未启用",
+			})
+			return
+		}
 	case "GroupRatio":
 		err = ratio_setting.CheckGroupRatio(option.Value.(string))
 		if err != nil {

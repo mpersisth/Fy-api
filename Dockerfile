@@ -7,13 +7,25 @@
 FROM oven/bun:1 AS builder
 
 WORKDIR /build
-COPY web/package.json .
-COPY web/bun.lock .
+COPY web/default/package.json .
+COPY web/default/bun.lock .
 RUN bun install
-COPY ./web .
+COPY ./web/default .
 COPY ./VERSION .
 RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat VERSION) bun run build
 
+# Fy-api overlay: tag-only (sha digest dropped) for Aliyun ACR mirror compatibility
+FROM oven/bun:1 AS builder-classic
+
+WORKDIR /build
+COPY web/classic/package.json .
+COPY web/classic/bun.lock .
+RUN bun install
+COPY ./web/classic .
+COPY ./VERSION .
+RUN VITE_REACT_APP_VERSION=$(cat VERSION) bun run build
+
+# Fy-api overlay: tag-only (sha digest dropped) for Aliyun ACR mirror compatibility
 FROM golang:1.26.1-alpine AS builder2
 ENV GO111MODULE=on CGO_ENABLED=0
 # Fy-api overlay: use goproxy.cn for in-China build hosts (Aliyun ECS etc.)
@@ -32,7 +44,8 @@ ADD go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-COPY --from=builder /build/dist ./web/dist
+COPY --from=builder /build/dist ./web/default/dist
+COPY --from=builder-classic /build/dist ./web/classic/dist
 RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
 
 FROM debian:bookworm-slim
@@ -43,6 +56,7 @@ RUN apt-get update \
     && update-ca-certificates
 
 COPY --from=builder2 /build/new-api /
+COPY LICENSE NOTICE THIRD-PARTY-LICENSES.md /licenses/
 EXPOSE 3000
 WORKDIR /data
 ENTRYPOINT ["/new-api"]

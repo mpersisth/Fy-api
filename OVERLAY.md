@@ -1,8 +1,10 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-05-09
+> 最后更新：2026-05-09（路径迁移到 `web/classic/`，吸收上游 v1.0 双前端架构）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `f995a868` (2026-04-18)
+> 上游基线：new-api @ `543cc64ea` (2026-05-08)
+>
+> **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
 本文件记录所有 TraceNex 相对于 `upstream/main` (QuantumNous/new-api) 的私有改动。
 每次从上游 merge 时对照本清单处理冲突。
@@ -152,26 +154,29 @@
 
 ## 前端定制
 
+> ⚠️ **路径前缀提示（v1.0 后）**：所有前端 overlay 文件物理路径都在 `web/classic/` 下面。`web/default/` 是上游 v1.0 引入的全新前端，TraceNex 不在那里维护任何 overlay，runtime theme 也不允许切到 default（见 `setting/system_setting/theme.go` + `controller/option.go` 的 `// Fy-api overlay:` 双锁）。
+
 ### F-1 [brand] 浏览器 tab + icon
-- **文件**：`web/index.html`
+- **文件**：`web/classic/index.html`
 - **修改**：`<title>TraceNex</title>` + `<link rel="icon" href="/new_logo.png?v=2" />`
 - **冲突风险**：中（上游会改 meta description）
 - **Merge 策略**：title 和 icon 两处坚持用 TraceNex；meta description 可接受 upstream
 
 ### F-2 [brand] Logo 和 favicon
-- **新增**：`web/public/new_logo.png` (3.4 MB)
-- **替换**：`web/public/favicon.ico`
+- **新增**：`web/classic/public/new_logo.png` (3.4 MB)
+- **替换**：`web/classic/public/favicon.ico`
 - **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
+- **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
 ### F-3 [i18n] 品牌词替换
-- **修改文件**：`web/src/i18n/locales/{zh-CN,zh-TW,en,fr,ja,ru,vi}.json`
+- **修改文件**：`web/classic/src/i18n/locales/{zh-CN,zh-TW,zh,en,fr,ja,ru,vi}.json`（v1.0 合并后多了一个 `zh.json`）
 - **变化**：所有 value 中 `New API` → `TraceNex`，`TraceNex` → `TraceNex`（历史遗留）
 - **冲突风险**：高（上游每月增改几十个翻译 key）
 - **Merge 策略**：
   ```bash
   # 每次 merge 上游的 locales 之后：
-  for lang in zh-CN zh-TW en fr ja ru vi; do
-    f="web/src/i18n/locales/${lang}.json"
+  for lang in zh-CN zh-TW zh en fr ja ru vi; do
+    f="web/classic/src/i18n/locales/${lang}.json"
     jq '(.translation |= with_entries(.value |= gsub("New API"; "TraceNex")))' "$f" > "/tmp/rebrand-${lang}.json"
     cp "/tmp/rebrand-${lang}.json" "$f"
   done
@@ -180,28 +185,36 @@
 
 ### F-4 [docs] 内嵌产品文档页
 - **新增文件**：
-  - `web/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs）
-  - `web/src/components/common/NewMarkdownRender/NewMarkdownRender.jsx`
-  - `web/public/product-docs/TraceNex.md`
-  - `web/public/product-docs/images/image1.png` ~ `image18.png`
-- **修改文件**：`web/src/App.jsx`
+  - `web/classic/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs）
+  - `web/classic/src/components/common/NewMarkdownRender/NewMarkdownRender.jsx`
+  - `web/classic/public/product-docs/TraceNex.md`
+  - `web/classic/public/product-docs/images/image1.png` ~ `image18.png`
+- **修改文件**：`web/classic/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
 - **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致）
 - **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。markdown 内图片路径全部用绝对路径 `/product-docs/images/...`。
 
 ### F-5 [csv-export] 日志页 "导出 CSV" 按钮
-- **新增文件**：`web/src/components/table/usage-logs/UsageLogsExportButton.jsx`
-- **修改文件**：`web/src/components/table/usage-logs/index.jsx`（把 `statsArea` 的 LogsActions 包一层 flex，加入 ExportButton）
+- **新增文件**：`web/classic/src/components/table/usage-logs/UsageLogsExportButton.jsx`
+- **修改文件**：`web/classic/src/components/table/usage-logs/index.jsx`（把 `statsArea` 的 LogsActions 包一层 flex，加入 ExportButton）
 - **冲突风险**：中（upstream 改 index.jsx 布局会冲突）
 
 ### F-6 [login] 登录表单定制
-- **文件**：`web/src/components/auth/LoginForm.jsx`
+- **文件**：`web/classic/src/components/auth/LoginForm.jsx`
 - **修改**：
   1. 邮箱/用户名登录按钮移到最前 + 加 Divider（L520-540）
   2. 注册入口总显示（两处 L700 和 L854 的 `!status.self_use_mode_enabled` → `true`）
 - **冲突风险**：高（upstream 会持续优化登录表单 UI）
 - **Merge 策略**：两个定制都加了 `// Fy-api overlay:` 注释方便辨认
+
+### F-7 [theme-lock] 强制 classic 主题（新增于 2026-05-09）
+- **修改文件**：
+  - `setting/system_setting/theme.go`（`syncThemeToCommon` 强制把 `themeSettings.Frontend` 写回 `"classic"`）
+  - `controller/option.go`（`case "theme.frontend":` 拒绝 `"default"` 写入）
+- **目的**：上游 v1.0 后 `theme.frontend` 是一个 admin 后台可改的 option（5/1 之后的 `e0b6eb3a5` 还修了它从 DB 加载的同步问题）。TraceNex 选择路径 A：仅 ship classic，所以做了**双锁**——即使有人手动改 DB option 表也会在启动时被 `syncThemeToCommon` 覆写回 classic
+- **冲突风险**：低（两处都是带 `// Fy-api overlay:` 注释的小改动）
+- **可逆**：删掉这两处 overlay 即可回到上游"两套前端可切换"的行为，配合在 `web/default/` 重做 F-1~F-6 即为路径 B 的最小迁移路径
 
 ---
 

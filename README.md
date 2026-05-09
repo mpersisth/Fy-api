@@ -233,7 +233,7 @@ source .venv/bin/activate
 
 TraceNex 的设计原则是**紧跟上游而不是渐行渐远**。核心理念：
 
-1. **只做增量定制** —— 定制代码尽量放到新增文件里（如 `controller/log_export.go`、`web/src/pages/FyApiDocs/`），降低合并冲突
+1. **只做增量定制** —— 定制代码尽量放到新增文件里（如 `controller/log_export.go`、`web/classic/src/pages/FyApiDocs/`），降低合并冲突
 2. **月度同步节奏** —— 冲突成本随 drift 时长呈**指数增长**（~1 个月 0-2 处冲突；~6 个月 20+ 处）
 3. **自动监控** —— `.github/workflows/upstream-watch.yml` 每周一自动跑，积压 > 100 commits 时告警；> 500 直接 fail
 4. **一键同步 PR** —— `.github/workflows/upstream-sync.yml`（手动触发）合并 `upstream/main`、重新应用 i18n 品牌替换（`New API` → `TraceNex`）、开 PR 等人工 review
@@ -252,7 +252,7 @@ git log HEAD..upstream/main --oneline | head -30
 详见 [`OVERLAY.md`](./OVERLAY.md)。简要分类：
 
 - **零冲突**（新增文件）：CSV 导出后端 + 前端、FyApiDocs 页面、Markdown 渲染组件、GitHub Actions、生产脚本、部署文档、OVERLAY.md 本身
-- **低冲突**（带 `// Fy-api overlay:` 标记的小改动）：`common/constants.go` 的 `SystemName`、`web/index.html` 的 title、`web/src/App.jsx` 路由注册、`LoginForm.jsx` 重排
+- **低冲突**（带 `// Fy-api overlay:` 标记的小改动）：`common/constants.go` 的 `SystemName`、`web/classic/index.html` 的 title、`web/classic/src/App.jsx` 路由注册、`LoginForm.jsx` 重排
 - **可自动化**（CI 自动重新应用）：i18n 品牌替换，由 upstream-sync workflow 处理
 
 ---

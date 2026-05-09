@@ -19,7 +19,8 @@ The Go module path is intentionally kept as `github.com/QuantumNous/new-api` —
 ## Tech Stack
 
 - **Backend**: Go 1.25+ (module says 1.25.1), Gin web framework, GORM v2 ORM
-- **Frontend**: React 18, Vite, Semi Design UI (`@douyinfe/semi-ui`)
+- **Frontend (active for TraceNex)**: React 18, Vite, Semi Design UI (`@douyinfe/semi-ui`) — lives at `web/classic/`
+- **Frontend (upstream v1.0, not selected)**: React 19, TypeScript, Rsbuild, Base UI, Tailwind CSS — lives at `web/default/`
 - **Databases**: SQLite, MySQL ≥ 5.7.8, PostgreSQL ≥ 9.6 — **all three must be supported simultaneously**
 - **Cache**: Redis (go-redis) + in-memory cache
 - **Auth**: JWT, WebAuthn/Passkeys, OAuth (GitHub, Discord, LinuxDo, OIDC, WeChat, Telegram)
@@ -30,9 +31,11 @@ The Go module path is intentionally kept as `github.com/QuantumNous/new-api` —
 ### Full-stack dev (Makefile)
 
 ```bash
-make all              # builds frontend + starts backend dev server
-make build-frontend   # bun install + bun run build in web/
-make start-backend    # go run main.go
+make all                       # builds frontend + starts backend dev server
+make build-frontend-classic    # bun install + bun run build in web/classic/
+make build-frontend            # bun install + bun run build in web/default/ (upstream default; we don't ship it)
+make build-all-frontends       # both
+make start-backend             # go run main.go
 ```
 
 ### Backend
@@ -49,10 +52,12 @@ go test ./relay/channel/gemini/ -race -run TestBuildUsageFromGeminiMetadata  # o
 go test -cover ./service/...    # with coverage
 ```
 
-### Frontend (`web/`)
+### Frontend (`web/classic/`)
+
+This is the only frontend TraceNex actually ships. Theme is locked to `"classic"` in `setting/system_setting/theme.go`.
 
 ```bash
-cd web
+cd web/classic
 bun install
 bun run dev          # vite dev server
 bun run build        # production build
@@ -61,7 +66,7 @@ bun run lint:fix     # prettier write
 bun run eslint       # eslint with cache
 bun run eslint:fix   # eslint --fix
 
-# i18n tooling (run from web/)
+# i18n tooling (run from web/classic/)
 bun run i18n:extract
 bun run i18n:status
 bun run i18n:sync
@@ -162,9 +167,12 @@ types/         Typed errors (NewAPIError, ErrorCode), RelayFormat enum,
 i18n/          Backend i18n (nicksnyder/go-i18n/v2). locales/*.yaml.
 oauth/         Unified OAuth provider abstraction (registry + provider/
                github/discord/linuxdo/oidc/generic/types.go).
-pkg/           Internal packages (cachex/ for hybrid cache, ionet/).
-web/           React + Vite frontend. Bun is the toolchain.
-  web/src/i18n/locales/   zh-CN, zh-TW, en, fr, ja, ru, vi JSON (flat).
+pkg/           Internal packages (cachex/ for hybrid cache, ionet/, perf_metrics/, billingexpr/).
+web/           Frontend themes container.
+  web/classic/   ★ Active TraceNex frontend (React 18 + Vite + Semi UI). All overlay edits live here.
+                 Built into web/classic/dist; theme=classic in common.GetTheme() returns this.
+  web/default/   Upstream v1.0 frontend (React 19 + Rsbuild + Base UI + Tailwind). Built but not selectable in TraceNex.
+  web/classic/src/i18n/locales/   zh-CN, zh-TW, zh, en, fr, ja, ru, vi JSON (flat, Chinese keys).
 ```
 
 ### Key architectural patterns to know
@@ -183,13 +191,15 @@ web/           React + Vite frontend. Bun is the toolchain.
 - Locales embedded via `go:embed locales/*.yaml`
 - User language preference > Accept-Language > default
 
-### Frontend (`web/src/i18n/`)
+### Frontend (`web/classic/src/i18n/`)
 - Library: `i18next` + `react-i18next` + `i18next-browser-languagedetector`
-- Languages: zh-CN (fallback), zh-TW, en, fr, ru, ja, vi
-- Translation files are flat JSON under `web/src/i18n/locales/{lang}.json`, wrapped under a `translation` key; **keys are Chinese source strings**
+- Languages: zh-CN (fallback), zh-TW, zh, en, fr, ru, ja, vi
+- Translation files are flat JSON under `web/classic/src/i18n/locales/{lang}.json`, wrapped under a `translation` key; **keys are Chinese source strings**
 - Usage: `const { t } = useTranslation(); t('中文 key')`
 - Semi UI locale synced via `SemiLocaleWrapper`
 - TraceNex brand rebrand (`New API` → `TraceNex`) is re-applied automatically by the upstream-sync CI; do not bake brand words into keys
+
+> The upstream v1.0 default frontend at `web/default/src/i18n/` uses **English** source strings as keys instead. We do not ship it, but if/when we ever switch to B-route this is a behavioral difference to remember.
 
 ## Rules
 
@@ -231,7 +241,7 @@ All database code MUST be fully compatible with all three databases simultaneous
 
 ### Rule 3: Frontend — Prefer Bun
 
-Use `bun` as the package manager and script runner for the frontend (`web/` directory).
+Use `bun` as the package manager and script runner for the active frontend at `web/classic/`. Same applies for `web/default/` if you ever need to rebuild it for upstream parity (we ship that dist but don't select it).
 
 ### Rule 4: New Channel StreamOptions Support
 
@@ -254,9 +264,9 @@ The following are **downstream customizations for TraceNex** and MAY be changed:
 - `common.SystemName` (user-facing brand name)
 - Footer / Header brand text
 - i18n locale files (brand words only — CI re-applies `New API` → `TraceNex`)
-- `web/public/new_logo.png` and favicon
+- `web/classic/public/new_logo.png` and favicon
 - README additions describing TraceNex-specific features
-- `package.json` name field in `electron/` and `web/`
+- `package.json` name field in `electron/` and `web/classic/`
 
 When in doubt, preserve both sides rather than picking one.
 
@@ -274,10 +284,11 @@ For request structs that are parsed from client JSON and then re-marshaled to up
 
 When adding new functionality:
 
-1. **Prefer new files over edits to upstream files.** Example: CSV log export lives in `controller/log_export.go` + `model/log_export.go` + `web/src/components/table/usage-logs/UsageLogsExportButton.jsx`, not as edits to existing upstream files. This keeps future upstream merges conflict-free.
+1. **Prefer new files over edits to upstream files.** Example: CSV log export lives in `controller/log_export.go` + `model/log_export.go` + `web/classic/src/components/table/usage-logs/UsageLogsExportButton.jsx`, not as edits to existing upstream files. This keeps future upstream merges conflict-free.
 2. **When an upstream file must be touched**, tag the change with `// Fy-api overlay:` (Go) or `{/* Fy-api overlay: */}` (JSX) comments so it's findable during merges.
 3. **Update `OVERLAY.md`** in the same commit. If a customization isn't listed there, it is considered drift and may be lost on the next upstream sync.
 4. **Don't introduce brand words in i18n keys.** The rebrand runs as a value-side `gsub("New API", "TraceNex")` after each sync.
+5. **Frontend overlays target `web/classic/`** — never `web/default/`. The default frontend ships built but unselected; investing in default-side overlays would be path-B work that we have explicitly deferred.
 
 ## Documentation Index
 
@@ -312,3 +323,6 @@ Operational conventions:
 
 See `scripts/channel-benchmark/README.md` for the top-level navigation and per-tool READMEs for details.
 
+### Rule 7: Billing Expression System — Read `pkg/billingexpr/expr.md`
+
+When working on tiered/dynamic billing (expression-based pricing), you MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language (variables, functions, examples), full system architecture (editor → storage → pre-consume → settlement → log display), token normalization rules (`p`/`c` auto-exclusion), quota conversion, and expression versioning. All code changes to the billing expression system must follow the patterns described in that document.

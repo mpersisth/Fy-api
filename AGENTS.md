@@ -11,14 +11,18 @@ This repository is **TraceNex**, the user-facing product brand, implemented in t
 - Before changing anything, read `OVERLAY.md`. It is the source of truth for TraceNex-specific changes and merge-conflict expectations.
 - In the parent workspace, only `Fy-api/` is normally edited. `new-api/` and `old_code/` are read-only references.
 
+### Frontend theme: classic-only
+
+Upstream v1.0 (commit `a42b39760`, 2026-04-28) introduced a parallel `web/default/` frontend (React 19 + TypeScript + Rsbuild + Base UI + Tailwind). TraceNex ships **only** the legacy `web/classic/` frontend (React 18 + Vite + Semi UI). The runtime theme is locked to `"classic"` via `setting/system_setting/theme.go` + `controller/option.go` so the `default` build path is shipped for upstream parity but not selectable. All overlay edits target `web/classic/...` paths.
+
 ## Common Commands
 
 ### Full-stack dev
 
 ```bash
-make all              # build frontend, then start backend dev server
-make build-frontend   # bun install + bun run build in web/
-make start-backend    # go run main.go
+make all                       # build frontend, then start backend dev server
+make build-frontend-classic    # bun install + bun run build in web/classic/
+make start-backend             # go run main.go
 ```
 
 ### Backend
@@ -34,12 +38,12 @@ go test -cover ./service/...    # coverage for service package tree
 go test ./relay/channel/gemini/ -race -run TestBuildUsageFromGeminiMetadata
 ```
 
-### Frontend (`web/`)
+### Frontend (`web/classic/`)
 
 Use Bun for frontend package management and scripts.
 
 ```bash
-cd web
+cd web/classic
 bun install
 bun run dev          # Vite dev server
 bun run build        # production build
@@ -120,8 +124,10 @@ constant/      Channel types, API types, context keys, env keys.
 types/         Typed errors, relay format enum, generic sets, file source abstractions.
 i18n/          Backend i18n using go-i18n and embedded YAML locales.
 oauth/         OAuth registry and providers.
-pkg/           Internal packages such as cachex and ionet.
-web/           React + Vite frontend.
+pkg/           Internal packages such as cachex, ionet, perf_metrics, billingexpr.
+web/           Frontend themes container.
+  web/classic/   Active TraceNex frontend (React 18 + Vite + Semi UI). All overlay edits live here.
+  web/default/   Upstream v1.0 frontend (React 19 + Rsbuild + Base UI + Tailwind). Built but not selectable.
 ```
 
 Key architecture patterns:
@@ -132,15 +138,16 @@ Key architecture patterns:
 - **Billing pipeline**: `middleware/distributor.go` selects a channel, relay adapters call upstream, then `service/text_quota.go` or `service/task_billing.go` records actual consumption. Usage details must flow into `dto.Usage` for billing.
 - **Request ID**: middleware generates `X-Oneapi-Request-Id`; consume/error logs store `model.RequestId`; log endpoints support `?request_id=` filtering.
 - **Channel affinity**: `service/channel_affinity.go` keeps consecutive requests from the same user/group on the same upstream channel when configured.
+- **Theme switching**: `common/embed-file-system.go` chooses between `web/default/dist` and `web/classic/dist` at runtime via `common.GetTheme()`. TraceNex pins this to `"classic"` (see `setting/system_setting/theme.go`).
 
 ## TraceNex Overlay Rules
 
 - Prefer new files over editing upstream files.
 - If an upstream file must be touched, add a `// Fy-api overlay:` comment in Go or `{/* Fy-api overlay: */}` in JSX.
 - Update `OVERLAY.md` in the same change when adding, removing, or changing TraceNex-specific behavior.
-- Preserve upstream attribution: `LICENSE`, notices, copyright headers, and the Go module path.
+- Preserve upstream attribution: `LICENSE`, `NOTICE`, `THIRD-PARTY-LICENSES.md`, copyright headers, and the Go module path.
 - TraceNex brand customizations are allowed for user-facing brand text, logo/favicon, README additions, and package names called out in `OVERLAY.md` / `CLAUDE.md`.
-- Do not introduce brand words into frontend i18n keys; keys are Chinese source strings and brand replacement is value-side.
+- Do not introduce brand words into frontend i18n keys; keys are Chinese source strings (in `web/classic/`) and brand replacement is value-side via gsub.
 
 ## Coding Rules
 
@@ -174,11 +181,17 @@ For request structs parsed from client JSON and re-marshaled upstream, optional 
 
 When adding a new channel, confirm whether the provider supports `StreamOptions`. If supported, add it to the stream-supported channel list.
 
+### Billing expression system — read `pkg/billingexpr/expr.md`
+
+When working on tiered/dynamic billing (expression-based pricing), you MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language (variables, functions, examples), full system architecture (editor → storage → pre-consume → settlement → log display), token normalization rules (`p`/`c` auto-exclusion), quota conversion, and expression versioning. All code changes to the billing expression system must follow the patterns described in that document.
+
 ## Internationalization
 
 Backend i18n lives in `i18n/` using `nicksnyder/go-i18n/v2` with embedded YAML locale files.
 
-Frontend i18n lives in `web/src/i18n/` using `i18next` + `react-i18next` + browser language detection. Locale files are flat JSON under `web/src/i18n/locales/{lang}.json`, wrapped under `translation`; keys are Chinese source strings. Current frontend languages include `zh-CN`, `zh-TW`, `en`, `fr`, `ja`, `ru`, and `vi`.
+Frontend i18n lives in `web/classic/src/i18n/` using `i18next` + `react-i18next` + browser language detection. Locale files are flat JSON under `web/classic/src/i18n/locales/{lang}.json`, wrapped under `translation`; keys are Chinese source strings. Current frontend languages include `zh-CN`, `zh-TW`, `zh`, `en`, `fr`, `ja`, `ru`, and `vi`.
+
+> Note: `web/default/src/i18n/` (the v1.0 frontend) uses English source strings as keys instead. We don't ship default, but a future B-route migration would need to re-author overlays in that style.
 
 ## Channel benchmarking
 
@@ -236,4 +249,3 @@ fy-canary   verify-baseline  -c canary.yaml
 ```
 
 When extending this toolkit, log the change in `OVERLAY.md` entry **B-7** (same file that tracks all TraceNex customizations) so the next upstream sync doesn't lose context.
-

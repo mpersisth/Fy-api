@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -330,4 +331,70 @@ func TestGeminiTextGenerationHandlerUsesEstimatedPromptTokensWhenUsagePromptMiss
 	require.Equal(t, 20, usage.PromptTokens)
 	require.Equal(t, 100, usage.CompletionTokens)
 	require.Equal(t, 110, usage.TotalTokens)
+}
+
+// Fy-api overlay: 回归测试，确保原生 Gemini pass-through 入口
+// 沿用客户端 URL 中的 v1 / v1beta，不会被后台 VersionSettings 强制改写。
+func TestGeminiAdaptorGetRequestURLPreservesNativeVersion(t *testing.T) {
+	t.Parallel()
+
+	const baseURL = "https://generativelanguage.googleapis.com"
+
+	cases := []struct {
+		name        string
+		relayMode   int
+		requestPath string
+		modelName   string
+		wantURL     string
+	}{
+		{
+			name:        "native v1beta is preserved for image-preview",
+			relayMode:   relayconstant.RelayModeGemini,
+			requestPath: "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+			modelName:   "gemini-3-pro-image-preview",
+			wantURL:     baseURL + "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+		},
+		{
+			name:        "native v1 is preserved",
+			relayMode:   relayconstant.RelayModeGemini,
+			requestPath: "/v1/models/gemini-1.0-pro:generateContent",
+			modelName:   "gemini-1.0-pro",
+			wantURL:     baseURL + "/v1/models/gemini-1.0-pro:generateContent",
+		},
+		{
+			name:        "imagen native v1beta is preserved",
+			relayMode:   relayconstant.RelayModeGemini,
+			requestPath: "/v1beta/models/imagen-3.0-generate-002:predict",
+			modelName:   "imagen-3.0-generate-002",
+			wantURL:     baseURL + "/v1beta/models/imagen-3.0-generate-002:predict",
+		},
+		{
+			name:        "non-native relay mode falls back to model_setting",
+			relayMode:   relayconstant.RelayModeChatCompletions,
+			requestPath: "/v1/chat/completions",
+			modelName:   "gemini-3-pro-image-preview", // 默认 map 中钉为 v1beta
+			wantURL:     baseURL + "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := &Adaptor{}
+			info := &relaycommon.RelayInfo{
+				RelayMode:      tc.relayMode,
+				RequestURLPath: tc.requestPath,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    baseURL,
+					UpstreamModelName: tc.modelName,
+				},
+			}
+
+			gotURL, err := a.GetRequestURL(info)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantURL, gotURL)
+		})
+	}
 }

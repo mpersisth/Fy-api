@@ -146,6 +146,19 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 	version := model_setting.GetGeminiVersionSetting(info.UpstreamModelName)
 
+	// Fy-api overlay: 原生 Gemini pass-through 入口（/v1beta/... 或 /v1/...）必须沿用
+	// 客户端 URL 中的版本号，否则后台 VersionSettings 会把 /v1beta 强制改写成 /v1，
+	// 导致 gemini-3-pro-image-preview 等只在 v1beta 暴露的模型返回
+	// "is not found for API version v1"。仅在 RelayModeGemini 下生效，
+	// 不影响 OpenAI/Claude 兼容入口对版本的统一管理。
+	if info.RelayMode == constant.RelayModeGemini {
+		if strings.HasPrefix(info.RequestURLPath, "/v1beta/") {
+			version = "v1beta"
+		} else if strings.HasPrefix(info.RequestURLPath, "/v1/") {
+			version = "v1"
+		}
+	}
+
 	if strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return fmt.Sprintf("%s/%s/models/%s:predict", info.ChannelBaseUrl, version, info.UpstreamModelName), nil
 	}

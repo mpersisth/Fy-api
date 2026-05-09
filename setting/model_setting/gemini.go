@@ -21,8 +21,14 @@ var defaultGeminiSettings = GeminiSettings{
 		"default": "OFF",
 	},
 	VersionSettings: map[string]string{
-		"default":        "v1beta",
-		"gemini-1.0-pro": "v1",
+		"default":                        "v1beta",
+		"gemini-1.0-pro":                 "v1",
+		// Fy-api overlay: 显式把已知 image-preview 模型钉到 v1beta，作为兜底。
+		// 即便管理员把 default 改为 v1，OpenAI 兼容入口仍然会路由到正确版本；
+		// 原生 Gemini 入口由 adaptor.go 中的 RequestURLPath 判断保护。
+		"gemini-3-pro-image-preview":     "v1beta",
+		"gemini-3.1-flash-image-preview": "v1beta",
+		"gemini-2.5-flash-image":         "v1beta",
 	},
 	SupportedImagineModels: []string{
 		"gemini-2.0-flash-exp-image-generation",

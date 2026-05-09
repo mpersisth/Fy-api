@@ -102,6 +102,10 @@ func SanitizeJSONUnmarshalError(err error) error {
 	return err
 }
 
+// goTypeToJSONType returns a JSON-shaped name for a Go type string.
+// Handles primitives directly, and strips package prefixes from composite
+// types so we never leak `dto.ClaudeMediaMessage` or
+// `[]channel.SomeStruct` to API clients.
 func goTypeToJSONType(goType string) string {
 	if friendly, ok := jsonTypeFriendly[goType]; ok {
 		return friendly
@@ -111,6 +115,22 @@ func goTypeToJSONType(goType string) string {
 	clean := strings.TrimLeft(goType, "*[]")
 	if friendly, ok := jsonTypeFriendly[clean]; ok {
 		return friendly
+	}
+	// Slice/array types we can't simplify further: emit a JSON-shape
+	// description ("array") rather than the bare Go type string,
+	// otherwise the package-qualified element type leaks
+	// (e.g. `[]dto.ClaudeMediaMessage`).
+	if strings.HasPrefix(goType, "[]") || strings.HasPrefix(goType, "*[]") {
+		return "array"
+	}
+	// Map types — same deal.
+	if strings.HasPrefix(goType, "map[") {
+		return "object"
+	}
+	// Anything else with a dotted package path is a struct from another
+	// package; collapse it to "object" rather than echoing the path.
+	if strings.Contains(goType, ".") {
+		return "object"
 	}
 	return goType
 }

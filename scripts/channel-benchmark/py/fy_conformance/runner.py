@@ -11,7 +11,7 @@ import httpx
 
 from fy_conformance.config import Config
 from fy_conformance.dataset import Case, build_request_body
-from fy_conformance.grader import Result, grade, grade_transport_error
+from fy_conformance.grader import Result, grade, grade_skip, grade_transport_error
 
 
 def _request_kwargs(case: Case, body_json: Optional[dict], body_raw: Optional[str]) -> dict:
@@ -50,6 +50,7 @@ async def run_one(client: httpx.AsyncClient, case: Case, baseline: dict, default
 
 
 async def run_all(cfg: Config, cases: list[Case]) -> list[Result]:
+    backend = cfg.target.backend
     async with httpx.AsyncClient(
         base_url=cfg.gateway.base_url,
         timeout=cfg.request_timeout_sec,
@@ -59,6 +60,11 @@ async def run_all(cfg: Config, cases: list[Case]) -> list[Result]:
         default_auth = f"Bearer {cfg.gateway.user_token}"
 
         async def worker(case: Case) -> Result:
+            if not case.applies_to(backend):
+                return grade_skip(
+                    case,
+                    f"applies_to_backends={case.applies_to_backends} excludes target.backend={backend!r}",
+                )
             async with sem:
                 return await run_one(client, case, cfg.target.baseline_request, default_auth)
 
@@ -70,17 +76,22 @@ def aggregate(results: list[Result]) -> dict:
     passes = sum(1 for r in results if r.is_pass())
     fails  = sum(1 for r in results if r.verdict.value == "FAIL")
     errors = sum(1 for r in results if r.verdict.value == "ERROR")
+    skips  = sum(1 for r in results if r.verdict.value == "SKIP")
     by_cat: dict[str, dict] = {}
     for r in results:
-        c = by_cat.setdefault(r.category, {"total": 0, "pass": 0, "fail": 0, "error": 0})
+        c = by_cat.setdefault(r.category, {"total": 0, "pass": 0, "fail": 0, "error": 0, "skip": 0})
         c["total"] += 1
         c[r.verdict.value.lower()] = c.get(r.verdict.value.lower(), 0) + 1
+    # pass_rate is computed against executed (non-SKIP) cases
+    executed = total - skips
     return {
         "total": total,
+        "executed": executed,
         "pass": passes,
         "fail": fails,
         "error": errors,
-        "pass_rate": round(passes / total, 4) if total else 0.0,
+        "skip": skips,
+        "pass_rate": round(passes / executed, 4) if executed else 0.0,
         "by_category": by_cat,
     }
 
@@ -95,6 +106,7 @@ def to_jsonl(results: list[Result]) -> str:
                 "status_code": r.status_code,
                 "reasons": r.reasons,
                 "transport_error": r.transport_error,
+                "skip_reason": r.skip_reason,
                 "body_excerpt": r.body_excerpt,
             },
             ensure_ascii=False,
@@ -107,15 +119,17 @@ def to_markdown(results: list[Result], summary: dict) -> str:
     lines: list[str] = []
     lines.append("# fy-conformance results\n")
     lines.append(f"- **total**: {summary['total']}")
-    lines.append(f"- **pass**: {summary['pass']} ({summary['pass_rate']*100:.1f}%)")
+    lines.append(f"- **executed**: {summary.get('executed', summary['total'])}")
+    lines.append(f"- **pass**: {summary['pass']} ({summary['pass_rate']*100:.1f}% of executed)")
     lines.append(f"- **fail**: {summary['fail']}")
     lines.append(f"- **error**: {summary['error']}")
+    lines.append(f"- **skip**: {summary.get('skip', 0)}")
     lines.append("\n## By category\n")
-    lines.append("| category | total | pass | fail | error |")
-    lines.append("|---|---:|---:|---:|---:|")
+    lines.append("| category | total | pass | fail | error | skip |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
     for cat, c in sorted(summary["by_category"].items()):
         lines.append(
-            f"| {cat} | {c['total']} | {c.get('pass',0)} | {c.get('fail',0)} | {c.get('error',0)} |"
+            f"| {cat} | {c['total']} | {c.get('pass',0)} | {c.get('fail',0)} | {c.get('error',0)} | {c.get('skip',0)} |"
         )
     fails = [r for r in results if r.verdict.value == "FAIL"]
     if fails:

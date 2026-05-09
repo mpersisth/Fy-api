@@ -1,6 +1,6 @@
 [project]
 name = "fy-channel-qa"
-version = "0.3.0"
+version = "0.3.1"
 description = "Load, quality, substitution-detection, and protocol-conformance harness for Fy-api channels (OpenAI-compatible)"
 readme = "README.md"
 requires-python = ">=3.11"

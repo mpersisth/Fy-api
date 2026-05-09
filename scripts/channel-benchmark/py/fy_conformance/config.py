@@ -7,6 +7,9 @@ YAML schema (see conformance.yaml example):
       user_token: "${FY_API_USER_TOKEN}"
     target:
       model: claude-sonnet-4-5
+      backend: claude   # one of: claude, openai, deepseek, gemini, kimi, qwen
+                        # determines which cases are applicable (cases with
+                        # applies_to_backends not containing this value are skipped)
       baseline_request:
         # request body that's known-valid for the model. Each conformance case
         # mutates one field of this baseline.
@@ -25,7 +28,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -56,6 +59,7 @@ class GatewayCfg:
 class TargetCfg:
     model: str
     baseline_request: dict
+    backend: Optional[str] = None
 
 
 @dataclass
@@ -97,7 +101,11 @@ def load(path: str | os.PathLike) -> Config:
 
     return Config(
         gateway=GatewayCfg(base_url=gw["base_url"].rstrip("/"), user_token=gw["user_token"]),
-        target=TargetCfg(model=tgt["model"], baseline_request=baseline),
+        target=TargetCfg(
+            model=tgt["model"],
+            baseline_request=baseline,
+            backend=(tgt.get("backend") or None),
+        ),
         dataset=dataset,
         output_dir=out,
         concurrency=int(raw.get("concurrency", 4)),

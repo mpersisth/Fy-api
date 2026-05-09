@@ -161,3 +161,51 @@ func TestSanitizeJSONUnmarshalError_NilSafe(t *testing.T) {
 		t.Error("expected nil for nil input")
 	}
 }
+
+// nestedPayload mirrors the dto.ClaudeMessage shape: a generic Content
+// field where the desired type is `[]ClaudeMediaMessage`. Tests that the
+// sanitizer doesn't leak slice-of-package-qualified-type names like
+// `[]dto.ClaudeMediaMessage` to API clients.
+type contentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func TestSanitizeJSONUnmarshalError_SliceOfStruct_NoPackageLeak(t *testing.T) {
+	t.Parallel()
+	// Force the stdlib to produce
+	//   "json: cannot unmarshal number into Go value of type []common.contentBlock"
+	rawErr := json.Unmarshal([]byte(`42`), new([]contentBlock))
+	if rawErr == nil {
+		t.Fatal("expected an error")
+	}
+	cleaned := SanitizeJSONUnmarshalError(rawErr)
+	got := cleaned.Error()
+	if strings.Contains(got, "contentBlock") {
+		t.Errorf("package-qualified type leaked: %s", got)
+	}
+	if strings.Contains(got, "common.") {
+		t.Errorf("package prefix leaked: %s", got)
+	}
+	if !strings.Contains(got, "array") {
+		t.Errorf("expected slice to surface as 'array'; got: %s", got)
+	}
+}
+
+func TestSanitizeJSONUnmarshalError_NestedStructField_NoPackageLeak(t *testing.T) {
+	t.Parallel()
+	// Force "json: cannot unmarshal number into Go struct field
+	// contentBlock.text of type string".
+	rawErr := json.Unmarshal([]byte(`[{"type":"text","text":42}]`), new([]contentBlock))
+	if rawErr == nil {
+		t.Fatal("expected an error")
+	}
+	cleaned := SanitizeJSONUnmarshalError(rawErr)
+	got := cleaned.Error()
+	if strings.Contains(got, "Go struct field") {
+		t.Errorf("Go struct path leaked: %s", got)
+	}
+	if !strings.Contains(got, `"text"`) {
+		t.Errorf("expected the json tag 'text' to survive; got: %s", got)
+	}
+}

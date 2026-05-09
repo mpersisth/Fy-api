@@ -12,4 +12,4 @@ Specifically:
 The corpus is a JSONL file. Each row is a single conformance assertion.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

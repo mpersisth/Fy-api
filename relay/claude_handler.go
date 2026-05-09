@@ -133,7 +133,21 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
 		openAIRequest, convErr := service.ClaudeToOpenAIRequest(*request, info)
 		if convErr != nil {
-			return types.NewError(convErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			// Fy-api overlay: a Claude→OpenAI conversion failure is always
+			// caused by a client-supplied malformed body (e.g. content=42,
+			// content=[{type:text,text:42}], image block missing source).
+			// Upstream's NewError defaults to 500, which (a) breaks client
+			// retry/circuit-breaker behaviour and (b) leaks Go struct paths
+			// from `encoding/json`. The conversion site is wrapped in
+			// SanitizeJSONUnmarshalError downstream (common.Any2Type), so
+			// the error message is already wire-safe; we just have to map
+			// the status code to 400.
+			return types.NewErrorWithStatusCode(
+				convErr,
+				types.ErrorCodeConvertRequestFailed,
+				http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(),
+			)
 		}
 
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, openAIRequest)
@@ -155,7 +169,16 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	} else {
 		convertedRequest, err := adaptor.ConvertClaudeRequest(c, info, request)
 		if err != nil {
-			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			// Fy-api overlay: same rationale as the ClaudeToOpenAIRequest
+			// branch above — adapter conversion failures on the Claude
+			// path are caused by client-supplied malformed bodies. Map
+			// to 400 so the response carries the right status class.
+			return types.NewErrorWithStatusCode(
+				err,
+				types.ErrorCodeConvertRequestFailed,
+				http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(),
+			)
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 		jsonData, err := common.Marshal(convertedRequest)

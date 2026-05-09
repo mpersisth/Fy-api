@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"fy-conformance: {len(cases)} cases against "
-        f"{cfg.gateway.base_url} (model={cfg.target.model})",
+        f"{cfg.gateway.base_url} (model={cfg.target.model}, backend={cfg.target.backend or '(any)'})",
         file=sys.stderr,
     )
 
@@ -77,8 +77,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Also dump a one-line summary to stdout for shell pipelines.
     print(
-        f"total={summary['total']} pass={summary['pass']} "
-        f"fail={summary['fail']} error={summary['error']} "
+        f"total={summary['total']} executed={summary['executed']} pass={summary['pass']} "
+        f"fail={summary['fail']} error={summary['error']} skip={summary['skip']} "
         f"pass_rate={summary['pass_rate']*100:.1f}%",
     )
     print(f"wrote {base}.{{jsonl,summary.json,md}}", file=sys.stderr)

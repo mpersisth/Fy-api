@@ -296,3 +296,140 @@ async def test_runner_aggregates_and_renders(tmp_path: Path, monkeypatch):
     md = to_markdown(results, summary)
     assert "fy-conformance" in md
     assert "## Failures" in md
+
+
+# --------------------------------------------------------------------------
+# Layer 4 — backend filter / dotted paths / extra_body / expect_response_field
+# --------------------------------------------------------------------------
+
+def test_applies_to_default_runs_everywhere():
+    c = _case()
+    assert c.applies_to(None)
+    assert c.applies_to("claude")
+    assert c.applies_to("openai")
+
+
+def test_applies_to_filters_when_set():
+    c = _case(applies_to_backends=["openai", "deepseek"])
+    assert c.applies_to(None)             # no backend specified → run
+    assert c.applies_to("openai")
+    assert c.applies_to("OPENAI")         # case-insensitive
+    assert not c.applies_to("claude")
+
+
+def test_grade_expect_response_field_present():
+    c = _case(expect_status_class="2xx", expect_response_field="choices.0.message.content")
+    body = '{"choices":[{"message":{"content":"hi"}}]}'
+    assert grade(c, 200, body).verdict is Verdict.PASS
+
+
+def test_grade_expect_response_field_missing():
+    c = _case(expect_status_class="2xx", expect_response_field="choices.0.message.content")
+    body = '{"choices":[]}'
+    r = grade(c, 200, body)
+    assert r.verdict is Verdict.FAIL
+    assert any("choices.0.message.content" in reason for reason in r.reasons)
+
+
+def test_grade_expect_response_field_non_json():
+    c = _case(expect_status_class="2xx", expect_response_field="x.y")
+    r = grade(c, 200, "<html>not json</html>")
+    assert r.verdict is Verdict.FAIL
+
+
+def test_build_request_body_dotted_path_override():
+    baseline = {"model": "x", "messages": [{"role": "user", "content": "hi"}]}
+    c = _case(override_field="messages.0.role", override_value="system")
+    raw, body = build_request_body(c, baseline)
+    assert raw is None
+    assert body["messages"][0]["role"] == "system"
+    # baseline untouched
+    assert baseline["messages"][0]["role"] == "user"
+
+
+def test_build_request_body_dotted_path_remove():
+    baseline = {"model": "x", "messages": [{"role": "user", "content": "hi"}]}
+    c = _case(remove_field="messages.0.role")
+    raw, body = build_request_body(c, baseline)
+    assert raw is None
+    assert "role" not in body["messages"][0]
+    # baseline untouched
+    assert "role" in baseline["messages"][0]
+
+
+def test_build_request_body_extra_body_merges():
+    baseline = {"model": "x", "messages": [{"role": "user", "content": "hi"}]}
+    c = _case(extra_body={"tools": [{"type": "function"}], "tool_choice": "auto"})
+    _, body = build_request_body(c, baseline)
+    assert body["tools"] == [{"type": "function"}]
+    assert body["tool_choice"] == "auto"
+    # baseline untouched
+    assert "tools" not in baseline
+
+
+def test_build_request_body_replace_preserves_model():
+    baseline = {"model": "x", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16}
+    c = _case(body_replace={"max_tokens": 32, "messages": [{"role": "user", "content": "yo"}]})
+    _, body = build_request_body(c, baseline)
+    assert body["model"] == "x"          # filled in
+    assert body["max_tokens"] == 32       # replaced
+    assert body["messages"][0]["content"] == "yo"
+
+
+@pytest.mark.asyncio
+async def test_runner_skips_inapplicable_cases(tmp_path: Path, monkeypatch):
+    """Cases scoped to other backends should be SKIP, not FAIL."""
+    cases = [
+        Case(id="any-backend", category="A", expect_status_class="2xx"),
+        Case(
+            id="openai-only",
+            category="A",
+            expect_status_class="4xx",
+            applies_to_backends=["openai"],
+        ),
+    ]
+
+    def respond(req: httpx.Request) -> tuple[int, str]:
+        return 200, '{"ok":true}'
+
+    transport = _make_transport(respond)
+    orig_init = httpx.AsyncClient.__init__
+    monkeypatch.setattr(
+        httpx.AsyncClient, "__init__",
+        lambda self, *a, **k: orig_init(self, *a, **{**k, "transport": transport}),
+    )
+
+    cfg = _make_cfg(tmp_path)
+    cfg.target.backend = "claude"
+    results = await run_all(cfg, cases)
+
+    by_id = {r.case_id: r for r in results}
+    assert by_id["any-backend"].verdict is Verdict.PASS
+    assert by_id["openai-only"].verdict is Verdict.SKIP
+    assert by_id["openai-only"].skip_reason is not None
+
+    summary = aggregate(results)
+    assert summary["total"] == 2
+    assert summary["executed"] == 1
+    assert summary["pass"] == 1
+    assert summary["skip"] == 1
+    # pass_rate is computed against executed (excludes SKIP)
+    assert summary["pass_rate"] == 1.0
+
+
+def test_dataset_loads_full_corpus():
+    """Make sure the shipped corpus loads without errors and has reasonable shape."""
+    repo_path = Path(__file__).parent.parent / "fy_conformance/datasets/public/conformance.jsonl"
+    cases = load_dataset(repo_path)
+    assert len(cases) >= 100, f"corpus shrank unexpectedly: {len(cases)}"
+    # all cases must have unique IDs
+    ids = [c.id for c in cases]
+    assert len(ids) == len(set(ids)), "duplicate case IDs in corpus"
+    # leak guards must be present on every case (even smoke tests)
+    for c in cases:
+        if not c.must_not_contain:
+            continue  # explicit empty list is allowed for unusual cases
+        assert "Go struct field" in c.must_not_contain, (
+            f"case {c.id!r} missing the Go struct field leak guard — "
+            "every case should defend against the v1.5 regression"
+        )

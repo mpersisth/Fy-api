@@ -157,6 +157,17 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 					}
 					mediaMessages = append(mediaMessages, message)
 				case "image":
+					// Fy-api overlay: nil-check on Source before deref. The
+					// Anthropic Messages API allows `{"type":"image"}` in JSON
+					// (validation is the upstream's job), and an absent
+					// `source` would otherwise nil-deref here and produce a
+					// 500 panic instead of a 4xx. We surface a clean
+					// validation error to the caller.
+					if mediaMsg.Source == nil {
+						return nil, fmt.Errorf(
+							"invalid content block: image type requires a 'source' object",
+						)
+					}
 					// Handle image conversion (base64 to URL or keep as is)
 					imageData := fmt.Sprintf("data:%s;base64,%s", mediaMsg.Source.MediaType, mediaMsg.Source.Data)
 					//textContent += fmt.Sprintf("[Image: %s]", imageData)

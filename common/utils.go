@@ -297,7 +297,15 @@ func Any2Type[T any](data any) (T, error) {
 	var res T
 	err = json.Unmarshal(bytes, &res)
 	if err != nil {
-		return zero, err
+		// Fy-api overlay: this re-unmarshal path was bypassing the sanitizer
+		// in UnmarshalBodyReusable. /v1/messages content blocks (Anthropic
+		// Messages API) flow through here via dto.ClaudeMessage.ParseContent
+		// and similar helpers; without sanitization, malformed `content`
+		// fields would leak Go struct paths like
+		// `json: cannot unmarshal number into Go struct field ***.text of type string`
+		// to clients. See common/json_error_sanitizer.go for the wire-safe
+		// formatter.
+		return zero, SanitizeJSONUnmarshalError(err)
 	}
 	return res, nil
 }

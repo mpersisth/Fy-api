@@ -122,7 +122,7 @@
 ### B-10 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：
   - `common/json_error_sanitizer.go`（`SanitizeJSONUnmarshalError`：把 stdlib `*json.UnmarshalTypeError` / `*json.SyntaxError` / 字符串型 wrapped 错误转成用户安全格式 `invalid type for field "X": expected <json type>, got <json type>`，去掉 Go 结构体路径）
-  - `common/json_error_sanitizer_test.go`（13 sub-test：典型类型错误 / syntax error / wrapped string fallback / unrelated passthrough / nil-safe）
+  - `common/json_error_sanitizer_test.go`（typed errors / syntax / wrapped string fallback / nil-safe / 切片包路径泄漏 / 嵌套 struct 字段）
   - `common/gin_unmarshal_test.go`（黑盒验证 `UnmarshalBodyReusable` 不再向调用方泄露 Go 路径）
 - **修改文件**：
   - `common/gin.go`（`UnmarshalBodyReusable` 错误返回前过 `SanitizeJSONUnmarshalError`）
@@ -131,6 +131,22 @@
 - **upstream 现状**：仓库里 `compatible_handler.go / claude_handler.go / gemini_handler.go / image_handler.go / rerank_handler.go / embedding_handler.go` 6 处都正确用了 `NewErrorWithStatusCode(... StatusBadRequest)`，唯独顶层 dispatcher 漏了一处。stdlib 错误脱敏 upstream 完全没做。**不向 upstream 提 PR**
 - **冲突风险**：低（顶层 dispatcher 改 1 行；UnmarshalBodyReusable 错误处加 1 行；新增的 sanitizer 是独立文件）
 - **Merge 策略**：若 upstream 修了同一行（用同样的 `NewErrorWithStatusCode`），merge 时 take theirs 即可；sanitizer 独立文件不会冲突
+
+### B-11 [relay] /v1/messages 二级反序列化泄漏 + 图片块 nil-deref panic
+- **新增文件**：
+  - `dto/claude_parse_content_test.go`（`ClaudeMessage.ParseContent` 防泄漏：scalar content / 错类型 text 块 / 合法快路径）
+- **修改文件**：
+  - `common/utils.go`（`Any2Type[T]` 第二阶段 `json.Unmarshal` 错误也过 `SanitizeJSONUnmarshalError`，关闭 `dto.ClaudeMessage.ParseContent` / `ParseSystem` / `service.ClaudeToOpenAIRequest` 等所有借道 Any2Type 的二级 unmarshal 泄漏面）
+  - `common/json_error_sanitizer.go`（`goTypeToJSONType` 增加切片/map/包路径折叠：`[]dto.ClaudeMediaMessage` → `array`、`map[K]V` → `object`、含点的包路径 → `object`，避免类型名直接外泄）
+  - `service/convert.go`（`case "image"` 块前增加 `mediaMsg.Source == nil` 守卫，原代码在 `mediaMsg.Source.MediaType` 直接解引用，遇到 `{"type":"image"}` 缺 `source` 字段时 panic）
+  - `relay/claude_handler.go`（两处 `ConvertRequestFailed` 改为 `NewErrorWithStatusCode(... StatusBadRequest)`，与 B-10 在 `/v1/chat/completions` 路径上的处理保持一致）
+- **背景**：v1.5（B-10）只覆盖 `/v1/chat/completions` 的顶层 unmarshal。2026-05-09 用 fy-conformance 跑 CN 基线时发现 `/v1/messages` 路径上有 4 个同类 bug：
+  1. `content=42` / `content=true` → 500 + `json: cannot unmarshal number into Go value of type []***.ClaudeMediaMessage`（`dto.ClaudeMessage.ParseContent` → `common.Any2Type` 二级 unmarshal 没经过 sanitizer）
+  2. `content=[{type:text,text:42}]` → 500 + `Go struct field ***.text of type string`（同链路）
+  3. `content=[{type:image}]` 缺 `source` 字段 → 500 + PANIC `runtime error: invalid memory address or nil pointer dereference`（`service/convert.go:161` 直接 `mediaMsg.Source.MediaType`）
+- **upstream 现状**：upstream `Any2Type` 是直通函数，`service/convert.go` image 块也是无 nil 检查；同样的 panic 在 upstream 仍然存在。**不向 upstream 提 PR**（与 B-10 同策略，等月度同步时观察 upstream 是否补）
+- **冲突风险**：中（`Any2Type` 是高频函数，签名不变；image case 加 4 行守卫；`claude_handler.go` 改 2 个 if 分支）
+- **Merge 策略**：upstream 若改 `Any2Type` 签名（不太可能），同步时把 sanitizer 调用迁过去；image nil 守卫若 upstream 自行修了就 take theirs
 
 ---
 

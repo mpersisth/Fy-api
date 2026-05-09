@@ -15,3 +15,6 @@ build/
 loadtest-results/
 htmlcov/
 .coverage
+conformance-results/
+conformance.cn.yaml
+conformance.local.yaml

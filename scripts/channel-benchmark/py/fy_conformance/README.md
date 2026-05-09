@@ -14,8 +14,36 @@ parameter, **does the gateway respond correctly?** Specifically:
 4. Known-valid boundary values are accepted, not bounced.
 
 The corpus is a JSONL file. Each row is one assertion. The default
-public corpus has 94 cases extracted from real-world functional test
-reports against Kimi/Claude/etc.
+public corpus has 144 cases pulled from a customer functional-test
+xlsx covering OpenAI Chat Completions, Anthropic Messages, tools/
+function-calling, structured outputs, reasoning, auth, and malformed
+requests.
+
+## Backend scoping (important)
+
+Different upstream backends have different validation strictness. The
+canonical example: `temperature=1.5` is rejected by OpenAI/DeepSeek/Kimi
+but silently clamped by Anthropic. Without scoping, our test corpus
+would falsely flag Anthropic as buggy.
+
+Each case can declare an `applies_to_backends` list. The run config
+sets `target.backend`, and cases whose list does **not** include that
+backend become `SKIP` (not `FAIL`). When a case omits the list, it
+applies to all backends.
+
+```yaml
+target:
+  model: claude-haiku-4-5-20251001
+  backend: claude   # <— filters out cases scoped to other backends
+  ...
+```
+
+Cases that universally apply (type errors, structural negatives, leak
+guards) have no `applies_to_backends` and run against everything. Cases
+that depend on strict OpenAI semantics (`temperature` clamping,
+`max_tokens` lower bound, etc.) carry `applies_to_backends: ["openai",
+"deepseek", "kimi", "qwen"]`. Cases for the Anthropic-native
+`/v1/messages` endpoint carry `applies_to_backends: ["claude"]`.
 
 ## Why this is its own tool
 
@@ -77,29 +105,40 @@ A row in `conformance.jsonl` looks like:
 
 ```jsonc
 {
-  "id": "auto-max_tokens-ec_invalid_type_string",
+  "id": "auto-max_tokens-ec-type-string",
   "category": "param_validation_auto",
+  "description": "max_tokens=\"abc\" — string where int",
   "endpoint": "/v1/chat/completions",
   "method": "POST",
 
-  // mutate exactly one field of the baseline request:
-  "override_field": "max_tokens",
+  // OPTIONAL — restrict to backends. Omit = applies everywhere.
+  // "applies_to_backends": ["openai", "deepseek"],
+
+  // mutate the baseline request — pick at most one shape:
+  "override_field": "max_tokens",         // dotted paths supported, e.g. "messages.0.role"
   "override_value": "abc",
-  // -- alternatives --
   // "remove_field":   "messages",
   // "raw_body":       "{not json",
   // "override_auth":  "Bearer sk-INVALID",
+  // "extra_body":     {"tools": [...], "tool_choice": "auto"},
+  // "body_replace":   {"max_tokens": 16, "messages": [...]},  // full replace
 
-  // assertions:
-  "expect_status_class": "4xx",
+  // assertions (zero or more):
+  "expect_status_class": "4xx",            // 2xx | 4xx | 5xx | 4xx_or_5xx | 2xx_or_4xx
+  "expect_status_code": 401,               // exact code
   "expect_message_contains": ["max_tokens"],
-  "must_not_contain": ["Go struct field", "GeneralOpenAIRequest"]
+  "must_not_contain": ["Go struct field", "GeneralOpenAIRequest"],
+  "expect_response_field": "choices.0.message.content"  // dotted path must exist
 }
 ```
 
-`expect_status_class` accepts `2xx` / `4xx` / `5xx` / `4xx_or_5xx` (the
-last one is for cases where either is defensible — e.g. "model not
-found" can be 404 or 503 depending on the gateway's policy).
+`expect_status_class` accepts:
+- `2xx` / `4xx` / `5xx` — exact bucket
+- `4xx_or_5xx` — either is defensible (model not found can be 404 or 503)
+- `2xx_or_4xx` — leak guard mode: "as long as it's not 5xx, we're fine".
+  Use this for range/semantic violations on tolerant backends — the
+  `must_not_contain` leak guards still catch any 5xx with a Go struct
+  path leak, which is the actual regression we're defending against.
 
 Substring matches are case-insensitive.
 

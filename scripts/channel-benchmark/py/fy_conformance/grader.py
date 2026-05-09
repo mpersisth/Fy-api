@@ -5,6 +5,7 @@ A verdict is one of:
   - FAIL  : some assertion was violated; the .reasons list explains why
   - ERROR : the request itself failed (network/timeout); never to be confused
             with FAIL, because the gateway didn't get a chance to reply
+  - SKIP  : the case was filtered out (e.g. applies_to_backends mismatch)
 
 The grader knows nothing about how the request was sent. It only sees the
 case definition and the (status_code, body_text) tuple, which keeps it
@@ -12,9 +13,10 @@ trivial to test with httpx.MockTransport.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from fy_conformance.dataset import Case
 
@@ -23,6 +25,7 @@ class Verdict(str, Enum):
     PASS = "PASS"
     FAIL = "FAIL"
     ERROR = "ERROR"
+    SKIP = "SKIP"
 
 
 @dataclass
@@ -34,6 +37,7 @@ class Result:
     body_excerpt: str
     reasons: list[str] = field(default_factory=list)
     transport_error: Optional[str] = None
+    skip_reason: Optional[str] = None
 
     def is_pass(self) -> bool:
         return self.verdict is Verdict.PASS
@@ -45,6 +49,22 @@ def status_class(code: int) -> str:
     if 400 <= code < 500: return "4xx"
     if 500 <= code < 600: return "5xx"
     return f"{code // 100}xx"
+
+
+def _walk_path(obj: Any, path: str) -> tuple[bool, Any]:
+    """Walk a dotted path through a JSON-like object. Returns (found, value)."""
+    cur: Any = obj
+    for seg in path.split("."):
+        if seg.isdigit() or (seg.startswith("-") and seg[1:].isdigit()):
+            idx = int(seg)
+            if not isinstance(cur, list) or not (-len(cur) <= idx < len(cur)):
+                return False, None
+            cur = cur[idx]
+        else:
+            if not isinstance(cur, dict) or seg not in cur:
+                return False, None
+            cur = cur[seg]
+    return True, cur
 
 
 def grade(case: Case, status_code: int, body_text: str) -> Result:
@@ -79,6 +99,21 @@ def grade(case: Case, status_code: int, body_text: str) -> Result:
         if forbidden.lower() in body_lower:
             reasons.append(f'response body leaked forbidden marker "{forbidden}"')
 
+    # JSON path expectation
+    if case.expect_response_field:
+        try:
+            parsed = json.loads(body_text)
+        except (ValueError, TypeError):
+            reasons.append(
+                f'expected JSON response with path "{case.expect_response_field}", but body is not JSON'
+            )
+        else:
+            found, _ = _walk_path(parsed, case.expect_response_field)
+            if not found:
+                reasons.append(
+                    f'expected response field "{case.expect_response_field}" to exist'
+                )
+
     verdict = Verdict.PASS if not reasons else Verdict.FAIL
     return Result(
         case_id=case.id,
@@ -87,6 +122,18 @@ def grade(case: Case, status_code: int, body_text: str) -> Result:
         status_code=status_code,
         body_excerpt=body_text[:300],
         reasons=reasons,
+    )
+
+
+def grade_skip(case: Case, reason: str) -> Result:
+    return Result(
+        case_id=case.id,
+        category=case.category,
+        verdict=Verdict.SKIP,
+        status_code=None,
+        body_excerpt="",
+        reasons=[],
+        skip_reason=reason,
     )
 
 

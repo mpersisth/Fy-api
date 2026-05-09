@@ -141,8 +141,9 @@ class QualityRunner:
         self, ch: Channel, row: PromptRow,
         http: httpx.AsyncClient, graders: dict[str, Grader],
     ) -> PromptResult:
+        wire_prompt = row.wire_prompt()
         cache_key = _gen_cache_key(
-            ch.name, ch.model, row.prompt, row.max_tokens, row.temperature,
+            ch.name, ch.model, wire_prompt, row.max_tokens, row.temperature,
             row.system,
         )
         cache_path = self._cache_dir / f"{cache_key}.json"
@@ -163,7 +164,9 @@ class QualityRunner:
 
         if not cached:
             t0 = time.monotonic()
-            output, output_tokens, prompt_tokens, error = await _generate(http, ch, row)
+            output, output_tokens, prompt_tokens, error = await _generate(
+                http, ch, row, wire_prompt,
+            )
             elapsed_s = time.monotonic() - t0
             cache_path.write_text(json.dumps({
                 "output": output,
@@ -193,13 +196,18 @@ class QualityRunner:
 
 
 async def _generate(
-    http: httpx.AsyncClient, ch: Channel, row: PromptRow,
+    http: httpx.AsyncClient, ch: Channel, row: PromptRow, user_prompt: str,
 ) -> tuple[str, int, int, str]:
-    """Call /v1/chat/completions non-stream. Returns (text, out_tokens, in_tokens, err)."""
+    """Call /v1/chat/completions non-stream. Returns (text, out_tokens, in_tokens, err).
+
+    `user_prompt` is what actually gets sent — the PromptRow's perturbed
+    prompt. We accept it explicitly rather than re-deriving it here so the
+    runner's cache key and the wire text stay in lockstep.
+    """
     messages: list[dict] = []
     if row.system:
         messages.append({"role": "system", "content": row.system})
-    messages.append({"role": "user", "content": row.prompt})
+    messages.append({"role": "user", "content": user_prompt})
 
     body = {
         "model": ch.model,

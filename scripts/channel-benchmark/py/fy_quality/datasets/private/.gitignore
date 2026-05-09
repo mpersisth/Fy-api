@@ -1,0 +1,4 @@
+# Keep empty directory under version control so the split structure is
+# obvious at `ls`, but ignore any .jsonl files placed here.
+*.jsonl
+!.gitignore

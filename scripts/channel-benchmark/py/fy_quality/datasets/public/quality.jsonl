@@ -1,5 +1,5 @@
-{"id":"math-add-01","kind":"quality","category":"math","grader":"exact","prompt":"What is 17 + 28? Reply with only the number.","expected":"45","max_tokens":16,"temperature":0.0}
-{"id":"math-mul-01","kind":"quality","category":"math","grader":"exact","prompt":"Compute 12 * 13. Respond with only the numeric answer.","expected":"156","max_tokens":16,"temperature":0.0}
+{"id":"math-add-01","kind":"quality","category":"math","grader":"exact","prompt":"What is 17 + 28? Reply with only the number.","expected":"45","max_tokens":16,"temperature":0.0,"seed":42,"perturbations":["whitespace","trailing_marker"]}
+{"id":"math-mul-01","kind":"quality","category":"math","grader":"exact","prompt":"Compute 12 * 13. Respond with only the numeric answer.","expected":"156","max_tokens":16,"temperature":0.0,"seed":42,"perturbations":["whitespace","trailing_marker"]}
 {"id":"math-div-01","kind":"quality","category":"math","grader":"regex","prompt":"What is 100 / 8? Give the decimal answer to 2 decimal places, no other text.","expected":"^12\\.50?$","max_tokens":16,"temperature":0.0}
 {"id":"code-reverse-01","kind":"quality","category":"code","grader":"contains","prompt":"Write a one-line Python expression that reverses the list [1,2,3]. Just the code, no prose.","expected":"[::-1]","max_tokens":32,"temperature":0.0}
 {"id":"code-sum-01","kind":"quality","category":"code","grader":"contains","prompt":"Give the shortest Python snippet to sum a list called xs. Code only.","expected":"sum(xs)","max_tokens":24,"temperature":0.0}

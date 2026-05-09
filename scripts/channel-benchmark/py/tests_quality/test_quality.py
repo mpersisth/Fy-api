@@ -284,3 +284,150 @@ async def test_full_runner_with_mock_upstream(tmp_path, monkeypatch):
     assert len(files) == 3
     for f in files:
         assert f.exists() and f.stat().st_size > 0
+
+
+# ---------------- perturbation / contamination defense ----------------
+
+def test_perturbation_deterministic():
+    from fy_quality.perturbation import apply_perturbations
+
+    a = apply_perturbations(
+        "Compute the sum of 3 and 4.",
+        seed=123, prompt_id="x", strategies=["whitespace", "trailing_marker"],
+    )
+    b = apply_perturbations(
+        "Compute the sum of 3 and 4.",
+        seed=123, prompt_id="x", strategies=["whitespace", "trailing_marker"],
+    )
+    assert a == b
+    c = apply_perturbations(
+        "Compute the sum of 3 and 4.",
+        seed=124, prompt_id="x", strategies=["whitespace", "trailing_marker"],
+    )
+    assert c != a  # different seed → different perturbation
+
+
+def test_perturbation_whitespace_inserts_zwsp():
+    from fy_quality.perturbation import ZERO_WIDTH_SPACE, apply_perturbations
+
+    out = apply_perturbations(
+        "hello world",
+        seed=1, prompt_id="p", strategies=["whitespace"],
+    )
+    assert ZERO_WIDTH_SPACE in out
+    # Original characters are preserved; only ZWSP is added.
+    assert out.replace(ZERO_WIDTH_SPACE, "") == "hello world"
+
+
+def test_perturbation_trailing_marker_is_html_comment():
+    from fy_quality.perturbation import apply_perturbations
+
+    out = apply_perturbations(
+        "What is 1+1?",
+        seed=5, prompt_id="p", strategies=["trailing_marker"],
+    )
+    assert out.startswith("What is 1+1?")
+    assert "<!--fq" in out and out.rstrip().endswith("-->")
+
+
+def test_perturbation_synonym_preserves_case_and_punct():
+    from fy_quality.perturbation import apply_perturbations
+
+    out = apply_perturbations(
+        "Compute, then respond.",
+        seed=0, prompt_id="p", strategies=["synonym"],
+    )
+    # First hit is "Compute," → "Calculate," (cap preserved, comma kept).
+    assert out.startswith("Calculate,")
+
+
+def test_perturbation_unknown_strategy_raises():
+    import pytest
+    from fy_quality.perturbation import apply_perturbations
+
+    with pytest.raises(ValueError, match="unknown perturbation"):
+        apply_perturbations("x", seed=1, prompt_id="p", strategies=["nope"])
+
+
+def test_wire_prompt_noop_without_perturbations():
+    row = _row(prompt="Plain prompt.")
+    assert row.wire_prompt() == "Plain prompt."
+
+
+def test_wire_prompt_applies_perturbations():
+    from fy_quality.dataset import PromptRow
+    from fy_quality.perturbation import ZERO_WIDTH_SPACE
+
+    row = PromptRow(
+        id="t", kind="quality", prompt="What is 2+2?", raw={},
+        grader="exact", seed=7,
+        perturbations=["whitespace", "trailing_marker"],
+    )
+    wire = row.wire_prompt()
+    assert wire != "What is 2+2?"
+    assert ZERO_WIDTH_SPACE in wire
+    assert "<!--fq" in wire
+
+
+@pytest.mark.asyncio
+async def test_runner_sends_perturbed_prompt(tmp_path, monkeypatch):
+    """The channel must see the PERTURBED prompt, not the raw file text."""
+    dataset = tmp_path / "q.jsonl"
+    dataset.write_text(
+        '{"id":"t1","kind":"quality","category":"t","grader":"exact",'
+        '"prompt":"What is 2+2?","expected":"4",'
+        '"seed":42,"perturbations":["whitespace","trailing_marker"]}\n'
+    )
+
+    cfg = QualityConfig(
+        channels=[Channel(name="test-ch", model="m", token="sk-t", base_url="http://mock")],
+        dataset=str(dataset),
+        judges=[],
+        embedding=None,
+        cache_dir=str(tmp_path / "cache"),
+        output_dir=str(tmp_path / "out"),
+        concurrency=1,
+    )
+
+    received_prompts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        received_prompts.append(body["messages"][-1]["content"])
+        return httpx.Response(
+            200, json={
+                "choices": [{"message": {"content": "4"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
+            },
+        )
+
+    orig_init = httpx.AsyncClient.__init__
+    monkeypatch.setattr(
+        httpx.AsyncClient, "__init__",
+        lambda self, *a, **k: orig_init(
+            self, *a, **{**k, "transport": httpx.MockTransport(handler)}
+        ),
+    )
+
+    report = await QualityRunner(cfg).run()
+    assert len(report.per_prompt) == 1
+    assert report.per_prompt[0].passed
+
+    # The prompt on the wire must differ from the file text.
+    assert len(received_prompts) == 1
+    from fy_quality.perturbation import ZERO_WIDTH_SPACE
+    assert received_prompts[0] != "What is 2+2?"
+    assert ZERO_WIDTH_SPACE in received_prompts[0]
+
+
+def _make_mock_channel_transport_with_capture(capture: list[str]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        capture.append(body["messages"][-1]["content"])
+        return httpx.Response(
+            200, json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    return httpx.MockTransport(handler)

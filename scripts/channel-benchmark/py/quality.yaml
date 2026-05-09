@@ -16,7 +16,11 @@ channels:
     token: "${FY_TOKEN_ANTHROPIC}"
     base_url: "${FY_API_URL:-http://localhost:3000}"
 
-dataset: fy_quality/datasets/quality.jsonl
+# The starter public suite is useful for smoke-testing the wiring. For
+# real evaluation, author your own prompts under `fy_quality/datasets/private/`
+# (which is gitignored) and enable per-row perturbations to defend against
+# training-set contamination. See fy_quality/datasets/README.md.
+dataset: fy_quality/datasets/public/quality.jsonl
 
 # LLM-as-judge backends. Two judges enables dual-judge mode for rubric grader —
 # a rubric test passes only if BOTH judges rate it >= pass_score.

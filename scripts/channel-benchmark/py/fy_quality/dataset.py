@@ -19,6 +19,8 @@ Schema (lenient — extra fields are preserved):
       "reference": "...",           # only for grader=similarity / pairwise
       "max_tokens": 256,            # per-prompt override (optional)
       "temperature": 0.0,           # per-prompt override (optional)
+      "seed": 42,                   # contamination-defense seed (optional)
+      "perturbations": ["whitespace", "trailing_marker"],  # optional; see perturbation.py
     }
 
 For canary rows:
@@ -62,6 +64,30 @@ class PromptRow:
     temperature: float | None = None
     n_samples: int | None = None
 
+    # Contamination defense (see fy_quality/perturbation.py). `seed` is the
+    # integer seed used to make perturbations reproducible. `perturbations`
+    # is the ordered list of strategy names applied before the prompt is
+    # sent to a channel. Both are optional; when `perturbations` is empty
+    # the prompt is sent verbatim.
+    seed: int | None = None
+    perturbations: list[str] = field(default_factory=list)
+
+    def wire_prompt(self) -> str:
+        """Return the prompt as it should be sent to the channel.
+
+        Falls back to the raw prompt when no perturbations are configured.
+        Imported lazily so the dataset module stays import-cheap.
+        """
+        if not self.perturbations:
+            return self.prompt
+        from .perturbation import apply_perturbations
+        return apply_perturbations(
+            self.prompt,
+            seed=self.seed if self.seed is not None else 0,
+            prompt_id=self.id,
+            strategies=self.perturbations,
+        )
+
     @classmethod
     def from_json(cls, obj: dict) -> PromptRow:
         if "id" not in obj:
@@ -86,6 +112,8 @@ class PromptRow:
             max_tokens=obj.get("max_tokens"),
             temperature=obj.get("temperature"),
             n_samples=obj.get("n_samples"),
+            seed=obj.get("seed"),
+            perturbations=list(obj.get("perturbations") or []),
         )
 
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,16 +21,31 @@ import (
 //   - aggregation produces the expected shape
 func TestEndToEndWithMockGateway(t *testing.T) {
 	var (
+		captureMu      sync.Mutex
 		gotAdminAuth   string
 		gotAdminUserID string
 		gotChatAuth    string
 	)
+	setAdmin := func(auth, uid string) {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		gotAdminAuth, gotAdminUserID = auth, uid
+	}
+	setChat := func(auth string) {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		gotChatAuth = auth
+	}
+	readCaptured := func() (string, string, string) {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		return gotAdminAuth, gotAdminUserID, gotChatAuth
+	}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/channel/", func(w http.ResponseWriter, r *http.Request) {
-		gotAdminAuth = r.Header.Get("Authorization")
-		gotAdminUserID = r.Header.Get("New-Api-User")
+		setAdmin(r.Header.Get("Authorization"), r.Header.Get("New-Api-User"))
 		resp := map[string]any{
 			"success": true,
 			"message": "",
@@ -47,7 +63,7 @@ func TestEndToEndWithMockGateway(t *testing.T) {
 	})
 
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		gotChatAuth = r.Header.Get("Authorization")
+		setChat(r.Header.Get("Authorization"))
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		streamed, _ := body["stream"].(bool)
@@ -124,6 +140,7 @@ func TestEndToEndWithMockGateway(t *testing.T) {
 	}
 
 	// Headers sent correctly?
+	gotAdminAuth, gotAdminUserID, gotChatAuth = readCaptured()
 	if gotAdminAuth != "admin-tok" {
 		t.Errorf("admin Authorization = %q, want raw token (no Bearer)", gotAdminAuth)
 	}

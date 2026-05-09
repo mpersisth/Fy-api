@@ -5,24 +5,28 @@ real requests and reporting per-(channel × model × mode) latency, TTFT,
 inter-token latency, throughput, token accounting, and error breakdowns.
 
 It is NOT:
-- a load tester (no concurrency ramp; see `../py/` when that's built)
-- a quality evaluator (no LLM-as-judge; future)
+- a load tester (no concurrency ramp; use `../py/fy_loadtest` for that)
+- a quality evaluator (no LLM-as-judge; use `../py/fy_quality` for that)
+- a model-substitution detector (no baseline diffing; use `../py/fy_canary`)
 - a replacement for Fy-api's built-in `测试` button (which is a liveness check
   and reports only wall-clock E2E)
 
-It IS the smallest thing that gives you real, comparable numbers across channels.
+It IS the smallest thing that gives you real, comparable numbers across channels,
+and — with `-prom-listen` — a long-running Prometheus exporter that your Grafana
+can scrape.
 
 ## Layout
 
 ```
 go/
-├── main.go       CLI entrypoint, flags, summary table
-├── config.go     YAML + ${ENV} expansion + validation
-├── admin.go      GET /api/channel/ (AdminAuth: no-Bearer token + New-Api-User)
-├── client.go     OpenAI-compat chat client, real SSE parsing for TTFT/ITL/usage
-├── runner.go     channel × model × mode × reps fan-out, bounded worker pool
-├── metrics.go    percentile / stddev / throughput aggregation
-├── exporter.go   JSON + CSV output
+├── main.go         CLI entrypoint, flags, summary table, daemon loop
+├── config.go       YAML + ${ENV} expansion + validation
+├── admin.go        GET /api/channel/ (AdminAuth: no-Bearer token + New-Api-User)
+├── client.go       OpenAI-compat chat client, real SSE parsing for TTFT/ITL/usage
+├── runner.go       channel × model × mode × reps fan-out, bounded worker pool
+├── metrics.go      percentile / stddev / throughput aggregation
+├── exporter.go     JSON + CSV output
+├── prometheus.go   zero-dep Prometheus exposition-format writer + /metrics handler
 └── channel-benchmark.yaml   example config
 ```
 
@@ -53,6 +57,52 @@ Override any field from the CLI:
 go run . -config my.yaml -concurrency 8 -reps 5 -formats json
 go run . -config my.yaml -dry-run    # validate config, no requests
 ```
+
+## Daemon mode — Prometheus exporter
+
+Pass `-prom-listen` to keep the binary running and expose metrics for
+Prometheus to scrape. The benchmark is re-run on `-prom-interval` (default 5m)
+and the most recent results are surfaced at `/metrics`.
+
+```bash
+go run . -config my.yaml -prom-listen :9090 -prom-interval 5m
+# or, to skip JSON/CSV files in long-lived deployments:
+go run . -config my.yaml -prom-listen :9090 -no-export
+```
+
+Series exposed (all under the `channel_benchmark_` prefix):
+
+| Metric | Type | Labels |
+|---|---|---|
+| `channel_benchmark_request_total` | counter | channel, model, streamed, outcome |
+| `channel_benchmark_success_rate` | gauge (0-1) | channel, model, streamed |
+| `channel_benchmark_e2e_seconds` | gauge | channel, model, streamed, quantile |
+| `channel_benchmark_ttft_seconds` | gauge (stream only) | channel, model, streamed, quantile |
+| `channel_benchmark_tokens_per_sec` | gauge | channel, model, streamed |
+| `channel_benchmark_run_age_seconds` | gauge | — |
+| `channel_benchmark_last_run_unix_seconds` | gauge | — |
+| `channel_benchmark_consecutive_runs_ok` | gauge | — |
+
+Quantiles are emitted as separate gauges (p50/p95/p99) rather than histogram
+buckets — for "p95 of channel X" dashboards that's all you need, and the
+exposition is 10× smaller. The implementation is dependency-free; `go.mod`
+still has only `gopkg.in/yaml.v3`.
+
+Alerting recipes (PromQL):
+
+```promql
+# Channel down for >15min: zero successful requests in the latest run
+sum by (channel, model) (
+  rate(channel_benchmark_request_total{outcome="ok"}[15m])
+) == 0
+
+# TTFT regression: p95 above 3s for 10min
+channel_benchmark_ttft_seconds{quantile="0.95"} > 3
+
+# Stale exporter: data older than 2× the configured interval
+channel_benchmark_run_age_seconds > 600
+```
+
 
 ## Metrics reported
 
@@ -92,5 +142,20 @@ llmperf, and genai-perf).
 
 - Retries on failure. Smoke is a diagnostic; retries hide flakiness.
 - Database persistence. JSON/CSV on disk is enough for now.
-- Scheduling (cron / systemd). Run it by hand or wrap it yourself.
-- Quality scoring, canary drift, load ramps. Those live in `../py/` when added.
+- External scheduler (cron / systemd). The daemon mode (`-prom-listen`) is the
+  closest thing we ship; for one-shot `cron -e` invocations, just wrap the binary.
+- Quality scoring, canary drift, load ramps. Those live in `../py/` (`fy-quality`,
+  `fy-canary`, `fy-loadtest` respectively).
+- `prometheus/client_golang` dependency. The exposition format is trivial and we
+  deliberately keep `go.mod` to `gopkg.in/yaml.v3` only so this binary stays
+  drop-on-prod simple.
+
+## Tests
+
+```bash
+go test -race ./...
+```
+
+7 tests: end-to-end (mock gateway with SSE), Prometheus exposition format,
+counter accumulation, label escaping, handler routing, and float formatting.
+All green with `-race`.

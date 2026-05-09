@@ -9,13 +9,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -27,6 +30,13 @@ func main() {
 		reps        = flag.Int("reps", 0, "Override test.reps_per_case")
 		formats     = flag.String("formats", "", "Override export.formats (comma-separated, e.g. json,csv)")
 		dryRun      = flag.Bool("dry-run", false, "Print resolved config and exit")
+
+		// Daemon mode: when --prom-listen is set the binary stays up,
+		// re-running the benchmark on --prom-interval and exposing
+		// /metrics for Prometheus to scrape.
+		promListen   = flag.String("prom-listen", "", "If set (e.g. ':9090'), run as a daemon and serve Prometheus metrics on that addr")
+		promInterval = flag.Duration("prom-interval", 5*time.Minute, "How often to re-run the benchmark when --prom-listen is set")
+		noExport     = flag.Bool("no-export", false, "Skip writing JSON/CSV to disk (useful in daemon mode)")
 	)
 	flag.Parse()
 
@@ -65,6 +75,11 @@ func main() {
 	fmt.Printf("Max tokens:    %d\n", cfg.Test.MaxTokens)
 	fmt.Printf("Output dir:    %s\n", cfg.Export.OutputDir)
 	fmt.Printf("Formats:       %v\n", cfg.Export.Formats)
+	if *promListen != "" {
+		fmt.Printf("Mode:          daemon (prom listen=%s, interval=%s)\n", *promListen, *promInterval)
+	} else {
+		fmt.Printf("Mode:          one-shot\n")
+	}
 	if *dryRun {
 		fmt.Println("\n(dry-run: config valid, no requests sent)")
 		return
@@ -79,6 +94,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nreceived %s, shutting down...\n", sig)
 		cancel()
 	}()
+
+	if *promListen != "" {
+		runDaemon(ctx, cfg, *promListen, *promInterval, *noExport)
+		return
+	}
 
 	runner := NewRunner(cfg)
 	aggs, err := runner.Run(ctx)
@@ -95,6 +115,73 @@ func main() {
 		fmt.Printf("wrote %s\n", f)
 	}
 	printSummary(aggs)
+}
+
+// runDaemon loops the benchmark on a fixed cadence and serves results as
+// Prometheus metrics. Returns only on context cancellation. The Replace()
+// of the registry is the authoritative atomic switch — partial results from
+// a still-running benchmark never leak to scrapers.
+func runDaemon(ctx context.Context, cfg *BenchmarkConfig, listenAddr string, interval time.Duration, noExport bool) {
+	registry := NewMetricsRegistry()
+	srv := &http.Server{
+		Addr:              listenAddr,
+		Handler:           registry.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		fmt.Fprintf(os.Stderr, "prom: serving /metrics on %s\n", listenAddr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("prom listen: %v", err)
+		}
+	}()
+
+	// Run once immediately so first scrape after startup has data.
+	for {
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+			return
+		default:
+		}
+
+		runStart := time.Now()
+		fmt.Fprintf(os.Stderr, "prom: starting cycle at %s\n", runStart.Format(time.RFC3339))
+
+		aggs, err := NewRunner(cfg).Run(ctx)
+		registry.Replace(aggs, err)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "prom: cycle failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "prom: cycle ok in %s\n", time.Since(runStart).Round(time.Millisecond))
+			if !noExport {
+				exp := NewExporter(cfg)
+				if files, expErr := exp.Export(aggs); expErr != nil {
+					fmt.Fprintf(os.Stderr, "prom: export failed: %v\n", expErr)
+				} else {
+					for _, f := range files {
+						fmt.Fprintf(os.Stderr, "prom: wrote %s\n", f)
+					}
+				}
+			}
+		}
+
+		// Sleep to next cycle, accounting for run time so the cadence is stable.
+		next := interval - time.Since(runStart)
+		if next < time.Second {
+			next = time.Second
+		}
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+			return
+		case <-time.After(next):
+		}
+	}
 }
 
 func splitCSV(s string) []string {

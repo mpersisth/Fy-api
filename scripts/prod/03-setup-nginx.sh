@@ -84,8 +84,13 @@ server {
     server_name $DOMAIN;
     # Let's Encrypt renewal 走 ACME challenge
     location /.well-known/acme-challenge/ { root /var/www/html; }
-    # 其他一律 301 到 https
-    location / { return 301 https://\$host\$request_uri; }
+    # 其他一律跳 https
+    # POST/PUT/PATCH/DELETE 用 308 保留 method+body(否则客户端 follow 301 时会降级为 GET+丢 body)
+    # GET/HEAD 维持 301
+    location / {
+        if (\$request_method !~ ^(GET|HEAD)\$) { return 308 https://\$host\$request_uri; }
+        return 301 https://\$host\$request_uri;
+    }
 }
 
 # ─── HTTPS ───────────────────────────────────────

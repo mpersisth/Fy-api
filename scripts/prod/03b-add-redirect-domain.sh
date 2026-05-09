@@ -87,7 +87,11 @@ server {
     server_name $FROM;
     # Let's Encrypt renewal 走 ACME challenge
     location /.well-known/acme-challenge/ { root $WEBROOT; }
-    location / { return 301 https://$TO\$request_uri; }
+    # POST/PUT/PATCH/DELETE 用 308 保留 method+body; GET/HEAD 维持 301
+    location / {
+        if (\$request_method !~ ^(GET|HEAD)\$) { return 308 https://$TO\$request_uri; }
+        return 301 https://$TO\$request_uri;
+    }
 }
 
 # ─── HTTPS → 跳到 HTTPS 主域 ─────────────────────
@@ -105,6 +109,8 @@ server {
 
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
+    # POST/PUT/PATCH/DELETE 用 308 保留 method+body; GET/HEAD 维持 301
+    if (\$request_method !~ ^(GET|HEAD)$) { return 308 https://$TO\$request_uri; }
     return 301 https://$TO\$request_uri;
 }
 EOF

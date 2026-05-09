@@ -114,8 +114,12 @@ server {
     server_name $ALIAS;
     # Let's Encrypt renewal 走 ACME challenge
     location /.well-known/acme-challenge/ { root $WEBROOT; }
-    # 其他一律 301 到 HTTPS(同一个域名,不换主机头)
-    location / { return 301 https://\$host\$request_uri; }
+    # 其他一律跳 https(同一个域名,不换主机头)
+    # POST/PUT/PATCH/DELETE 用 308 保留 method+body; GET/HEAD 维持 301
+    location / {
+        if (\$request_method !~ ^(GET|HEAD)\$) { return 308 https://\$host\$request_uri; }
+        return 301 https://\$host\$request_uri;
+    }
 }
 
 # ─── HTTPS ───────────────────────────────────────

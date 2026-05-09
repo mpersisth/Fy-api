@@ -38,3 +38,10 @@ mmd_n_samples: 10
 
 concurrency: 4
 request_timeout_sec: 120
+
+# `fy-canary audit` refuses to proceed if the loaded baseline is older than
+# this many days, unless you pass --ignore-stale-baseline. Use
+# `fy-canary verify-baseline` periodically to check that the SOURCE itself
+# hasn't drifted — if the vendor model changes, your baseline becomes a
+# false-positive source.
+baseline_max_age_days: 30

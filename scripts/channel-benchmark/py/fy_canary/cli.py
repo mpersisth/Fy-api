@@ -1,4 +1,4 @@
-"""fy-canary CLI with `baseline` and `audit` subcommands."""
+"""fy-canary CLI with `baseline`, `audit`, and `verify-baseline` subcommands."""
 
 from __future__ import annotations
 
@@ -33,6 +33,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("-c", "--config", default="canary.yaml")
     p_audit.add_argument("--output", help="Override output directory")
     p_audit.add_argument("--dry-run", action="store_true")
+    p_audit.add_argument(
+        "--ignore-stale-baseline",
+        action="store_true",
+        help="Proceed even if the loaded baseline is older than baseline_max_age_days",
+    )
+
+    p_verify = sub.add_parser(
+        "verify-baseline",
+        help="Re-record a fresh mini-baseline against the same source and "
+             "compare to the stored one (catches baseline drift)",
+    )
+    p_verify.add_argument("-c", "--config", default="canary.yaml")
+    p_verify.add_argument("--output", help="Override output directory")
+    p_verify.add_argument("--dry-run", action="store_true")
 
     return p
 
@@ -61,15 +75,46 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     runner = CanaryRunner(cfg)
+
+    # Health-check the baseline up-front for the two modes that need it.
+    if args.cmd in {"audit", "verify-baseline"}:
+        health = runner.baseline_health()
+        if health is None:
+            console.print(
+                f"[red]no baseline found for {cfg.source.name!r} — "
+                f"run `fy-canary baseline -c {args.config}` first[/red]"
+            )
+            return 2
+        _print_health(console, health)
+        if health["stale"]:
+            if args.cmd == "audit" and not getattr(args, "ignore_stale_baseline", False):
+                console.print(
+                    f"[red]baseline is stale ({health['age_days']:.0f} days > "
+                    f"{health['max_age_days']} days). "
+                    f"Re-record with `fy-canary baseline` or pass "
+                    f"`--ignore-stale-baseline` to override.[/red]"
+                )
+                return 2
+            console.print(
+                f"[yellow]warning: baseline is stale "
+                f"({health['age_days']:.0f} days old).[/yellow]"
+            )
+
     try:
         if args.cmd == "baseline":
             baseline = asyncio.run(runner.build_baseline())
             path = runner.store.path_for(baseline.source_name)
             console.rule("[bold green]baseline saved")
-            console.print(f"{len(baseline.probes)} probes saved to {path}")
+            console.print(
+                f"{baseline.n_probes} probes, "
+                f"{baseline.total_samples} total samples saved to {path}"
+            )
             return 0
 
-        report: CanaryReport = asyncio.run(runner.audit())
+        if args.cmd == "verify-baseline":
+            report: CanaryReport = asyncio.run(runner.verify_baseline())
+        else:
+            report = asyncio.run(runner.audit())
     except (KeyboardInterrupt, FileNotFoundError) as e:
         console.print(f"[red]{e}[/red]")
         return 2 if isinstance(e, FileNotFoundError) else 130
@@ -77,17 +122,27 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path(getattr(args, "output", None) or cfg.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-    json_path = out_dir / f"canary_{ts}.json"
-    md_path = out_dir / f"canary_{ts}.md"
+    prefix = "verify" if args.cmd == "verify-baseline" else "canary"
+    json_path = out_dir / f"{prefix}_{ts}.json"
+    md_path = out_dir / f"{prefix}_{ts}.md"
 
     json_path.write_text(json.dumps(report_to_dict(report), indent=2, ensure_ascii=False))
     md_path.write_text(_markdown(report))
 
-    console.rule("[bold green]audit done")
+    rule_label = (
+        "verify-baseline done" if args.cmd == "verify-baseline" else "audit done"
+    )
+    console.rule(f"[bold green]{rule_label}")
     total = len(report.outcomes)
     failed = [o for o in report.outcomes if not o.passed]
     if failed:
-        console.print(f"[red]{len(failed)}/{total} probes failed[/red]")
+        if args.cmd == "verify-baseline":
+            console.print(
+                f"[yellow]{len(failed)}/{total} probes diverged from the recorded baseline[/yellow]\n"
+                f"[yellow]→ the SOURCE itself may have changed. Consider re-recording the baseline.[/yellow]"
+            )
+        else:
+            console.print(f"[red]{len(failed)}/{total} probes failed[/red]")
         for o in failed:
             console.print(f"  - {o.prompt_id} ({o.method}): {o.detail}")
     else:
@@ -97,10 +152,22 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if not failed else 1
 
 
+def _print_health(console: Console, health: dict) -> None:
+    age = health["age_days"]
+    color = "yellow" if health["stale"] else "green"
+    console.print(
+        f"[bold]Baseline:[/]    [{color}]{age:.1f} days old, "
+        f"{health['n_probes']} probes, {health['total_samples']} samples[/{color}] "
+        f"(recorded {health['recorded_at_iso']})"
+    )
+
+
 def _markdown(report: CanaryReport) -> str:
     lines: list[str] = []
-    lines.append("# Canary audit")
+    title = "Canary verify-baseline" if report.mode == "verify-baseline" else "Canary audit"
+    lines.append(f"# {title}")
     lines.append("")
+    lines.append(f"- Mode: `{report.mode}`")
     lines.append(f"- Source: `{report.source_name}` (model `{report.model}`)")
     lines.append(f"- Generated: {datetime.fromtimestamp(report.generated_at_unix, timezone.utc).isoformat()}")
     lines.append("")

@@ -47,6 +47,36 @@ class CanaryRunner:
         self.dataset: list[PromptRow] = load_jsonl(cfg.dataset, kind="canary")
         self.store = BaselineStore(cfg.baselines_dir)
 
+    def baseline_health(self) -> dict | None:
+        """Return baseline metadata + staleness verdict, or None if no baseline.
+
+        Output:
+            {
+              "exists": bool,
+              "age_days": float,
+              "stale": bool,
+              "max_age_days": int,
+              "n_probes": int,
+              "total_samples": int,
+              "recorded_at_iso": str,
+              "fy_canary_version": str,
+            }
+        """
+        b = self.store.load(self.cfg.source.name)
+        if b is None:
+            return None
+        max_age = self.cfg.baseline_max_age_days
+        return {
+            "exists": True,
+            "age_days": round(b.age_days, 2),
+            "stale": b.age_days > max_age,
+            "max_age_days": max_age,
+            "n_probes": b.n_probes,
+            "total_samples": b.total_samples,
+            "recorded_at_iso": b.recorded_at_iso,
+            "fy_canary_version": b.fy_canary_version,
+        }
+
     # --------- baseline mode --------------------------------------------------
     async def build_baseline(self) -> ChannelBaseline:
         """Collect N samples per prompt from the configured source and persist."""
@@ -135,6 +165,60 @@ class CanaryRunner:
 
         return CanaryReport(
             mode="audit",
+            source_name=self.cfg.source.name,
+            model=self.cfg.source.model,
+            generated_at_unix=time.time(),
+            outcomes=outcomes,
+        )
+
+    # --------- verify-baseline mode -------------------------------------------
+    async def verify_baseline(self) -> CanaryReport:
+        """Re-record a fresh mini-baseline against the same source and compare
+        to the stored one.
+
+        This catches "the baseline itself has drifted" — i.e. the vendor model
+        has been updated, the system prompt template has changed, the API has
+        been silently swapped under us. It uses identical alignment + drift
+        logic as audit, but the "current" samples come from re-querying the
+        SAME source the baseline was recorded from. A divergence here means
+        you should re-record the baseline.
+        """
+        baseline = self.store.load(self.cfg.source.name)
+        if baseline is None:
+            raise FileNotFoundError(
+                f"no baseline found at {self.store.path_for(self.cfg.source.name)} — "
+                f"nothing to verify."
+            )
+
+        emb = self._maybe_emb_client()
+        outcomes: list[ProbeOutcome] = []
+
+        try:
+            async with CanaryClient(
+                base_url=self.cfg.source.base_url,
+                api_key=self.cfg.source.api_key,
+                timeout=self.cfg.request_timeout_sec,
+            ) as client:
+                sem = asyncio.Semaphore(self.cfg.concurrency)
+
+                async def one(row: PromptRow) -> ProbeOutcome | None:
+                    async with sem:
+                        # verify_baseline reuses _audit_one — the comparison
+                        # logic is identical; only interpretation of failure
+                        # differs (here: rebuild baseline; in audit: suspect
+                        # channel substitution).
+                        return await self._audit_one(row, baseline, client, emb)
+
+                for row in self.dataset:
+                    o = await one(row)
+                    if o is not None:
+                        outcomes.append(o)
+        finally:
+            if emb:
+                await emb.aclose()
+
+        return CanaryReport(
+            mode="verify-baseline",
             source_name=self.cfg.source.name,
             model=self.cfg.source.model,
             generated_at_unix=time.time(),

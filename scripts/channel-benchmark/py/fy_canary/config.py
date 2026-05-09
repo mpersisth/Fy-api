@@ -67,6 +67,12 @@ class CanaryConfig:
     request_timeout_sec: float = 120.0
     concurrency: int = 4
 
+    # Audit warns when the loaded baseline is older than this many days.
+    # 30 is a defensible default — model providers typically version on
+    # multi-week cadences and minor system-prompt drift is hard to detect
+    # before then.
+    baseline_max_age_days: int = 30
+
     @classmethod
     def load(cls, path: str | Path) -> CanaryConfig:
         raw = Path(path).read_text(encoding="utf-8")
@@ -102,6 +108,7 @@ class CanaryConfig:
             mmd_n_samples=int(d.get("mmd_n_samples", 10)),
             request_timeout_sec=float(d.get("request_timeout_sec", 120.0)),
             concurrency=int(d.get("concurrency", 4)),
+            baseline_max_age_days=int(d.get("baseline_max_age_days", 30)),
         )
 
     def validate(self) -> None:

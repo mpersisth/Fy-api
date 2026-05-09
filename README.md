@@ -28,6 +28,7 @@
   <a href="#-快速开始">快速开始</a> •
   <a href="#-tracenex-在-new-api-之上增加了什么">TraceNex 增量</a> •
   <a href="#-生产环境部署">生产环境部署</a> •
+  <a href="#-渠道基准测试channel-benchmark">渠道基准测试</a> •
   <a href="#-上游同步">上游同步</a> •
   <a href="#-许可证与归属">许可证</a>
 </p>
@@ -69,6 +70,7 @@ TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 | 8 | **生产部署工具链** | [`scripts/prod/`](./scripts/prod/) 下 7 个幂等脚本，从裸 ECS 到完整蓝绿 + HTTPS + 日志接入 + 限流的生产环境，**~30 分钟完成**。 | ✅ |
 | 9 | **蓝绿发版自动化** | [`06-deploy-blue-green.sh`](./scripts/prod/06-deploy-blue-green.sh) —— 自动检测活跃色、拉新镜像、健康检查、切 Nginx upstream、连接排空、停旧容器。**零中断**。 | ✅ |
 | 10 | **部署 runbook 完整覆盖** | [`docs/deploy/`](./docs/deploy/) 下涵盖 ACK（Kubernetes）、单机 Podman、可观测性（SLS + Prometheus）、限流、本地开发。 | ✅ |
+| 11 | **渠道基准测试工具链** | [`scripts/channel-benchmark/`](./scripts/channel-benchmark/) —— Go 烟测器（零依赖，内置 Prometheus 导出器）+ 三件套 Python 工具（`fy-loadtest` 并发压测 / `fy-quality` 双裁判质量评分 / `fy-canary` 模型替换检测），47 + 7 个测试覆盖。 | ✅ |
 
 > 完整源码级改动清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
@@ -183,6 +185,47 @@ sudo ./07-setup-logrotate.sh                  # nginx + 容器日志轮转
 - 0 panic、0 DB 错误、0 Redis 池超时
 
 完整方法论和细节见 [部署文档目录](./docs/deploy/)。
+
+---
+
+## 📊 渠道基准测试（channel-benchmark）
+
+生产上线的渠道**只有跑过一遍基线测量才算真的上线**。[`scripts/channel-benchmark/`](./scripts/channel-benchmark/) 是这套测量工具链，分两个层次：
+
+### Go 烟测器（零依赖）
+
+```bash
+cd scripts/channel-benchmark/go
+go run . -config channel-benchmark.yaml                           # 一次性跑
+go run . -config channel-benchmark.yaml -prom-listen :9090 -prom-interval 5m   # 常驻，暴露 Prometheus /metrics
+```
+
+- 走真实 `/v1/chat/completions` 路径（不是那个只返回 `{success, time}` 的管理按钮），拿到 TTFT / ITL / usage / cached_tokens
+- 线性插值分位数，和 NumPy / llmperf / genai-perf 一致
+- `-prom-listen` 模式下长期驻留，暴露 `channel_benchmark_ttft_seconds{channel,model,quantile}`、`channel_benchmark_request_total{outcome=...}`、`channel_benchmark_run_age_seconds` 等序列，直接接 Grafana 告警
+- `go.mod` 只依赖 `gopkg.in/yaml.v3`，可以直接 scp 到任何一台 Linux 跑
+
+### Python 三件套
+
+```bash
+cd scripts/channel-benchmark/py
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python -e ".[dev]"
+source .venv/bin/activate
+```
+
+| 工具 | 子命令 | 回答什么问题 |
+|---|---|---|
+| **fy-loadtest** | `fy-loadtest -c loadtest.yaml` | 这个渠道扛得住 N 并发吗？E2E / TTFT / ITL / TPOT 分位 + goodput-vs-SLO |
+| **fy-quality** | `fy-quality -c quality.yaml` | 这个渠道答得对吗？7 种 grader（exact / regex / contains / json_schema / rubric / similarity / pairwise）+ 双裁判（默认 Claude Haiku + Gemini Flash）+ 磁盘缓存 |
+| **fy-canary** | `fy-canary baseline / audit / verify-baseline` | 这个渠道被静默换模型了吗？先对可信 vendor 录 baseline，再周期审计网关；alignment + embedding drift + MMD 三种探针 |
+
+两个特别值得提的能力：
+
+- **数据集污染防御**（fy-quality）—— `datasets/public/` 是起手烟测用、assumed-memorized 的样本；真实题库放 `datasets/private/`（整个目录 gitignore）。每行 JSON 支持 `seed` + `perturbations: ["whitespace", "trailing_marker", "synonym"]`，在命中模型前做**确定性**扰动，让网线上的文本和仓库里的文本永远不完全一致，防止训练集污染把评测变成记忆测验
+- **Baseline 健康检查**（fy-canary）—— baseline 文件带 `recorded_at_iso` / `n_probes` / `fy_canary_version` 元数据；`audit` 默认拒绝超过 `baseline_max_age_days`（30 天）的 baseline；新的 `verify-baseline` 子命令**再查一遍 vendor 直连**，检测 baseline 自身是否因为模型升级而漂移
+
+全套 47 个 Python 测试 + 7 个 Go 测试（均 `-race`）通过；详见 [`scripts/channel-benchmark/README.md`](./scripts/channel-benchmark/README.md)。
 
 ---
 

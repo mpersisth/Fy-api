@@ -65,9 +65,36 @@ Dual-judge defaults to Claude Haiku + Gemini Flash. Never configure a channel's 
 
 Output: JSON + CSV + a markdown scorecard with per-channel pass rate, per-category breakdown, and a failures table.
 
+### Dataset layout (contamination defense)
+
+```
+fy_quality/datasets/
+├── README.md                which to use when, and which perturbations are safe per grader
+├── public/quality.jsonl     15-row starter suite. COMMITTED. Assume every model has seen it.
+└── private/                 YOUR real grading prompts. Gitignored. Back up out-of-band.
+```
+
+Every row can opt into deterministic on-the-wire perturbations via `seed` + `perturbations`:
+
+```json
+{"id":"math-01","kind":"quality","grader":"exact",
+ "prompt":"What is 17 + 28?", "expected":"45",
+ "seed": 42, "perturbations": ["whitespace", "trailing_marker"]}
+```
+
+Strategies (from `fy_quality/perturbation.py`):
+
+| Strategy | What it does | Safe for |
+|---|---|---|
+| `whitespace` | Inserts one U+200B zero-width-space at a hash-derived index between two letters | Every grader |
+| `trailing_marker` | Appends ` <!--fqNNNNNN-->` where the 6-digit nonce is deterministic on `(seed, prompt_id)` | Every grader |
+| `synonym` | Swaps the first whole-word hit against a reviewed 10-word map, preserving case + trailing punctuation | rubric / similarity / pairwise (only — on exact/regex double-check manually) |
+
+Perturbations are deterministic, so disk cache keys stay stable. Schema changes (different seed or different strategy list) naturally invalidate the cache because the wire text changes.
+
 ## fy-canary — model-substitution detection
 
-Two-step workflow:
+Three-step workflow:
 
 ```bash
 # 1. Record a trusted baseline (point at the vendor API directly).
@@ -79,6 +106,11 @@ fy-canary baseline -c canary.yaml
 export CANARY_BASE_URL=https://your-fy-api.example.com
 export CANARY_API_KEY=sk-user-on-fyapi
 fy-canary audit -c canary.yaml
+
+# 3. Periodically verify the baseline itself hasn't drifted (re-query vendor direct).
+export CANARY_BASE_URL=https://api.openai.com
+export CANARY_API_KEY=sk-...
+fy-canary verify-baseline -c canary.yaml
 ```
 
 Probes:
@@ -91,6 +123,19 @@ Probes:
 
 Baselines are per-`source.name` JSON files in `canary-baselines/`. Keep that dir tracked manually or gitignored as you prefer — they shouldn't contain secrets but they DO contain model outputs.
 
+### Baseline health checks
+
+Every baseline file carries v2 metadata:
+
+- `schema_version` — always 2 on new saves; v1 files still load
+- `recorded_at_iso` — human-readable timestamp
+- `n_probes` / `total_samples` — the audit sizes this was calibrated for
+- `fy_canary_version` — the tool version that wrote it
+
+`fy-canary audit` refuses to run against a baseline older than `baseline_max_age_days` (default 30) unless you pass `--ignore-stale-baseline`. That threshold lives in `canary.yaml`.
+
+`fy-canary verify-baseline` is the audit flipped: it re-queries the SAME source the baseline was recorded from and runs the exact alignment/drift comparison. A failure there means the vendor itself has changed (model updated, system prompt tweaked, API migrated) and the baseline needs to be re-recorded before its next audit run makes sense.
+
 ## Shared JSONL dataset schema
 
 Both `fy-quality` and `fy-canary` read the same flavor of JSONL. Each row:
@@ -99,7 +144,7 @@ Both `fy-quality` and `fy-canary` read the same flavor of JSONL. Each row:
 {"id": "...", "kind": "quality" | "canary", "prompt": "...", "..."}
 ```
 
-See `fy_quality/datasets/quality.jsonl` (15 starter prompts) and
+See `fy_quality/datasets/public/quality.jsonl` (15 starter prompts) and
 `fy_canary/datasets/canaries.jsonl` (8 starter probes).
 
 ## Design choices worth calling out
@@ -118,16 +163,19 @@ See `fy_quality/datasets/quality.jsonl` (15 starter prompts) and
 pytest
 ```
 
-31 end-to-end tests using `httpx.MockTransport` — no network. Covers:
+47 end-to-end tests using `httpx.MockTransport` — no network. Covers:
 
 - fy_loadtest: TTFT-skip-preamble, usage harvesting, ramp, auth contract
 - fy_quality: each grader's happy path and failure modes, dataset loader,
-  full runner with mock upstream, dual-judge verdict composition
-- fy_canary: Levenshtein, drift centroid, baseline roundtrip, substitution detection
+  full runner with mock upstream, dual-judge verdict composition,
+  deterministic perturbations, runner-sends-perturbed-prompt, unknown-strategy errors
+- fy_canary: Levenshtein, drift centroid, baseline v2 metadata + v1 backwards-compat,
+  substitution detection, baseline-health staleness, verify-baseline source-drift
 
 ## Not in scope (yet)
 
 - LLM-as-judge judge-of-judges calibration
 - Automatic baseline rotation / drift detection on the baseline itself
+  (you have `verify-baseline` but re-recording is still manual)
 - Distributed load generation
 - Any CI hooks

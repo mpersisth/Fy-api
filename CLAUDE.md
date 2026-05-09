@@ -68,6 +68,46 @@ bun run i18n:sync
 bun run i18n:lint
 ```
 
+### Server-side deploy / operations (Fabric)
+
+Use the root `fabfile.py` from the local repo. The conda env is `fy-api-deploy`.
+
+```bash
+conda run -n fy-api-deploy fab info --target=cn
+conda run -n fy-api-deploy fab status --target=cn
+conda run -n fy-api-deploy fab logs --target=cn --tail=200
+conda run -n fy-api-deploy fab release --target=cn --tag=v0.9.8 --ref=origin/main
+
+conda run -n fy-api-deploy fab info --target=sg
+conda run -n fy-api-deploy fab status --target=sg
+conda run -n fy-api-deploy fab logs --target=sg --tail=200
+conda run -n fy-api-deploy fab deploy --target=sg --tag=sg-5d733d85
+
+conda run -n fy-api-deploy fab preflight --target=legacy
+```
+
+Known Fabric targets:
+
+| target | Purpose | SSH | Notes |
+|--------|---------|-----|-------|
+| `cn` | Hangzhou production | `root@8.136.146.211:58422` via `~/.ssh/tracenex_XN.pem` | Builds from `/root/Fy-api`, runtime config in `/opt/fy-api/config/fy-api.env` |
+| `sg` | Singapore production | `root@47.236.133.70:58422` via `~/.ssh/AI_tracenex.pem` | Public URL `https://api.aitracenex.com`; ACR namespace `ai_transnext`; active blue/green behind Nginx |
+| `legacy` | Legacy source server | `root@8.222.175.17` via default SSH key/agent | Contains old `/root/TraceNex` deployment and local MySQL source data |
+
+Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. For SG, current deployed image tag is `sg-5d733d85`.
+
+### Migration context
+
+The SG RDS database `transnext_db` was initialized from the legacy server's self-hosted MySQL on 2026-05-07:
+
+- Source host: `legacy` / `8.222.175.17`
+- Source DBs: `tracenex` plus `tracenex_log.logs`
+- Target: SG RDS `transnext_db`
+- Pre-migration SG backup: `/opt/fy-api/backup/transnext_db-before-legacy-migration-20260507-231343.sql.gz` on the SG server
+- After importing the legacy schema/data, SG Fy-api was restarted to run AutoMigrate and recreate new upstream tables.
+
+On the legacy host, MySQL is system-installed (`mysql.service`). Operational access is available via `/etc/mysql/debian.cnf`; application DSNs are in `/root/TraceNex/.env`. Do not print database passwords in logs or chat.
+
 ### Upstream sync
 
 ```bash
@@ -250,3 +290,25 @@ TraceNex-specific operational docs live under [`docs/`](./docs/):
 - `Bug分析-Gemini缓存命中未计费.md` — post-mortem reference for cache-token billing (already fixed upstream)
 
 For gateway features themselves (endpoints, billing formulas, provider quirks) see the upstream docs at <https://docs.newapi.pro>.
+
+## Channel benchmarking toolkit
+
+Everything channel-quality-related lives under [`scripts/channel-benchmark/`](./scripts/channel-benchmark/). Two ecosystems, stacked not overlapping:
+
+| Tool | Lang | What it answers |
+|---|---|---|
+| `go/` (single binary) | Go | "Are the channels alive? What's TTFT?" — zero-dep, drop-on-prod. `-prom-listen :9090` turns it into a Prometheus exporter. |
+| `py/fy-loadtest` | Python | "Will this channel survive N concurrent?" — full E2E/TTFT/ITL/TPOT percentiles. |
+| `py/fy-quality` | Python | "Is this channel answering correctly?" — 7 graders, dual-judge rubric, disk-cached generations. |
+| `py/fy-canary` | Python | "Did this channel silently get swapped to a cheaper model?" — baseline + audit + `verify-baseline`; alignment / embedding-drift / MMD probes. |
+
+Operational conventions:
+
+- **Real traffic, real billing.** Every tool uses a regular `sk-...` user token and consumes real quota. The user's quota IS the budget cap.
+- **Explicit model lists.** No tool has a magic default; config must spell out which models to test.
+- **Contamination defense in `fy-quality`.** Golden prompts live in `py/fy_quality/datasets/private/` (gitignored); the public `quality.jsonl` is assumed-memorized and exists only for wiring smoke tests. Per-row `seed` + `perturbations` perturb the text on the wire.
+- **Baseline health in `fy-canary`.** Baseline files carry v2 metadata; `audit` refuses stale baselines (> `baseline_max_age_days`, default 30) unless `--ignore-stale-baseline`. Use `fy-canary verify-baseline` to re-query the vendor and detect baseline-side drift.
+- **Prometheus integration.** The Go tool's daemon mode emits `channel_benchmark_*` series (request_total / success_rate / e2e_seconds / ttft_seconds / tokens_per_sec / run_age_seconds / consecutive_runs_ok). Dashboards / alert rules live in that directory's `README.md`.
+
+See `scripts/channel-benchmark/README.md` for the top-level navigation and per-tool READMEs for details.
+

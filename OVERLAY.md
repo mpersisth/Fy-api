@@ -1,6 +1,6 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-04-22
+> 最后更新：2026-05-09
 > 维护人：<你的名字>
 > 上游基线：new-api @ `f995a868` (2026-04-18)
 
@@ -68,9 +68,37 @@
 ### B-6 [deploy] Fabric 服务端构建发布自动化
 - **新增文件**：`fabfile.py`
 - **用途**：本地只执行 Fabric；远端 ECS 在 `/root/Fy-api` 拉取 Git ref，用 `git archive` 生成干净临时构建目录后 Podman 构建镜像、推送 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布；也支持新加坡新机 `bootstrap-system`
-- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`sg=root@47.236.133.70:58422`（`~/.ssh/AI_tracenex.pem`，ACR namespace `ai_transnext`）；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
+- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`sg=root@47.236.133.70:58422`（`~/.ssh/AI_tracenex.pem`，ACR namespace `ai_transnext`），`legacy=root@8.222.175.17`（默认 SSH key/agent）；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
 - **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
 - **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
+
+### B-7 [benchmark] 渠道基准测试工具链（channel-benchmark）
+- **新增目录**：`scripts/channel-benchmark/`
+  - `README.md` —— 顶层导航，解释 Go / Python 两套工具的分工
+  - `go/` —— 零依赖 Go 烟测器（single binary）
+    - `main.go` / `runner.go` / `client.go` / `admin.go` / `config.go` / `metrics.go` / `exporter.go`
+    - `prometheus.go` —— 自写零依赖 exposition 格式导出器（`-prom-listen :9090` 进 daemon 模式）
+    - `prometheus_test.go` / `e2e_test.go` / `testhelper_test.go` —— 全部 `-race` 通过
+    - `channel-benchmark.yaml` —— 示例配置（`${VAR}` / `${VAR:-default}` 注入环境变量）
+    - `go.mod` 只依赖 `gopkg.in/yaml.v3`
+  - `py/` —— 三件套 Python 工具（共享一个 venv / 一个 JSONL schema）
+    - `fy_loadtest/` —— 并发阶梯压测（E2E/TTFT/ITL/TPOT 分位、RPS、goodput）
+    - `fy_quality/` —— 质量评分（7 种 grader + 双裁判 rubric + 磁盘缓存）
+      - `perturbation.py` —— 确定性扰动（`whitespace` / `trailing_marker` / `synonym`）防训练集污染
+      - `datasets/public/quality.jsonl` —— 起手 15 条烟测样本（带扰动示例）
+      - `datasets/private/` —— 用户私有题库目录（整个目录 gitignore）
+    - `fy_canary/` —— 模型替换检测（alignment + drift + MMD 三种探针）
+      - `baseline.py` —— v2 schema 带 `recorded_at_iso` / `n_probes` / `total_samples` / `fy_canary_version`；v1 文件向后兼容
+      - `cli.py` —— `baseline` / `audit` / `verify-baseline` 三个子命令；`audit` 默认拒绝超过 30 天的 baseline
+    - `tests/` + `tests_quality/` + `tests_canary/` —— 47 个 `httpx.MockTransport` e2e 测试
+- **用途**：
+  1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
+  2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
+  3. **质量**（fy-quality）—— 新渠道接入前用金标 JSONL + 双裁判评分
+  4. **反替换**（fy-canary）—— 先对可信上游 vendor 直连录 baseline，再周期性审计网关下游是否被静默换模型
+  5. **监控接入**（Go Prometheus mode）—— `go run . -prom-listen :9090 -prom-interval 5m` 常驻，给 Grafana 暴露 `channel_benchmark_ttft_seconds` / `_request_total{outcome=...}` / `_run_age_seconds` 等序列
+- **冲突风险**：极低（完整独立子目录，不触碰 upstream 业务代码或构建链）
+- **Merge 策略**：整个子树随上游同步走；唯一需要人工 review 的是 Go 那边的 `go.mod` 模块路径（`github.com/seraph0017/Fy-api/scripts/channel-benchmark`），不要跟主仓的 Go 模块搞混
 
 ---
 

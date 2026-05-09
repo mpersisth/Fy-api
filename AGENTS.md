@@ -55,18 +55,29 @@ bun run i18n:lint
 
 ### Server-side deploy via Fabric
 
-The root `fabfile.py` implements the current deployment flow: local git push, server git fetch/checkout, server Podman build, push to intranet ACR, then blue-green deploy using `scripts/prod/06-deploy-blue-green.sh`.
+The root `fabfile.py` implements the current deployment flow: local git push, server git fetch/checkout, server Podman build, push to ACR, then blue-green deploy using `scripts/prod/06-deploy-blue-green.sh`. Use conda env `fy-api-deploy`.
 
 ```bash
-conda run -n fy-api-deploy fab check --target=cn
+conda run -n fy-api-deploy fab info --target=cn
+conda run -n fy-api-deploy fab status --target=cn
+conda run -n fy-api-deploy fab logs --target=cn --tail=200
 conda run -n fy-api-deploy fab release --target=cn --tag=v0.9.8 --ref=origin/main
 conda run -n fy-api-deploy fab deploy --target=cn --tag=v0.9.8
 conda run -n fy-api-deploy fab rollback --target=cn --tag=v0.9.7
-conda run -n fy-api-deploy fab status --target=cn
-conda run -n fy-api-deploy fab logs --target=cn --tail=200
-conda run -n fy-api-deploy fab health --target=cn
-conda run -n fy-api-deploy fab bootstrap-system --target=sg
+
+conda run -n fy-api-deploy fab info --target=sg
+conda run -n fy-api-deploy fab status --target=sg
+conda run -n fy-api-deploy fab logs --target=sg --tail=200
+conda run -n fy-api-deploy fab deploy --target=sg --tag=sg-5d733d85
+
+conda run -n fy-api-deploy fab preflight --target=legacy
 ```
+
+Known targets:
+
+- `cn`: Hangzhou production, `root@8.136.146.211:58422`, key `~/.ssh/tracenex_XN.pem`.
+- `sg`: Singapore production, `root@47.236.133.70:58422`, key `~/.ssh/AI_tracenex.pem`, public URL `https://api.aitracenex.com`, ACR namespace `ai_transnext`.
+- `legacy`: old source server, `root@8.222.175.17`, default SSH key/agent, contains `/root/TraceNex` and local MySQL source data.
 
 ### Upstream sync orientation
 
@@ -77,6 +88,15 @@ git log HEAD..upstream/main --oneline | head
 ```
 
 Follow `docs/Monthly-upstream-sync-runbook.md` for the full monthly sync process.
+
+### Migration context
+
+SG production was migrated from the legacy self-hosted MySQL on 2026-05-07.
+
+- Source: `legacy` / `8.222.175.17`, databases `tracenex` and `tracenex_log.logs`.
+- Target: SG RDS `transnext_db` used by `api.aitracenex.com`.
+- SG pre-migration backup: `/opt/fy-api/backup/transnext_db-before-legacy-migration-20260507-231343.sql.gz` on the SG server.
+- Legacy MySQL operational access is via `/etc/mysql/debian.cnf`; application DSNs are in `/root/TraceNex/.env`. Do not print database passwords.
 
 ## High-Level Architecture
 
@@ -159,3 +179,61 @@ When adding a new channel, confirm whether the provider supports `StreamOptions`
 Backend i18n lives in `i18n/` using `nicksnyder/go-i18n/v2` with embedded YAML locale files.
 
 Frontend i18n lives in `web/src/i18n/` using `i18next` + `react-i18next` + browser language detection. Locale files are flat JSON under `web/src/i18n/locales/{lang}.json`, wrapped under `translation`; keys are Chinese source strings. Current frontend languages include `zh-CN`, `zh-TW`, `en`, `fr`, `ja`, `ru`, and `vi`.
+
+## Channel benchmarking
+
+The `scripts/channel-benchmark/` directory is a self-contained toolkit for measuring channel liveness, load capacity, output quality, and model-substitution integrity. It is independent of the main backend (its own `go.mod` in `go/`, its own `pyproject.toml` in `py/`) so it can be run on any host that has network access to the gateway.
+
+Layout:
+
+```text
+scripts/channel-benchmark/
+├── README.md                       top-level navigation (how Go and Python tools relate)
+├── go/                             zero-dep Go smoke + Prometheus exporter
+│   ├── main.go / runner.go / client.go / admin.go
+│   ├── prometheus.go               exposition-format daemon (no prom client dep)
+│   └── channel-benchmark.yaml
+└── py/                             three CLIs sharing one venv + JSONL schema
+    ├── pyproject.toml              entry points: fy-loadtest, fy-quality, fy-canary
+    ├── fy_loadtest/                concurrency-ramp load testing
+    ├── fy_quality/                 golden-JSONL quality scorecard + 7 graders + dual judge
+    │   ├── perturbation.py         deterministic contamination-defense perturbations
+    │   └── datasets/
+    │       ├── public/             starter suite (committed, assumed-memorized)
+    │       └── private/            user-private prompts (gitignored)
+    └── fy_canary/                  baseline + audit + verify-baseline
+        └── baseline.py             v2 schema w/ recorded_at_iso + health metadata
+```
+
+Key invariants when working in this tree:
+
+- **Never rewrite the Go tool to depend on `prometheus/client_golang`.** The zero-dep exposition in `prometheus.go` is deliberate so the binary stays drop-on-prod.
+- **Never add brand words (TraceNex / Fy-api) to the starter `public/quality.jsonl`.** It is the ONLY dataset meant to be committed; keeping it brand-neutral avoids the file being a signal leak.
+- **Never bypass `row.wire_prompt()` in the quality runner.** Perturbations must be applied before hitting the channel, and the cache key must be derived from the perturbed text so schema changes invalidate caches reliably.
+- **Never have a channel judge its own output in `fy-quality`.** Judges are configured independently from channels — keep it that way.
+- **Baseline files are data, not code.** `fy_canary/baseline.py`'s load path must stay backwards-compatible with v1 files; upgrades happen on next save, not on load.
+
+Commands:
+
+```bash
+# Smoke / Prometheus
+cd scripts/channel-benchmark/go
+go test -race ./...                  # full Go test suite
+go run . -config channel-benchmark.yaml                        # one-shot
+go run . -config channel-benchmark.yaml -prom-listen :9090 -prom-interval 5m   # daemon
+
+# Python tools
+cd scripts/channel-benchmark/py
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python -e ".[dev]"
+source .venv/bin/activate
+pytest                               # all 47 tests (loadtest + quality + canary)
+fy-loadtest -c loadtest.yaml
+fy-quality  -c quality.yaml
+fy-canary   baseline         -c canary.yaml
+fy-canary   audit            -c canary.yaml
+fy-canary   verify-baseline  -c canary.yaml
+```
+
+When extending this toolkit, log the change in `OVERLAY.md` entry **B-7** (same file that tracks all TraceNex customizations) so the next upstream sync doesn't lose context.
+

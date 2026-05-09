@@ -2039,6 +2039,7 @@ func TestRemoveDisabledFieldsDefaultFiltering(t *testing.T) {
 		"service_tier":"flex",
 		"inference_geo":"eu",
 		"speed":"fast",
+		"context_management":{"edits":[{"type":"clear_tool_uses_20250919"}]},
 		"cache_control":{"type":"ephemeral"},
 		"safety_identifier":"user-123",
 		"store":true,
@@ -2083,6 +2084,55 @@ func TestRemoveDisabledFieldsAllowSpeed(t *testing.T) {
 		t.Fatalf("RemoveDisabledFields returned error: %v", err)
 	}
 	assertJSONEqual(t, `{"speed":"fast","store":true}`, string(out))
+}
+
+// Fy-api overlay: 回归测试，验证 context_management 默认过滤 / 显式开启 / pass-through 三条路径。
+func TestRemoveDisabledFieldsContextManagement(t *testing.T) {
+	input := `{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":"hi"}],
+		"context_management":{"edits":[{"type":"clear_tool_uses_20250919"}]},
+		"store":true
+	}`
+
+	t.Run("strips context_management by default", func(t *testing.T) {
+		settings := dto.ChannelOtherSettings{}
+
+		out, err := RemoveDisabledFields([]byte(input), settings, false)
+		if err != nil {
+			t.Fatalf("RemoveDisabledFields returned error: %v", err)
+		}
+		assertJSONEqual(t,
+			`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}],"store":true}`,
+			string(out),
+		)
+	})
+
+	t.Run("preserves context_management when AllowContextManagement=true", func(t *testing.T) {
+		settings := dto.ChannelOtherSettings{
+			AllowContextManagement: true,
+		}
+
+		out, err := RemoveDisabledFields([]byte(input), settings, false)
+		if err != nil {
+			t.Fatalf("RemoveDisabledFields returned error: %v", err)
+		}
+		assertJSONEqual(t,
+			`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}],"context_management":{"edits":[{"type":"clear_tool_uses_20250919"}]},"store":true}`,
+			string(out),
+		)
+	})
+
+	t.Run("preserves context_management when channel pass-through enabled", func(t *testing.T) {
+		settings := dto.ChannelOtherSettings{}
+
+		out, err := RemoveDisabledFields([]byte(input), settings, true)
+		if err != nil {
+			t.Fatalf("RemoveDisabledFields returned error: %v", err)
+		}
+		// pass-through 模式下输入应原样返回，不再做任何过滤
+		assertJSONEqual(t, input, string(out))
+	})
 }
 
 func TestApplyParamOverrideWithRelayInfoRecordsOperationAuditInDebugMode(t *testing.T) {

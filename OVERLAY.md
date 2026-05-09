@@ -109,6 +109,16 @@
 - **冲突风险**：低（adaptor.go 内只新增一段 `if` 分支，带 `// Fy-api overlay:` 注释；gemini.go 默认 map 只新增 key）
 - **Merge 策略**：上游若改动 `GetRequestURL` 的版本拼接逻辑，保留这段 native pass-through 覆盖；若上游改 `defaultGeminiSettings.VersionSettings`，按需合并新增的 image-preview 项
 
+### B-9 [claude] 默认过滤 `context_management` beta 字段
+- **修改文件**：
+  - `dto/channel_settings.go`（`ChannelOtherSettings` 新增 `AllowContextManagement bool`，紧跟 `AllowSpeed` 后）
+  - `relay/common/relay_info.go`（`RemoveDisabledFields` 中新增一段 `delete(data, "context_management")`，并在函数顶部 doc 中登记该字段）
+- **新增测试**：`relay/common/override_test.go::TestRemoveDisabledFieldsContextManagement`（3 个 sub-test：默认裁剪 / `AllowContextManagement=true` 保留 / channel pass-through 保留），同时把 `TestRemoveDisabledFieldsDefaultFiltering` 的输入扩展为含 `context_management`
+- **背景**：海外 SG 反馈 `claude-sonnet-4-6` 调用上游返回 `context_management: Extra inputs are not permitted`。Anthropic 的 `context_management` 是 beta 功能，必须配合 `anthropic-beta: context-management-2025-...` header 才能用。客户端（含部分 SDK）会只在 body 里塞这个字段、不带 header，被 Anthropic schema 校验直接拒
+- **upstream 现状**：upstream 在 `30cb3b8b`（2025-09-30 "feat: claude context editing"）只在 `dto.ClaudeRequest` 里加了 `ContextManagement` 字段做识别，没有像 `inference_geo / speed / service_tier` 那样接入 `RemoveDisabledFields` 默认过滤体系。这是 upstream 的遗漏；本仓库选择直接 overlay 修复，**不**向 upstream 提 PR
+- **冲突风险**：低（结构体新增一行字段；过滤函数新增一段独立 `if`，带 `// Fy-api overlay:` 注释）
+- **Merge 策略**：若 upstream 后续自行补上同样的过滤（推测会用同名字段 `AllowContextManagement`），merge 时直接 take theirs 即可；若它选了别的字段名，按 upstream 命名重写本 overlay
+
 ---
 
 ## 前端定制

@@ -13,6 +13,12 @@
 gateway:
   base_url:   "${FY_API_URL:-http://localhost:3000}"
   user_token: "${FY_API_USER_TOKEN}"
+  # Optional. When set, every conformance probe lands on this exact channel
+  # (admin-only feature; user_token MUST belong to an admin). Useful to
+  # validate "channel 8 returns 4xx (not 5xx) for malformed JSON" rather
+  # than getting a result averaged over whichever channels the distributor
+  # routed each probe to. See middleware/auth.go ~line 431.
+  # pin_channel_id: 8
 
 target:
   # The model to test. fy-conformance mutates ONE field of `baseline_request`

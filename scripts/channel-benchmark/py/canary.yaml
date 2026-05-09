@@ -17,6 +17,11 @@ source:
   model: gpt-4o-mini
   base_url: "${CANARY_BASE_URL:-https://api.openai.com}"
   api_key: "${CANARY_API_KEY}"
+  # When source IS your Fy-api gateway (i.e. for `audit` runs), set
+  # pin_channel_id to force the request onto a specific channel rather than
+  # letting the distributor choose. Admin api_key required; non-admin gets
+  # 403 from the gateway. Leave unset for vendor-direct baseline runs.
+  # pin_channel_id: 8
 
 dataset: fy_canary/datasets/canaries.jsonl
 

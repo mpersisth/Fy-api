@@ -137,6 +137,14 @@ llmperf, and genai-perf).
 - **Admin auth contract is the non-obvious part.** Fy-api's `AdminAuth`
   middleware expects `Authorization: <raw_token>` (NO `Bearer` prefix) plus a
   `New-Api-User: <user_id>` header. That's why this tool asks for both.
+- **Channel pinning is opt-in (`test.pin_channel: true`).** Without it,
+  requests go through Fy-api's distributor (group + priority + weight +
+  affinity), which means a model offered by N channels may be routed to one
+  you didn't list. With `pin_channel` on, the tool appends `-{channel_id}` to
+  `gateway.user_token` — Fy-api parses this in `middleware/auth.go` (around
+  line 431) and forces the request to that exact channel. Pinning requires
+  `user_token` to belong to an admin user; non-admin tokens with the suffix
+  get a 403 from the gateway.
 
 ## What's intentionally not here
 

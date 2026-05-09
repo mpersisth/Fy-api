@@ -88,6 +88,7 @@ class CanaryRunner:
                 base_url=self.cfg.source.base_url,
                 api_key=self.cfg.source.api_key,
                 timeout=self.cfg.request_timeout_sec,
+                pin_channel_id=self.cfg.source.pin_channel_id,
             ) as client:
                 sem = asyncio.Semaphore(self.cfg.concurrency)
 
@@ -148,6 +149,7 @@ class CanaryRunner:
                 base_url=self.cfg.source.base_url,
                 api_key=self.cfg.source.api_key,
                 timeout=self.cfg.request_timeout_sec,
+                pin_channel_id=self.cfg.source.pin_channel_id,
             ) as client:
                 sem = asyncio.Semaphore(self.cfg.concurrency)
 
@@ -198,6 +200,7 @@ class CanaryRunner:
                 base_url=self.cfg.source.base_url,
                 api_key=self.cfg.source.api_key,
                 timeout=self.cfg.request_timeout_sec,
+                pin_channel_id=self.cfg.source.pin_channel_id,
             ) as client:
                 sem = asyncio.Semaphore(self.cfg.concurrency)
 

@@ -57,7 +57,13 @@ async def run_all(cfg: Config, cases: list[Case]) -> list[Result]:
         headers={**cfg.extra_headers},
     ) as client:
         sem = asyncio.Semaphore(cfg.concurrency)
-        default_auth = f"Bearer {cfg.gateway.user_token}"
+        # Channel-pin: when configured, append "-{id}" to user_token so the
+        # gateway routes every conformance probe to the same channel. See
+        # middleware/auth.go ~line 431; admin user_token required.
+        token = cfg.gateway.user_token
+        if cfg.gateway.pin_channel_id is not None:
+            token = f"{token}-{cfg.gateway.pin_channel_id}"
+        default_auth = f"Bearer {token}"
 
         async def worker(case: Case) -> Result:
             if not case.applies_to(backend):

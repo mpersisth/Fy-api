@@ -12,12 +12,22 @@ class CanaryClient:
     machinery isn't needed here and carrying unused code paths invites bugs.
     """
 
-    def __init__(self, *, base_url: str, api_key: str, timeout: float = 120.0):
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        timeout: float = 120.0,
+        pin_channel_id: int | None = None,
+    ):
         self._url = base_url.rstrip("/") + "/v1/chat/completions"
+        # Fy-api admin-only channel pin: append "-{id}" to the user token.
+        # See middleware/auth.go ~line 431.
+        effective_key = api_key if pin_channel_id is None else f"{api_key}-{pin_channel_id}"
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=10, read=timeout, write=30, pool=10),
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {effective_key}",
                 "Content-Type": "application/json",
             },
         )

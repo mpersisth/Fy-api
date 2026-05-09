@@ -431,3 +431,108 @@ def _make_mock_channel_transport_with_capture(capture: list[str]):
             },
         )
     return httpx.MockTransport(handler)
+
+
+# ---------------- channel pinning (Stage 2) ----------------
+
+@pytest.mark.asyncio
+async def test_runner_pins_channel_via_token_suffix(tmp_path, monkeypatch):
+    """When Channel.pin_channel_id is set, the Authorization header sent to
+    /v1/chat/completions becomes `Bearer <token>-<id>` — the admin-only syntax
+    Fy-api parses in middleware/auth.go (~line 431) to force a specific
+    channel. Without the field, the suffix MUST NOT appear."""
+
+    dataset = tmp_path / "q.jsonl"
+    dataset.write_text(
+        '{"id":"t1","kind":"quality","category":"t","grader":"exact",'
+        '"prompt":"?","expected":"ok"}\n'
+    )
+
+    received_auth: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received_auth.append(request.headers.get("Authorization", ""))
+        return httpx.Response(
+            200, json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    orig_init = httpx.AsyncClient.__init__
+    monkeypatch.setattr(
+        httpx.AsyncClient, "__init__",
+        lambda self, *a, **k: orig_init(
+            self, *a, **{**k, "transport": httpx.MockTransport(handler)}
+        ),
+    )
+
+    # Case 1: pinned channel.
+    received_auth.clear()
+    cfg = QualityConfig(
+        channels=[Channel(
+            name="ch-pin", model="m", token="sk-admin",
+            base_url="http://mock", pin_channel_id=42,
+        )],
+        dataset=str(dataset),
+        judges=[], embedding=None,
+        cache_dir=str(tmp_path / "cache1"),
+        output_dir=str(tmp_path / "out1"),
+        concurrency=1,
+    )
+    await QualityRunner(cfg).run()
+    assert received_auth == ["Bearer sk-admin-42"], received_auth
+
+    # Case 2: no pin → no suffix.
+    received_auth.clear()
+    cfg2 = QualityConfig(
+        channels=[Channel(
+            name="ch-nopin", model="m", token="sk-admin",
+            base_url="http://mock", pin_channel_id=None,
+        )],
+        dataset=str(dataset),
+        judges=[], embedding=None,
+        cache_dir=str(tmp_path / "cache2"),
+        output_dir=str(tmp_path / "out2"),
+        concurrency=1,
+    )
+    await QualityRunner(cfg2).run()
+    assert received_auth == ["Bearer sk-admin"], received_auth
+
+
+def test_quality_config_parses_pin_channel_id(tmp_path):
+    """YAML round-trip: pin_channel_id is read back as int when present, None
+    otherwise. Back-compat: configs without the field still parse."""
+    p = tmp_path / "q.yaml"
+    p.write_text(
+        "channels:\n"
+        "  - name: a\n"
+        "    model: m\n"
+        "    token: sk-a\n"
+        "    base_url: http://mock\n"
+        "    pin_channel_id: 8\n"
+        "  - name: b\n"
+        "    model: m\n"
+        "    token: sk-b\n"
+        "    base_url: http://mock\n"
+        "dataset: /dev/null\n"
+    )
+    cfg = QualityConfig.load(p)
+    assert cfg.channels[0].pin_channel_id == 8
+    assert cfg.channels[1].pin_channel_id is None
+
+
+def test_quality_config_rejects_nonpositive_pin(tmp_path):
+    p = tmp_path / "bad.yaml"
+    p.write_text(
+        "channels:\n"
+        "  - name: a\n"
+        "    model: m\n"
+        "    token: sk-a\n"
+        "    base_url: http://mock\n"
+        "    pin_channel_id: 0\n"
+        "dataset: /dev/null\n"
+    )
+    import pytest
+    with pytest.raises(ValueError, match="must be > 0"):
+        QualityConfig.load(p)

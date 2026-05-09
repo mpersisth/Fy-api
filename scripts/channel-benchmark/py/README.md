@@ -155,6 +155,16 @@ See `fy_quality/datasets/public/quality.jsonl` (15 starter prompts) and
 - **Position-randomized pairwise.** A-vs-B and B-vs-A are both asked; a flip counts as a tie.
 - **Disk cache for quality generations.** Re-running the suite after a grader tweak is near-free.
 - **Baseline-first canary.** The real test is "did outputs diverge from what this channel used to produce?" — you can't detect that without recording a trusted snapshot first.
+- **Channel pinning is opt-in across all four tools.** Each tool's config has a
+  `pin_channel_id` field (gateway-level for loadtest/conformance, per-channel
+  for quality, per-source for canary). When set, the tool appends
+  `-{channel_id}` to the user token, and Fy-api parses this in
+  `middleware/auth.go` (~line 431) as a forced channel selection. Required
+  to be admin's user token, otherwise the gateway 403s with "普通用户不支持
+  指定渠道". Without it, requests go through the normal distributor (group +
+  priority + weight + affinity), which can route a model offered by N
+  channels to one you didn't intend to test. Mirrors `go/`'s `pin_channel`
+  flag.
 - **No CI integration, no scheduler.** These are manual runs. When you want a scheduler, wire one yourself.
 
 ## Testing
@@ -163,14 +173,18 @@ See `fy_quality/datasets/public/quality.jsonl` (15 starter prompts) and
 pytest
 ```
 
-47 end-to-end tests using `httpx.MockTransport` — no network. Covers:
+83 end-to-end tests using `httpx.MockTransport` — no network. Covers:
 
-- fy_loadtest: TTFT-skip-preamble, usage harvesting, ramp, auth contract
+- fy_loadtest: TTFT-skip-preamble, usage harvesting, ramp, auth contract, channel-pin token suffix
 - fy_quality: each grader's happy path and failure modes, dataset loader,
   full runner with mock upstream, dual-judge verdict composition,
-  deterministic perturbations, runner-sends-perturbed-prompt, unknown-strategy errors
+  deterministic perturbations, runner-sends-perturbed-prompt, unknown-strategy errors,
+  channel-pin runner + config round-trip
 - fy_canary: Levenshtein, drift centroid, baseline v2 metadata + v1 backwards-compat,
-  substitution detection, baseline-health staleness, verify-baseline source-drift
+  substitution detection, baseline-health staleness, verify-baseline source-drift,
+  channel-pin client + config round-trip
+- fy_conformance: dataset loader, runner with mock gateway, leak-guards corpus,
+  channel-pin runner + config round-trip
 
 ## Not in scope (yet)
 

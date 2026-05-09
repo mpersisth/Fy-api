@@ -54,6 +54,18 @@ class Gateway:
     base_url: str
     user_token: str  # sk-... — billed to the user, mirrors Go tool
 
+    # When set, every request appends "-{pin_channel_id}" to user_token, which
+    # Fy-api parses (middleware/auth.go ~line 431) as a forced channel
+    # selection. user_token must belong to an admin — otherwise the gateway
+    # returns 403 "普通用户不支持指定渠道".
+    #
+    # None = go through the normal distributor (group + priority + weight +
+    # affinity). Recommended ON when you're load-testing one specific channel,
+    # because a model offered by N channels would otherwise be load-balanced
+    # across them and the throughput numbers wouldn't say anything about any
+    # single channel.
+    pin_channel_id: int | None = None
+
 
 @dataclass
 class LoadProfile:
@@ -118,7 +130,13 @@ class Config:
             raise ValueError("load.model is required")
 
         return cls(
-            gateway=Gateway(base_url=gw["base_url"], user_token=gw["user_token"]),
+            gateway=Gateway(
+                base_url=gw["base_url"],
+                user_token=gw["user_token"],
+                pin_channel_id=(
+                    int(gw["pin_channel_id"]) if gw.get("pin_channel_id") is not None else None
+                ),
+            ),
             load=LoadProfile(
                 model=ld["model"],
                 prompt=ld.get("prompt", LoadProfile.prompt),
@@ -150,3 +168,7 @@ class Config:
             raise ValueError("load.requests_per_level must be > 0")
         if self.load.warmup_requests < 0:
             raise ValueError("load.warmup_requests must be >= 0")
+        if self.gateway.pin_channel_id is not None and self.gateway.pin_channel_id <= 0:
+            raise ValueError(
+                f"gateway.pin_channel_id must be > 0, got {self.gateway.pin_channel_id}"
+            )

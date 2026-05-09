@@ -48,6 +48,18 @@ type TestConfig struct {
 	NonStream     bool `yaml:"non_stream"`
 	MaxTokens     int  `yaml:"max_tokens"`
 	Prompt        string `yaml:"prompt"`
+
+	// PinChannel forces every chat request to land on the channel under test
+	// by appending "-{channel_id}" to the user token. This requires
+	// gateway.user_token to belong to an admin user (Fy-api enforces this in
+	// middleware/auth.go: only admins may pin a channel via token suffix).
+	//
+	// Default false. When false, requests go through the normal distributor
+	// (group + priority + weight + affinity), which means a model offered by
+	// multiple channels will not necessarily exercise the channel you listed.
+	// When true, the suite measures the actual channel under test — which is
+	// usually what you want for capacity / liveness diagnostics.
+	PinChannel    bool `yaml:"pin_channel"`
 }
 
 // ChannelConfig picks a channel by ID and lists the models to test on it.

@@ -41,15 +41,22 @@ def _expand_env(raw: str) -> str:
 
 @dataclass
 class Channel:
-    """One channel to test. `model` is sent as the request body's model; Fy-api
-    uses the user token's group to pick the actual upstream channel. If you
-    need to pin a specific channel you do it by using a token whose group
-    maps 1:1 to that channel."""
+    """One channel to test. `model` is sent as the request body's model;
+    Fy-api uses the user token's group to pick the actual upstream channel.
+
+    To pin a SPECIFIC Fy-api channel id rather than letting the distributor
+    choose, set `pin_channel_id` to the integer channel id. The tool will send
+    `Authorization: Bearer <token>-<pin_channel_id>` — Fy-api parses this in
+    middleware/auth.go (~line 431) as a forced channel selection. This
+    requires `token` to belong to an admin user; non-admin tokens with the
+    suffix get a 403 from the gateway.
+    """
 
     name: str
     model: str
     token: str
     base_url: str
+    pin_channel_id: int | None = None
 
 
 @dataclass
@@ -97,9 +104,17 @@ class QualityConfig:
                 model=str(c["model"]),
                 token=str(c["token"]),
                 base_url=str(c["base_url"]),
+                pin_channel_id=(
+                    int(c["pin_channel_id"]) if c.get("pin_channel_id") is not None else None
+                ),
             )
             for c in channels_raw
         ]
+        for c in channels:
+            if c.pin_channel_id is not None and c.pin_channel_id <= 0:
+                raise ValueError(
+                    f"channel {c.name!r}: pin_channel_id must be > 0, got {c.pin_channel_id}"
+                )
 
         judges_raw = d.get("judges") or []
         judges = [

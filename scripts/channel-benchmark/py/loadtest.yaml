@@ -10,6 +10,16 @@ gateway:
   base_url: "${FY_API_URL:-http://localhost:3000}"
   user_token: "${FY_API_USER_TOKEN}"
 
+  # Optional. When set, every load-test request appends "-{pin_channel_id}" to
+  # user_token, forcing Fy-api's distributor to land all traffic on this exact
+  # channel (admin-only; see middleware/auth.go ~line 431). user_token MUST
+  # belong to an admin user — otherwise the gateway 403s.
+  #
+  # Recommended ON when load-testing one channel; without it a model offered
+  # by N channels would be balanced across them and the throughput numbers
+  # wouldn't say anything about any single channel.
+  # pin_channel_id: 8
+
 load:
   model: gpt-4o-mini
   prompt: "Reply with the single word: pong."

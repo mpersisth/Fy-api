@@ -421,3 +421,125 @@ async def test_verify_baseline_without_baseline_errors(tmp_path):
     )
     with pytest.raises(FileNotFoundError):
         await CanaryRunner(cfg).verify_baseline()
+
+
+# --------- channel-pin (Stage 2) ---------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_canary_client_pins_channel_via_token_suffix(monkeypatch):
+    """Direct test of CanaryClient: when pin_channel_id is set, the
+    Authorization header carries `Bearer <api_key>-<id>`. Without the
+    parameter the suffix MUST NOT appear (back-compat)."""
+    from fy_canary.client import CanaryClient
+
+    received_auth: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received_auth.append(request.headers.get("Authorization", ""))
+        return httpx.Response(
+            200, json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    orig = httpx.AsyncClient.__init__
+    monkeypatch.setattr(
+        httpx.AsyncClient, "__init__",
+        lambda self, *a, **k: orig(
+            self, *a, **{**k, "transport": httpx.MockTransport(handler)}
+        ),
+    )
+
+    async with CanaryClient(
+        base_url="http://mock", api_key="sk-admin", pin_channel_id=42,
+    ) as c:
+        await c.complete(model="m", prompt="hi")
+
+    async with CanaryClient(
+        base_url="http://mock", api_key="sk-admin",
+    ) as c:
+        await c.complete(model="m", prompt="hi")
+
+    assert received_auth == ["Bearer sk-admin-42", "Bearer sk-admin"], received_auth
+
+
+def test_canary_config_parses_pin_channel_id(tmp_path):
+    """YAML round-trip for source.pin_channel_id (int → CanarySource;
+    omitted → None for back-compat)."""
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "source:\n"
+        "  name: pinned\n"
+        "  model: m\n"
+        "  base_url: http://mock\n"
+        "  api_key: sk-admin\n"
+        "  pin_channel_id: 26\n"
+        "dataset: /dev/null\n"
+    )
+    cfg = CanaryConfig.load(p)
+    assert cfg.source.pin_channel_id == 26
+
+    p2 = tmp_path / "c2.yaml"
+    p2.write_text(
+        "source:\n"
+        "  name: nopin\n"
+        "  model: m\n"
+        "  base_url: http://mock\n"
+        "  api_key: sk\n"
+        "dataset: /dev/null\n"
+    )
+    cfg2 = CanaryConfig.load(p2)
+    assert cfg2.source.pin_channel_id is None
+
+
+def test_canary_config_rejects_nonpositive_pin(tmp_path):
+    p = tmp_path / "bad.yaml"
+    p.write_text(
+        "source:\n"
+        "  name: bad\n"
+        "  model: m\n"
+        "  base_url: http://mock\n"
+        "  api_key: sk\n"
+        "  pin_channel_id: 0\n"
+        "dataset: /dev/null\n"
+    )
+    with pytest.raises(ValueError, match="must be > 0"):
+        CanaryConfig.load(p)
+
+
+def test_canary_validate_blocks_pin_against_vendor_host(tmp_path):
+    """Setting pin_channel_id while pointing at a real vendor API would send
+    `Bearer sk-vendor-26` to OpenAI/Anthropic/etc. and produce a confusing
+    401 mid-run. validate() must catch this at config load time."""
+    cfg = CanaryConfig(
+        source=CanarySource(
+            name="oops",
+            base_url="https://api.openai.com",
+            api_key="sk-vendor",
+            model="gpt-4o-mini",
+            pin_channel_id=8,
+        ),
+        dataset="/dev/null",
+        baselines_dir="/tmp",
+        output_dir="/tmp",
+    )
+    with pytest.raises(ValueError, match="vendor API"):
+        cfg.validate()
+
+
+def test_canary_validate_allows_pin_against_gateway_host():
+    """Same shape but base_url is a custom Fy-api gateway URL — should pass."""
+    cfg = CanaryConfig(
+        source=CanarySource(
+            name="ok",
+            base_url="http://8.136.146.211",
+            api_key="sk-admin",
+            model="gpt-4o-mini",
+            pin_channel_id=8,
+        ),
+        dataset="/dev/null",
+        baselines_dir="/tmp",
+        output_dir="/tmp",
+    )
+    cfg.validate()

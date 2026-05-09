@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -124,7 +125,21 @@ func (r *ChatResult) TokensPerSec() float64 {
 // Do sends the chat request and returns a fully populated result.
 // On any failure (network error, non-2xx, malformed stream) Success=false
 // and ErrMessage is set; TTFT/chunks are still reported if we got far enough.
+//
+// The request goes through Fy-api's normal distributor (group + priority +
+// weight + affinity). Use DoForChannel if you need to pin a specific channel.
 func (c *ChatClient) Do(ctx context.Context, req ChatRequest) *ChatResult {
+	return c.do(ctx, req, 0)
+}
+
+// DoForChannel is identical to Do but appends "-{channelID}" to the user
+// token, which Fy-api's middleware/auth.go interprets as "force this channel"
+// (admin-only, see auth.go around line 431). channelID <= 0 falls back to Do.
+func (c *ChatClient) DoForChannel(ctx context.Context, req ChatRequest, channelID int) *ChatResult {
+	return c.do(ctx, req, channelID)
+}
+
+func (c *ChatClient) do(ctx context.Context, req ChatRequest, channelID int) *ChatResult {
 	res := &ChatResult{
 		Model:     req.Model,
 		Streamed:  req.Stream,
@@ -152,7 +167,13 @@ func (c *ChatClient) Do(ctx context.Context, req ChatRequest) *ChatResult {
 		return res
 	}
 	// Per OpenAI client convention, user tokens go as Bearer.
-	httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	// When channelID > 0, append "-{id}" to force the distributor to that
+	// specific channel (Fy-api admin-only feature; see middleware/auth.go).
+	authToken := c.token
+	if channelID > 0 {
+		authToken = c.token + "-" + strconv.Itoa(channelID)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+authToken)
 	httpReq.Header.Set("Content-Type", "application/json")
 	if req.Stream {
 		httpReq.Header.Set("Accept", "text/event-stream")

@@ -5,12 +5,15 @@
 channels:
   # Each entry is one (name,model,token,base_url) quad. The Fy-api `token`
   # determines which upstream channel the request gets routed to (via the
-  # token's group). If you want to pin channel N, use a token whose group
-  # maps 1:1 to that channel.
+  # token's group). If you want to pin a SPECIFIC Fy-api channel id rather
+  # than letting the distributor choose, set `pin_channel_id` — the tool will
+  # send `Authorization: Bearer <token>-<pin_channel_id>` (admin token
+  # required; non-admin gets 403 from the gateway).
   - name: openai-direct
     model: gpt-4o-mini
     token: "${FY_TOKEN_OPENAI}"
     base_url: "${FY_API_URL:-http://localhost:3000}"
+    # pin_channel_id: 8     # uncomment to pin to channel 8 (admin token only)
   - name: anthropic-direct
     model: claude-3-5-haiku-20241022
     token: "${FY_TOKEN_ANTHROPIC}"

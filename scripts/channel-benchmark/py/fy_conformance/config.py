@@ -53,6 +53,12 @@ def _interpolate(value: Any) -> Any:
 class GatewayCfg:
     base_url: str
     user_token: str
+    # When set, conformance probes append "-{pin_channel_id}" to user_token,
+    # forcing Fy-api to land all conformance traffic on this exact channel.
+    # Admin-only feature (Fy-api/middleware/auth.go ~line 431). user_token
+    # MUST be an admin user; non-admin tokens with the suffix get a 403 from
+    # the gateway (which itself becomes a conformance result you DON'T want).
+    pin_channel_id: int | None = None
 
 
 @dataclass
@@ -99,8 +105,16 @@ def load(path: str | os.PathLike) -> Config:
 
     out = Path(raw.get("output_dir", "conformance-results"))
 
+    pin = gw.get("pin_channel_id")
+    if pin is not None and int(pin) <= 0:
+        raise ValueError(f"gateway.pin_channel_id must be > 0, got {pin}")
+
     return Config(
-        gateway=GatewayCfg(base_url=gw["base_url"].rstrip("/"), user_token=gw["user_token"]),
+        gateway=GatewayCfg(
+            base_url=gw["base_url"].rstrip("/"),
+            user_token=gw["user_token"],
+            pin_channel_id=(int(pin) if pin is not None else None),
+        ),
         target=TargetCfg(
             model=tgt["model"],
             baseline_request=baseline,

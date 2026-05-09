@@ -433,3 +433,128 @@ def test_dataset_loads_full_corpus():
             f"case {c.id!r} missing the Go struct field leak guard — "
             "every case should defend against the v1.5 regression"
         )
+
+
+# --------------------------------------------------------------------------
+# Channel-pin (Stage 2)
+# --------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_runner_pins_channel_via_token_suffix(tmp_path: Path, monkeypatch):
+    """When gateway.pin_channel_id is set, every conformance probe sends
+    `Authorization: Bearer <token>-<id>` — Fy-api admin-only feature in
+    middleware/auth.go (~line 431). Without the field, the suffix MUST NOT
+    appear (back-compat with pre-Stage-2 conformance.yaml)."""
+    cases = [
+        Case(
+            id="auth-probe",
+            category="meta",
+            override_field=None,
+            override_value=None,
+            expect_status_class="2xx",
+        )
+    ]
+
+    received_auth: list[str] = []
+
+    def transport_factory():
+        def handler(request: httpx.Request) -> httpx.Response:
+            received_auth.append(request.headers.get("Authorization", ""))
+            return httpx.Response(200, text='{"choices":[{"message":{"content":"ok"}}]}')
+        return httpx.MockTransport(handler)
+
+    orig = httpx.AsyncClient.__init__
+    monkeypatch.setattr(
+        httpx.AsyncClient, "__init__",
+        lambda self, *a, **k: orig(
+            self, *a, **{**k, "transport": transport_factory()}
+        ),
+    )
+
+    # Case 1: pinned.
+    received_auth.clear()
+    cfg_pin = Config(
+        gateway=GatewayCfg(base_url="http://mock", user_token="sk-admin", pin_channel_id=42),
+        target=TargetCfg(
+            model="m",
+            baseline_request={"model": "m", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16},
+        ),
+        dataset=tmp_path / "unused.jsonl",
+        output_dir=tmp_path / "out1",
+        concurrency=1,
+        request_timeout_sec=5.0,
+        extra_headers={},
+    )
+    await run_all(cfg_pin, cases)
+    assert received_auth == ["Bearer sk-admin-42"], received_auth
+
+    # Case 2: no pin → no suffix.
+    received_auth.clear()
+    cfg_nopin = Config(
+        gateway=GatewayCfg(base_url="http://mock", user_token="sk-admin"),
+        target=TargetCfg(
+            model="m",
+            baseline_request={"model": "m", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16},
+        ),
+        dataset=tmp_path / "unused.jsonl",
+        output_dir=tmp_path / "out2",
+        concurrency=1,
+        request_timeout_sec=5.0,
+        extra_headers={},
+    )
+    await run_all(cfg_nopin, cases)
+    assert received_auth == ["Bearer sk-admin"], received_auth
+
+
+def test_conformance_config_parses_pin_channel_id(tmp_path: Path):
+    """YAML round-trip for gateway.pin_channel_id."""
+    from fy_conformance.config import load as load_cfg
+
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "gateway:\n"
+        "  base_url: http://mock\n"
+        "  user_token: sk-admin\n"
+        "  pin_channel_id: 8\n"
+        "target:\n"
+        "  model: m\n"
+        "  baseline_request:\n"
+        "    messages: [{role: user, content: hi}]\n"
+        "    max_tokens: 16\n"
+        "dataset: ./unused.jsonl\n"
+    )
+    cfg = load_cfg(p)
+    assert cfg.gateway.pin_channel_id == 8
+
+    p2 = tmp_path / "c2.yaml"
+    p2.write_text(
+        "gateway:\n"
+        "  base_url: http://mock\n"
+        "  user_token: sk\n"
+        "target:\n"
+        "  model: m\n"
+        "  baseline_request:\n"
+        "    messages: [{role: user, content: hi}]\n"
+        "dataset: ./unused.jsonl\n"
+    )
+    cfg2 = load_cfg(p2)
+    assert cfg2.gateway.pin_channel_id is None
+
+
+def test_conformance_config_rejects_nonpositive_pin(tmp_path: Path):
+    from fy_conformance.config import load as load_cfg
+
+    p = tmp_path / "bad.yaml"
+    p.write_text(
+        "gateway:\n"
+        "  base_url: http://mock\n"
+        "  user_token: sk\n"
+        "  pin_channel_id: 0\n"
+        "target:\n"
+        "  model: m\n"
+        "  baseline_request:\n"
+        "    messages: [{role: user, content: hi}]\n"
+        "dataset: ./unused.jsonl\n"
+    )
+    with pytest.raises(ValueError, match="must be > 0"):
+        load_cfg(p)

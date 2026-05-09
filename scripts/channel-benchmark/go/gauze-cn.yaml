@@ -1,0 +1,64 @@
+# 概泽 5-channel smoke profile (Stage 2, channel-pinned).
+#
+# Usage:
+#   export FY_API_URL=http://8.136.146.211           # CN node (no TLS)
+#   export FY_API_ADMIN_TOKEN=<your admin access token>
+#   export FY_API_ADMIN_USER_ID=1                     # super_admin user id on CN
+#   export FY_API_USER_TOKEN=sk-<admin user's API key, NOT admin access token>
+#   ./channel-benchmark -config gauze-cn.yaml
+#
+# CRITICAL: gateway.user_token MUST belong to an admin user — pin_channel
+# requires admin privilege (Fy-api/middleware/auth.go:431).
+#
+# Cost ceiling: 5 channels × 1 cheap model × 2 modes (stream+non-stream) ×
+#               1 rep × 32 max_tokens. Per-call cost is ~¥0.001-0.02; total
+#               run is well under ¥1. Increase reps_per_case once you've
+#               verified the routing works.
+
+gateway:
+  base_url: "${FY_API_URL}"
+  admin_token: "${FY_API_ADMIN_TOKEN}"
+  admin_user_id: "${FY_API_ADMIN_USER_ID:-1}"
+  user_token: "${FY_API_USER_TOKEN}"
+
+test:
+  concurrency: 1            # serialize against prod traffic
+  reps_per_case: 1          # raise to 3 once routing is validated
+  timeout_seconds: 60
+  max_tokens: 32
+  stream: true
+  non_stream: true
+  pin_channel: true         # ← Stage 2 flag: forces correct channel
+  prompt: "Reply with the single word: pong."
+
+# 概泽 family on CN, verified live 2026-05-09 21:34 CST.
+# Test models intentionally chosen to be the CHEAPEST live one per channel
+# so a Stage-1 confirmation run is essentially free.
+channels:
+  - id: 8
+    name: 概泽_GPT
+    test_models:
+      - gpt-4.1-nano                       # cheapest OpenAI-compat on this channel
+  - id: 11
+    name: 概泽_Gemini
+    test_models:
+      - gemini-2.5-flash-lite              # cheapest Gemini text model
+  - id: 20
+    name: 概泽_智谱
+    test_models:
+      - glm-5
+  - id: 25
+    name: 概泽-Kimi
+    test_models:
+      - kimi-k2-0711-preview               # avoid kimi-k2-thinking — TTFT skewed by reasoning
+  - id: 26
+    name: 概泽AWS
+    test_models:
+      - claude-haiku-4-5-20251001          # CHEAPEST Claude on Bedrock; do NOT use opus here
+
+export:
+  formats: [json, csv]
+  output_dir: "benchmark-results/gauze-cn"
+
+metrics:
+  latency_percentiles: [50, 95, 99]

@@ -41,10 +41,20 @@ class Ramp:
 
     async def run(self) -> RampResult:
         aggregates: list[LevelAggregate] = []
+        pin = self.cfg.gateway.pin_channel_id
+        if pin is not None:
+            self.console.print(
+                f"[bold yellow]channel pin:[/] forcing channel id={pin} via admin token suffix"
+            )
+        else:
+            self.console.print(
+                "[dim]channel pin:[/] none (requests go through Fy-api distributor)"
+            )
         async with ChatClient(
             self.cfg.gateway.base_url,
             self.cfg.gateway.user_token,
             request_timeout=self.cfg.load.request_timeout_sec,
+            pin_channel_id=self.cfg.gateway.pin_channel_id,
         ) as client:
             for concurrency in self.cfg.load.concurrency_levels:
                 self.console.rule(f"[bold cyan]concurrency={concurrency}")

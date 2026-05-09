@@ -100,13 +100,22 @@ class QualityRunner:
             sem = asyncio.Semaphore(self.cfg.concurrency)
 
             for ch in self.cfg.channels:
+                # Channel-pin: when ch.pin_channel_id is set, append "-{id}" to
+                # the user token. Fy-api admin-only feature (middleware/auth.go
+                # ~line 431) — fy-quality otherwise leaves channel selection to
+                # the distributor, which can quietly route a model offered by
+                # multiple channels to the wrong one.
+                effective_token = (
+                    ch.token if ch.pin_channel_id is None
+                    else f"{ch.token}-{ch.pin_channel_id}"
+                )
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(
                         connect=10, read=self.cfg.request_timeout_sec,
                         write=30, pool=10,
                     ),
                     headers={
-                        "Authorization": f"Bearer {ch.token}",
+                        "Authorization": f"Bearer {effective_token}",
                         "Content-Type": "application/json",
                     },
                 ) as http:

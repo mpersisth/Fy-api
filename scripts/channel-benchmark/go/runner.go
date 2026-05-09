@@ -70,8 +70,12 @@ func (r *Runner) Run(ctx context.Context) ([]Aggregate, error) {
 
 	reps := r.cfg.Test.RepsPerCase
 	totalRequests := len(jobs) * reps
-	fmt.Printf("Plan: %d cases × %d reps = %d requests at concurrency=%d\n",
-		len(jobs), reps, totalRequests, r.cfg.Test.Concurrency)
+	pinNote := "via distributor (no channel pin — model overlap may skew results)"
+	if r.cfg.Test.PinChannel {
+		pinNote = "channel pinned via admin token suffix"
+	}
+	fmt.Printf("Plan: %d cases × %d reps = %d requests at concurrency=%d (%s)\n",
+		len(jobs), reps, totalRequests, r.cfg.Test.Concurrency, pinNote)
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no valid cases to run")
 	}
@@ -131,6 +135,11 @@ func (r *Runner) Run(ctx context.Context) ([]Aggregate, error) {
 // runOne builds the chat request for a single rep and dispatches it.
 // Each rep gets its own per-request context bounded by the per-request timeout,
 // so a hung upstream can't stall the whole suite.
+//
+// When cfg.Test.PinChannel is true, the request is forced onto ch.ID via the
+// admin-only "-{channel_id}" token suffix Fy-api supports — guarantees we
+// actually measure the channel under test even when the model is offered by
+// multiple channels. Otherwise the request goes through the normal distributor.
 func (r *Runner) runOne(parent context.Context, ch Channel, model string, streamed bool) *ChatResult {
 	reqCtx, cancel := context.WithTimeout(parent, time.Duration(r.cfg.Test.TimeoutSec)*time.Second)
 	defer cancel()
@@ -142,6 +151,9 @@ func (r *Runner) runOne(parent context.Context, ch Channel, model string, stream
 		Messages: []ChatMessage{
 			{Role: "user", Content: r.cfg.Test.Prompt},
 		},
+	}
+	if r.cfg.Test.PinChannel {
+		return r.chatClient.DoForChannel(reqCtx, req, ch.ID)
 	}
 	return r.chatClient.Do(reqCtx, req)
 }

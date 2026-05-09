@@ -155,6 +155,35 @@ async def test_auth_header_uses_bearer():
 
 
 @pytest.mark.asyncio
+async def test_pin_channel_appends_token_suffix():
+    """When pin_channel_id is set, the Authorization header carries
+    `Bearer <token>-<channel_id>` — the admin-only syntax Fy-api parses in
+    middleware/auth.go (~line 431) to force a specific channel."""
+    transport = make_mock_transport()
+    async with ChatClient(
+        "http://mock", "sk-mytoken", request_timeout=10.0, pin_channel_id=42
+    ) as c:
+        old = c._client  # noqa: SLF001
+        c._client = httpx.AsyncClient(transport=transport, timeout=old.timeout, headers=old.headers)
+        await old.aclose()
+        await c.chat(model="x", prompt="hi", max_tokens=4, temperature=0, stream=False)
+    assert transport._received_auth["auth"] == "Bearer sk-mytoken-42"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_pin_channel_default_off():
+    """Without pin_channel_id, no suffix is appended (back-compat with
+    pre-Stage-2 configs)."""
+    transport = make_mock_transport()
+    async with ChatClient("http://mock", "sk-mytoken", request_timeout=10.0) as c:
+        old = c._client  # noqa: SLF001
+        c._client = httpx.AsyncClient(transport=transport, timeout=old.timeout, headers=old.headers)
+        await old.aclose()
+        await c.chat(model="x", prompt="hi", max_tokens=4, temperature=0, stream=False)
+    assert transport._received_auth["auth"] == "Bearer sk-mytoken"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_ramp_produces_one_aggregate_per_level(tmp_path: Path):
     cfg = Config(
         gateway=Gateway(base_url="http://mock", user_token="sk-test"),
@@ -211,3 +240,46 @@ def test_aggregate_level_handles_empty():
     assert a.ok == 0
     assert a.success_rate_pct == 0
     assert a.e2e.samples == 0
+
+
+def test_loadtest_config_parses_pin_channel_id(tmp_path: Path):
+    """YAML round-trip: gateway.pin_channel_id is read back as int when
+    present, None otherwise. Back-compat: configs without the field still parse."""
+    p = tmp_path / "lt.yaml"
+    p.write_text(
+        "gateway:\n"
+        "  base_url: http://mock\n"
+        "  user_token: sk-admin\n"
+        "  pin_channel_id: 8\n"
+        "load:\n"
+        "  model: m\n"
+    )
+    cfg = Config.load(p)
+    assert cfg.gateway.pin_channel_id == 8
+
+    p2 = tmp_path / "lt2.yaml"
+    p2.write_text(
+        "gateway:\n"
+        "  base_url: http://mock\n"
+        "  user_token: sk\n"
+        "load:\n"
+        "  model: m\n"
+    )
+    cfg2 = Config.load(p2)
+    assert cfg2.gateway.pin_channel_id is None
+
+
+def test_loadtest_config_rejects_nonpositive_pin(tmp_path: Path):
+    p = tmp_path / "bad.yaml"
+    p.write_text(
+        "gateway:\n"
+        "  base_url: http://mock\n"
+        "  user_token: sk\n"
+        "  pin_channel_id: 0\n"
+        "load:\n"
+        "  model: m\n"
+    )
+    cfg = Config.load(p)
+    import pytest
+    with pytest.raises(ValueError, match="must be > 0"):
+        cfg.validate()

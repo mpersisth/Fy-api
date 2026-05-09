@@ -29,6 +29,15 @@ test:
   stream:          true
   non_stream:      true
 
+  # Force every chat request to land on the channel under test by appending
+  # "-{channel_id}" to gateway.user_token. Requires user_token to belong to an
+  # admin user (Fy-api enforces this in middleware/auth.go around line 431).
+  #
+  # Set to true when measuring a specific channel — without it, the request
+  # goes through the normal distributor and a model offered by N channels may
+  # get routed to one you didn't intend to test.
+  pin_channel:     false
+
   # Smoke prompt: deterministic, single-token answer. Replace per use case.
   prompt: "Reply with the single word: pong."
 

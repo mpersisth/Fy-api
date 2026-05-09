@@ -41,11 +41,24 @@ def _expand_env(raw: str) -> str:
 
 @dataclass
 class CanarySource:
-    """The endpoint being probed (either trusted-for-baseline or suspect)."""
+    """The endpoint being probed (either trusted-for-baseline or suspect).
+
+    `pin_channel_id` is honored only when the source IS an Fy-api gateway —
+    when set, the canary client appends "-{pin_channel_id}" to api_key, which
+    Fy-api parses (middleware/auth.go ~line 431) as a forced channel
+    selection. The api_key MUST belong to an admin user; non-admin tokens
+    with the suffix get a 403 from the gateway.
+
+    Leave `pin_channel_id` None for `baseline` runs against the trusted vendor
+    API (OpenAI, Anthropic, Gemini direct). Set it for `audit` runs against
+    the gateway when you want to verify ONE specific channel rather than
+    whatever the distributor picks today.
+    """
     name: str
     base_url: str
     api_key: str
     model: str
+    pin_channel_id: int | None = None
 
 
 @dataclass
@@ -87,7 +100,14 @@ class CanaryConfig:
         source = CanarySource(
             name=str(s["name"]), base_url=str(s["base_url"]),
             api_key=str(s["api_key"]), model=str(s["model"]),
+            pin_channel_id=(
+                int(s["pin_channel_id"]) if s.get("pin_channel_id") is not None else None
+            ),
         )
+        if source.pin_channel_id is not None and source.pin_channel_id <= 0:
+            raise ValueError(
+                f"source.pin_channel_id must be > 0, got {source.pin_channel_id}"
+            )
         emb = None
         if d.get("embedding"):
             e = d["embedding"]
@@ -116,3 +136,26 @@ class CanaryConfig:
             raise ValueError("source.api_key is required")
         if not self.source.base_url:
             raise ValueError("source.base_url is required")
+        # pin_channel_id is an Fy-api admin feature; setting it against a
+        # vendor-direct URL (OpenAI / Anthropic / Google) will produce
+        # `Bearer sk-...-26` style tokens that the vendor rejects with a
+        # confusing 401. Catch this at load time rather than mid-run.
+        if self.source.pin_channel_id is not None:
+            host = self.source.base_url.lower()
+            vendor_hosts = (
+                "api.openai.com",
+                "api.anthropic.com",
+                "generativelanguage.googleapis.com",
+                "api.deepseek.com",
+                "api.moonshot.cn",
+                "dashscope.aliyuncs.com",
+            )
+            if any(h in host for h in vendor_hosts):
+                raise ValueError(
+                    f"source.pin_channel_id is set ({self.source.pin_channel_id}) "
+                    f"but source.base_url ({self.source.base_url}) looks like a "
+                    "direct vendor API. Channel pinning is an Fy-api admin "
+                    "feature; remove pin_channel_id for vendor-direct baseline "
+                    "runs, and use it only when source.base_url is an Fy-api "
+                    "gateway."
+                )

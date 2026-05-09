@@ -187,3 +187,83 @@ func TestEndToEndWithMockGateway(t *testing.T) {
 		}
 	}
 }
+
+// TestChannelPinAppendsTokenSuffix verifies that when cfg.Test.PinChannel is
+// true, the Authorization header sent to /v1/chat/completions becomes
+// "Bearer <user_token>-<channel_id>" — the admin-only syntax Fy-api parses in
+// middleware/auth.go (~line 431) to force a specific channel. With PinChannel
+// false, the suffix MUST NOT appear.
+func TestChannelPinAppendsTokenSuffix(t *testing.T) {
+	cases := []struct {
+		name      string
+		pin       bool
+		channelID int
+		wantAuth  string
+	}{
+		{name: "pin off", pin: false, channelID: 42, wantAuth: "Bearer sk-user"},
+		{name: "pin on",  pin: true,  channelID: 42, wantAuth: "Bearer sk-user-42"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				captureMu  sync.Mutex
+				gotChatAuth string
+			)
+			setChat := func(s string) {
+				captureMu.Lock()
+				defer captureMu.Unlock()
+				gotChatAuth = s
+			}
+			readChat := func() string {
+				captureMu.Lock()
+				defer captureMu.Unlock()
+				return gotChatAuth
+			}
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/channel/", func(w http.ResponseWriter, r *http.Request) {
+				resp := map[string]any{
+					"success": true,
+					"data": map[string]any{
+						"items": []map[string]any{
+							{"id": tc.channelID, "name": "mock", "status": 1, "models": "m1"},
+						},
+						"total": 1, "page": 1, "page_size": 200,
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			})
+			mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+				setChat(r.Header.Get("Authorization"))
+				resp := map[string]any{
+					"choices": []map[string]any{{
+						"message":       map[string]string{"role": "assistant", "content": "ok"},
+						"finish_reason": "stop",
+					}},
+					"usage": map[string]int{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+
+			cfg := &BenchmarkConfig{
+				Gateway: GatewayConfig{BaseURL: srv.URL, AdminToken: "a", AdminUserID: "1", UserToken: "sk-user"},
+				Test: TestConfig{
+					Concurrency: 1, RepsPerCase: 1, TimeoutSec: 5, MaxTokens: 4,
+					Stream: false, NonStream: true, Prompt: "ping",
+					PinChannel: tc.pin,
+				},
+				Channels: []ChannelConfig{{ID: tc.channelID, Name: "mock", TestModels: []string{"m1"}}},
+			}
+			applyDefaults(cfg)
+			runner := NewRunner(cfg)
+			if _, err := runner.Run(testContext(t)); err != nil {
+				t.Fatalf("runner failed: %v", err)
+			}
+			if got := readChat(); got != tc.wantAuth {
+				t.Errorf("Authorization = %q, want %q", got, tc.wantAuth)
+			}
+		})
+	}
+}

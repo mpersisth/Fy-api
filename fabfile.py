@@ -24,6 +24,7 @@ Common usage from the Fy-api repo root:
 Known targets:
     cn: ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211
     sg: ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70
+    legacy: ssh root@8.222.175.17
 
 Override with environment variables when needed:
     FYAPI_TARGET
@@ -70,6 +71,19 @@ TARGETS = {
         "repo": "fy-api",
         "repo_url": "https://github.com/seraph0017/Fy-api.git",
     },
+    "legacy": {
+        "host": "8.222.175.17",
+        "port": 22,
+        "user": "root",
+        "key": "",
+        "app_dir": "/opt/fy-api",
+        "src_dir": "/root/Fy-api",
+        "build_dir": "/tmp/fy-api-build",
+        "registry": "",
+        "namespace": "",
+        "repo": "fy-api",
+        "repo_url": "git@github.com:seraph0017/Fy-api.git",
+    },
 }
 
 DEFAULT_REPO_URL = "git@github.com:seraph0017/Fy-api.git"
@@ -115,7 +129,7 @@ def _config(target: str | None = None) -> dict[str, object]:
         if value:
             cfg[key] = int(value) if key == "port" else value
 
-    cfg["key"] = os.path.expanduser(str(cfg["key"]))
+    cfg["key"] = os.path.expanduser(str(cfg.get("key") or ""))
     cfg["env_file"] = os.getenv("FYAPI_ENV_FILE", f"{cfg['app_dir']}/config/fy-api.env")
     cfg["nginx_conf"] = os.getenv("FYAPI_NGINX_CONF", "/etc/nginx/conf.d/fy-api.conf")
     return cfg
@@ -190,7 +204,10 @@ def info(ctx, target="cn"):
     print(f"src:       {cfg['src_dir']}")
     print(f"build_dir: {cfg['build_dir']}")
     print(f"repo_url:  {cfg.get('repo_url') or DEFAULT_REPO_URL}")
-    print(f"image:     {cfg['registry']}/{cfg['namespace']}/{cfg['repo']}:<tag>")
+    if cfg.get("registry") and cfg.get("namespace"):
+        print(f"image:     {cfg['registry']}/{cfg['namespace']}/{cfg['repo']}:<tag>")
+    else:
+        print("image:     <not configured>")
     print(f"env_file:  {cfg['env_file']}")
     print(f"nginx:     {cfg['nginx_conf']}")
 

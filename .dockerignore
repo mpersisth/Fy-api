@@ -1,6 +1,13 @@
 .github
 .git
 *.md
+# Fy-api overlay: re-include license files referenced by Dockerfile's
+# `COPY LICENSE NOTICE THIRD-PARTY-LICENSES.md /licenses/` step.
+# Upstream added this COPY without updating .dockerignore, so the build
+# fails with "no items matching glob" without these unignore entries.
+!LICENSE
+!NOTICE
+!THIRD-PARTY-LICENSES.md
 .vscode
 .gitignore
 Makefile

@@ -1,0 +1,35 @@
+# fy-conformance example config.
+#
+# Copy to conformance.local.yaml, fill in env vars, and run:
+#   fy-conformance -c conformance.local.yaml
+#
+# Like the other tools in this directory, fy-conformance is BILLED to
+# gateway.user_token — every case is a real /v1/chat/completions request.
+# Most cases time out at 1–3 tokens because the body is intentionally
+# malformed and the gateway should reject before it spends generation
+# tokens, but a few "valid baseline" cases will consume real tokens.
+# Cap the user's quota as a safety net.
+
+gateway:
+  base_url:   "${FY_API_URL:-http://localhost:3000}"
+  user_token: "${FY_API_USER_TOKEN}"
+
+target:
+  # The model to test. fy-conformance mutates ONE field of `baseline_request`
+  # per case and asserts on the gateway's response, so this should be a
+  # model the channel actually serves.
+  model: claude-sonnet-4-5
+  baseline_request:
+    messages:
+      - {role: user, content: "ping"}
+    max_tokens: 16
+    temperature: 0
+
+dataset: fy_conformance/datasets/public/conformance.jsonl
+
+concurrency: 4
+request_timeout_sec: 30
+output_dir: conformance-results
+
+# Optional global headers (e.g. tracing).
+extra_headers: {}

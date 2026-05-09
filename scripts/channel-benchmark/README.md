@@ -1,14 +1,15 @@
 # channel-benchmark
 
-A small toolkit for **measuring Fy-api channels** along four orthogonal axes. The tools live in two language ecosystems on purpose — pick the one whose constraints match the question you're asking.
+A small toolkit for **measuring Fy-api channels** along five orthogonal axes. The tools live in two language ecosystems on purpose — pick the one whose constraints match the question you're asking.
 
 ```
 channel-benchmark/
 ├── go/                Smoke tester. Single binary, zero deps. Run on prod.
-└── py/                Three CLIs sharing one venv:
-    ├── fy-loadtest    Concurrency-ramp load testing
-    ├── fy-quality     Quality scorecard (multi-grader, dual LLM judge)
-    └── fy-canary      Model-substitution / drift detection
+└── py/                Four CLIs sharing one venv:
+    ├── fy-loadtest     Concurrency-ramp load testing
+    ├── fy-quality      Quality scorecard (multi-grader, dual LLM judge)
+    ├── fy-canary       Model-substitution / drift detection
+    └── fy-conformance  Protocol-conformance assertions (4xx vs 5xx, leak checks)
 ```
 
 Everything talks to Fy-api over the OpenAI-compatible `/v1/chat/completions` path with a real user token, so runs are billed as real traffic. Keep the user's quota modest — it doubles as a budget cap.
@@ -21,10 +22,12 @@ Everything talks to Fy-api over the OpenAI-compatible `/v1/chat/completions` pat
 | "Will this channel survive 50 concurrent users?" | **`fy-loadtest`** | 1→N concurrency ramp, full E2E/TTFT/ITL/TPOT percentile suite, goodput-vs-SLO. |
 | "Is this channel actually answering correctly?" | **`fy-quality`** | Golden JSONL + 7 graders (exact / regex / contains / json_schema / rubric / similarity / pairwise) + dual-judge to cut false positives. |
 | "Has this channel been silently swapped to a cheaper model?" | **`fy-canary`** | Records a trusted baseline against the vendor API directly, then audits the gateway for divergence via alignment-template / embedding-drift / MMD. |
+| "Does the gateway return 4xx (not 5xx) for client errors, and not leak Go internals?" | **`fy-conformance`** | 94+ deterministic assertions on parameter-validation, malformed-JSON, auth, and field-presence cases. Locks in HTTP-semantics regressions like the `cannot unmarshal ... GeneralOpenAIRequest.max_tokens` leak fixed in 2026-05. |
+| "Does the gateway return 4xx (not 5xx) for client errors, and not leak Go internals?" | **`fy-conformance`** | 94+ deterministic assertions on parameter-validation, malformed-JSON, auth, and field-presence cases. Locks in HTTP-semantics regressions like the `cannot unmarshal ... GeneralOpenAIRequest.max_tokens` leak fixed in 2026-05. |
 
 ## How they relate (and don't)
 
-The four are **stacked, not interchangeable**:
+The five are **stacked, not interchangeable**:
 
 ```
         ┌───────────────────────────────────────────────────────────┐
@@ -41,6 +44,14 @@ The four are **stacked, not interchangeable**:
    │ before scaling   │  │ before promoting │  │ ongoing trust    │
    │ traffic to it    │  │ to a group       │  │ (weekly audit)   │
    └──────────────────┘  └──────────────────┘  └──────────────────┘
+
+   ┌──────────────────┐
+   │ fy-conformance   │   Cross-cutting: run after every Fy-api
+   │ (HTTP semantics) │   release as a regression gate.
+   │                  │   Asserts on the GATEWAY's behavior, not
+   │ after gateway    │   the upstream model — independent of the
+   │ deploys          │   other four.
+   └──────────────────┘
 ```
 
 What's **shared**:
@@ -94,6 +105,7 @@ fy-quality  -c quality.yaml
 fy-canary   baseline         -c canary.yaml   # record trusted baseline
 fy-canary   audit            -c canary.yaml   # refuse if baseline > 30d
 fy-canary   verify-baseline  -c canary.yaml   # re-record mini-baseline, flag source drift
+fy-conformance -c conformance.yaml             # 4xx semantics + leak checks
 ```
 
 See `go/README.md` and `py/README.md` for tool-specific details.

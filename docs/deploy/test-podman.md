@@ -94,7 +94,7 @@ cd TraceNex
 git log -1 --format="%h %s"    # 记录当前 commit，便于回滚
 ```
 
-> **注意**：`upstream` 远程指向只读的 `QuantumNous/new-api`。**从不 push 到 upstream**。每月同步按 [`../Monthly-upstream-sync-runbook.md`](../Monthly-upstream-sync-runbook.md) 执行。
+> **注意**：`upstream` 远程指向只读的 `QuantumNous/new-api`。**从不 push 到 upstream**。每周一按工作区 `apiGateway/docs/Weekly-upstream-sync-runbook.md` 执行同步（注意这份 runbook 在工作区根目录的 docs/ 下，不在 Fy-api/docs/ 里）。
 
 ### 2.2 写测试环境 compose 文件
 

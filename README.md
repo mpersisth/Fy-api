@@ -41,7 +41,7 @@ TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 
 > [!NOTE]
 > - **仓库身份**：代码和 GitHub 仓库名沿用 `Fy-api`（远端：`github.com/seraph0017/Fy-api`）以保持连续性；**TraceNex 是对外的产品品牌**（`SystemName = "TraceNex"`，体现在 UI、文档、用户界面）。两个名字是故意区分开的——设计原因见 `CLAUDE.md`。
-> - TraceNex 以**月度节奏**从 `upstream/main` 拉取新功能：每一个上游改进（新模型适配、bug 修复、schema 迁移）都会通过 [upstream-sync workflow](./.github/workflows/upstream-sync.yml) 自动流入 TraceNex。
+> - TraceNex 以**周节奏**合并 `upstream/main`，**按需发版**到生产：每一个上游改进（新模型适配、bug 修复、schema 迁移）会在每周一通过 [upstream-sync workflow](./.github/workflows/upstream-sync.yml) 自动开 PR 流入 TraceNex 的 main，但生产发版独立判定（详见 [`docs/Weekly-upstream-sync-runbook.md`](./docs/Weekly-upstream-sync-runbook.md)）。
 > - Go module path 保持为 `github.com/QuantumNous/new-api`，这样合并上游补丁时不需要重写数千个 import。
 > - 严格遵守 AGPLv3 合规：LICENSE、版权头、上游 attribution **完整保留**。TraceNex 专属改动的详细清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
@@ -234,8 +234,8 @@ source .venv/bin/activate
 TraceNex 的设计原则是**紧跟上游而不是渐行渐远**。核心理念：
 
 1. **只做增量定制** —— 定制代码尽量放到新增文件里（如 `controller/log_export.go`、`web/classic/src/pages/FyApiDocs/`），降低合并冲突
-2. **月度同步节奏** —— 冲突成本随 drift 时长呈**指数增长**（~1 个月 0-2 处冲突；~6 个月 20+ 处）
-3. **自动监控** —— `.github/workflows/upstream-watch.yml` 每周一自动跑，积压 > 100 commits 时告警；> 500 直接 fail
+2. **周合并 + 按需发版** —— 上游 2026 后节奏明显加快（~5-6 commits/天）；冲突成本是指数增长的，所以每周一吸收一次（典型 5-10 处冲突，30-45 min），但发版（fab release）只在安全/计费修复或 drift > 50 等明确信号下触发，详见 [`docs/Weekly-upstream-sync-runbook.md`](./docs/Weekly-upstream-sync-runbook.md)
+3. **自动监控** —— `.github/workflows/upstream-watch.yml` 每周一 09:00 自动跑：drift > 0 提示需合并；> 30 warning；> 100 fail
 4. **一键同步 PR** —— `.github/workflows/upstream-sync.yml`（手动触发）合并 `upstream/main`、重新应用 i18n 品牌替换（`New API` → `TraceNex`）、开 PR 等人工 review
 
 ```bash

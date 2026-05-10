@@ -1160,7 +1160,7 @@ chmod +x /opt/fy-api/scripts/start-blue.sh
 - 日志 / SLS / Prometheus 详细:[`observability.md`](./observability.md)
 - 监控栈配置:[`monitoring/`](./monitoring/)
 - DB 迁移:[`../Phase3-DB-migration-runbook.md`](../Phase3-DB-migration-runbook.md)
-- 上游同步:[`../Monthly-upstream-sync-runbook.md`](../Monthly-upstream-sync-runbook.md)
+- 上游同步:工作区 `apiGateway/docs/Weekly-upstream-sync-runbook.md`（不在 Fy-api 仓库内）
 
 ---
 

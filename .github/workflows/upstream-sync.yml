@@ -95,7 +95,7 @@ jobs:
           git status
           \`\`\`
 
-          Resolve per [OVERLAY.md](../blob/main/OVERLAY.md) and [Monthly sync runbook](../blob/main/docs/Monthly-upstream-sync-runbook.md).
+          Resolve per [OVERLAY.md](../blob/main/OVERLAY.md). Process: weekly merge + on-demand release (see `Weekly-upstream-sync-runbook.md` in the workspace `apiGateway/docs/`).
 
           After resolving, remember to run:
           \`\`\`

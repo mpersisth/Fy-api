@@ -47,13 +47,13 @@ jobs:
             '
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Emit warning if drift exceeds threshold
+      - name: Emit warning if drift exceeds weekly capacity
+        if: steps.drift.outputs.behind > 30
+        run: |
+          echo "::warning ::TraceNex is ${{ steps.drift.outputs.behind }} commits behind upstream — that's beyond a single week's typical capacity (~30 commits). Run the weekly sync now (docs/Weekly-upstream-sync-runbook.md)."
+
+      - name: Fail if drift extremely high (>100)
         if: steps.drift.outputs.behind > 100
         run: |
-          echo "::warning ::TraceNex is ${{ steps.drift.outputs.behind }} commits behind upstream. Schedule the monthly sync (docs/Monthly-upstream-sync-runbook.md)."
-
-      - name: Fail if drift extremely high (>500)
-        if: steps.drift.outputs.behind > 500
-        run: |
-          echo "::error ::TraceNex is dangerously far behind upstream (${{ steps.drift.outputs.behind }} commits). Merge conflicts will be painful; prioritize sync this week."
+          echo "::error ::TraceNex is dangerously far behind upstream (${{ steps.drift.outputs.behind }} commits). The weekly cadence has been skipped multiple times; merge conflicts will be painful. Prioritize the sync this week."
           exit 1

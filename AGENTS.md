@@ -91,7 +91,7 @@ git rev-list --count HEAD..upstream/main
 git log HEAD..upstream/main --oneline | head
 ```
 
-Follow `docs/Monthly-upstream-sync-runbook.md` for the full monthly sync process.
+Follow `docs/Weekly-upstream-sync-runbook.md` for the weekly merge flow and the criteria that trigger an on-demand release.
 
 ### Migration context
 

@@ -1020,5 +1020,5 @@ done
 - 测试环境：[`test-podman.md`](./test-podman.md)
 - DB 迁移（老部署升级）：[`../Phase3-DB-migration-runbook.md`](../Phase3-DB-migration-runbook.md)
 - 回归清单：[`../Phase5-Regression-checklist.md`](../Phase5-Regression-checklist.md)
-- 上游同步：[`../Monthly-upstream-sync-runbook.md`](../Monthly-upstream-sync-runbook.md)
+- 上游同步：工作区 `apiGateway/docs/Weekly-upstream-sync-runbook.md`（不在 Fy-api 仓库内）
 - 上游官方文档（环境变量、API 参考）：<https://docs.newapi.pro/zh/docs>

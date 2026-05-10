@@ -146,7 +146,7 @@
   1. `content=42` / `content=true` → 500 + `json: cannot unmarshal number into Go value of type []***.ClaudeMediaMessage`（`dto.ClaudeMessage.ParseContent` → `common.Any2Type` 二级 unmarshal 没经过 sanitizer）
   2. `content=[{type:text,text:42}]` → 500 + `Go struct field ***.text of type string`（同链路）
   3. `content=[{type:image}]` 缺 `source` 字段 → 500 + PANIC `runtime error: invalid memory address or nil pointer dereference`（`service/convert.go:161` 直接 `mediaMsg.Source.MediaType`）
-- **upstream 现状**：upstream `Any2Type` 是直通函数，`service/convert.go` image 块也是无 nil 检查；同样的 panic 在 upstream 仍然存在。**不向 upstream 提 PR**（与 B-10 同策略，等月度同步时观察 upstream 是否补）
+- **upstream 现状**：upstream `Any2Type` 是直通函数，`service/convert.go` image 块也是无 nil 检查；同样的 panic 在 upstream 仍然存在。**不向 upstream 提 PR**（与 B-10 同策略，等下次周度同步时观察 upstream 是否补）
 - **冲突风险**：中（`Any2Type` 是高频函数，签名不变；image case 加 4 行守卫；`claude_handler.go` 改 2 个 if 分支）
 - **Merge 策略**：upstream 若改 `Any2Type` 签名（不太可能），同步时把 sanitizer 调用迁过去；image nil 守卫若 upstream 自行修了就 take theirs
 
@@ -265,4 +265,4 @@
 
 ## 上游同步流程
 
-见 `docs/Monthly-upstream-sync-runbook.md`。
+见 `docs/Weekly-upstream-sync-runbook.md`（周合并 + 按需发版）。

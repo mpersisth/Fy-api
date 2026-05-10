@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Identity
 
-This is **TraceNex**, a downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) with a small overlay of customizations. Everything the gateway itself does (provider adapters, relay, billing, admin dashboard, subscription, channel affinity, etc.) comes from upstream and is kept in sync on a monthly cadence.
+This is **TraceNex**, a downstream fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) with a small overlay of customizations. Everything the gateway itself does (provider adapters, relay, billing, admin dashboard, subscription, channel affinity, etc.) comes from upstream and is merged in **weekly** (with deployments triggered on demand — not on the same cadence as the merge). See [`docs/Weekly-upstream-sync-runbook.md`](./docs/Weekly-upstream-sync-runbook.md) for the merge process and the "trigger an immediate release" criteria.
 
 **Before changing anything, read [`OVERLAY.md`](./OVERLAY.md).** It is the single source of truth for which files are TraceNex customizations vs pure upstream, and what will/won't conflict on the next `upstream/main` merge. Preserving its accuracy is as important as the code changes themselves.
 
@@ -121,7 +121,7 @@ git rev-list --count HEAD..upstream/main     # drift count
 git log HEAD..upstream/main --oneline | head # what's new upstream
 ```
 
-Then follow [`docs/Monthly-upstream-sync-runbook.md`](./docs/Monthly-upstream-sync-runbook.md). There are two GitHub Actions that automate this: `.github/workflows/upstream-watch.yml` (weekly drift check) and `.github/workflows/upstream-sync.yml` (manual merge + auto-PR).
+Then follow [`docs/Weekly-upstream-sync-runbook.md`](./docs/Weekly-upstream-sync-runbook.md). There are two GitHub Actions that automate this: `.github/workflows/upstream-watch.yml` (weekly drift check, runs every Monday) and `.github/workflows/upstream-sync.yml` (manual trigger that auto-merges and opens a PR).
 
 ## High-Level Architecture
 
@@ -297,7 +297,7 @@ TraceNex-specific operational docs live under [`docs/`](./docs/):
 - `Phase3-DB-migration-runbook.md` — zero-downtime DB migration (from older deployments)
 - `Phase4-Build-runbook.md` — build-from-source + dependency upgrade notes
 - `Phase5-Regression-checklist.md` — post-deploy regression list
-- `Monthly-upstream-sync-runbook.md` — standard monthly upstream merge flow
+- `Weekly-upstream-sync-runbook.md` — weekly upstream merge flow + on-demand release decision tree
 - `Bug分析-Gemini缓存命中未计费.md` — post-mortem reference for cache-token billing (already fixed upstream)
 
 For gateway features themselves (endpoints, billing formulas, provider quirks) see the upstream docs at <https://docs.newapi.pro>.

@@ -108,11 +108,15 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 	groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+	// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+	groupRatio = ratio_setting.ApplyOverride(relayInfo.UserGroupRatioOverride, groupRatio)
 	modelRatio, _, _ := ratio_setting.GetModelRatio(modelName)
 
 	autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup)
 	if exists {
 		groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
+		// Fy-api overlay: B-15 keep override semantics on auto-group.
+		groupRatio = ratio_setting.ApplyOverride(relayInfo.UserGroupRatioOverride, groupRatio)
 		log.Printf("final group ratio: %f", groupRatio)
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
@@ -120,7 +124,8 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	actualGroupRatio := groupRatio
 	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
 	if ok {
-		actualGroupRatio = userGroupRatio
+		// Fy-api overlay: B-15 user-group ratio also subject to override.
+		actualGroupRatio = ratio_setting.ApplyOverride(relayInfo.UserGroupRatioOverride, userGroupRatio)
 	}
 
 	quotaInfo := QuotaInfo{

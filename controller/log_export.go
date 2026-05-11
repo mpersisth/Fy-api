@@ -11,18 +11,20 @@ package controller
 
 import (
 	"encoding/csv"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
 
 var csvHeader = []string{
 	"时间", "渠道", "用户", "令牌", "分组", "类型", "模型",
-	"用时/首字", "输入", "输出", "花费", "IP", "重试", "request_id", "详情",
+	"用时/首字", "输入", "输出", "Quota", "人民币", "美金", "IP", "重试", "request_id", "详情",
 }
 
 // writeLogsCSV streams the given logs as a CSV file in the HTTP response.
@@ -64,8 +66,14 @@ func writeLogsCSV(c *gin.Context, logs []*model.Log) {
 			completionStr = strconv.Itoa(log.CompletionTokens)
 		}
 		quotaStr := ""
+		cnyStr := ""
+		usdStr := ""
 		if log.Quota != 0 {
 			quotaStr = strconv.Itoa(log.Quota)
+			usdAmount := float64(log.Quota) / common.QuotaPerUnit
+			cnyAmount := usdAmount * operation_setting.USDExchangeRate
+			usdStr = fmt.Sprintf("%.6f", usdAmount)
+			cnyStr = fmt.Sprintf("%.6f", cnyAmount)
 		}
 		row := []string{
 			timeStr,                // 时间
@@ -78,7 +86,9 @@ func writeLogsCSV(c *gin.Context, logs []*model.Log) {
 			useTimeStr,             // 用时/首字
 			promptStr,              // 输入
 			completionStr,          // 输出
-			quotaStr,               // 花费
+			quotaStr,               // Quota
+			cnyStr,                 // 人民币
+			usdStr,                 // 美金
 			log.Ip,                 // IP
 			"",                     // 重试（前端从 other 计算，CSV 暂留空）
 			log.RequestId,          // request_id

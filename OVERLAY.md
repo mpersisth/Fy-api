@@ -150,6 +150,17 @@
 - **冲突风险**：中（`Any2Type` 是高频函数，签名不变；image case 加 4 行守卫；`claude_handler.go` 改 2 个 if 分支）
 - **Merge 策略**：upstream 若改 `Any2Type` 签名（不太可能），同步时把 sanitizer 调用迁过去；image nil 守卫若 upstream 自行修了就 take theirs
 
+### B-12 [relay] base64 图片缺失 MIME type 自动识别
+- **修改文件**：
+  - `dto/openai_request.go`（`MessageImageUrl.MimeType` 增加 `json:"mime_type,omitempty"`，`Message.ParseContent` 保留 `image_url.mime_type/mimeType`）
+  - `service/file_service.go`（raw base64 文件在 MIME 为空时通过图片解码 / content sniff / HEIF 检测补齐 MIME）
+- **新增测试**：
+  - `dto/openai_request_mime_test.go::TestMessageParseContentPreservesImageURLMimeType`
+  - `service/file_service_test.go::TestGetBase64DataInfersMimeTypeForRawBase64Image`
+- **背景**：用例明细 116 的 `content_image_url` 传裸 base64 且不带 MIME type 时，TraceNex/上游适配层可能拒绝或向 Claude/Gemini 发送空 MIME，触发 `base64 mime type can not be empty`。现在能识别的图片会自动补成 `image/png` / `image/jpeg` 等；无法识别的内容仍交给后续 provider 白名单校验拒绝
+- **冲突风险**：低（小范围解析/文件服务增强）
+- **Merge 策略**：若 upstream 后续支持同类自动 MIME 推断，优先采用 upstream 实现，但保留 OpenAI `image_url.mime_type` 不丢失的测试语义
+
 ---
 
 ## 前端定制

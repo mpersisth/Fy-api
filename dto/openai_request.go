@@ -400,7 +400,7 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 type MessageImageUrl struct {
 	Url      string `json:"url"`
 	Detail   string `json:"detail,omitempty"`
-	MimeType string
+	MimeType string `json:"mime_type,omitempty"`
 }
 
 func (m *MessageImageUrl) IsRemoteImage() bool {
@@ -578,11 +578,18 @@ func (m *Message) ParseContent() []MediaContent {
 			case map[string]interface{}:
 				url, ok1 := v["url"].(string)
 				detail, ok2 := v["detail"].(string)
+				mimeType, ok3 := v["mime_type"].(string)
+				if !ok3 {
+					mimeType, ok3 = v["mimeType"].(string)
+				}
 				if ok2 {
 					temp.Detail = detail
 				}
 				if ok1 {
 					temp.Url = url
+				}
+				if ok3 {
+					temp.MimeType = mimeType
 				}
 			}
 			contentList = append(contentList, MediaContent{

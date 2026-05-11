@@ -381,13 +381,18 @@ func loadFromBase64(base64String string, providedMimeType string) (*types.Cached
 	}
 
 	if cachedData.MimeType == "" && len(decodedData) > 0 {
-		if sniffed := http.DetectContentType(decodedData); sniffed != "" && sniffed != "application/octet-stream" {
+		if sniffed := http.DetectContentType(decodedData); sniffed != "" {
 			if idx := strings.Index(sniffed, ";"); idx != -1 {
 				sniffed = strings.TrimSpace(sniffed[:idx])
 			}
-			cachedData.MimeType = sniffed
-		} else if heifMime := detectHEIF(decodedData); heifMime != "" {
-			cachedData.MimeType = heifMime
+			if strings.HasPrefix(sniffed, "image/") {
+				cachedData.MimeType = sniffed
+			}
+		}
+		if cachedData.MimeType == "" {
+			if heifMime := detectHEIF(decodedData); heifMime != "" {
+				cachedData.MimeType = heifMime
+			}
 		}
 	}
 

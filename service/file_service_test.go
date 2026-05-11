@@ -16,3 +16,13 @@ func TestGetBase64DataInfersMimeTypeForRawBase64Image(t *testing.T) {
 	require.NotEmpty(t, base64Data)
 	require.Equal(t, "image/png", mimeType)
 }
+
+func TestGetBase64DataDoesNotInferNonImageMimeType(t *testing.T) {
+	source := types.NewFileSourceFromData("aGVsbG8=", "")
+
+	base64Data, mimeType, err := GetBase64Data(nil, source)
+
+	require.NoError(t, err)
+	require.Equal(t, "aGVsbG8=", base64Data)
+	require.Empty(t, mimeType)
+}

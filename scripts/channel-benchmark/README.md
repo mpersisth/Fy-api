@@ -5,11 +5,14 @@ A small toolkit for **measuring Fy-api channels** along five orthogonal axes. Th
 ```
 channel-benchmark/
 ├── go/                Smoke tester. Single binary, zero deps. Run on prod.
-└── py/                Four CLIs sharing one venv:
-    ├── fy-loadtest     Concurrency-ramp load testing
-    ├── fy-quality      Quality scorecard (multi-grader, dual LLM judge)
-    ├── fy-canary       Model-substitution / drift detection
-    └── fy-conformance  Protocol-conformance assertions (4xx vs 5xx, leak checks)
+├── py/                Four CLIs sharing one venv:
+│   ├── fy-loadtest     Concurrency-ramp load testing
+│   ├── fy-quality      Quality scorecard (multi-grader, dual LLM judge)
+│   ├── fy-canary       Model-substitution / drift detection
+│   └── fy-conformance  Protocol-conformance assertions (4xx vs 5xx, leak checks)
+└── incidents/         Case studies that produced regression artifacts.
+                       Each card pairs a customer outage with the test
+                       hooks added across go/ + py/ to detect a recurrence.
 ```
 
 Everything talks to Fy-api over the OpenAI-compatible `/v1/chat/completions` path with a real user token, so runs are billed as real traffic. Keep the user's quota modest — it doubles as a budget cap.
@@ -136,3 +139,15 @@ See `go/README.md` and `py/README.md` for tool-specific details.
 - **No central database.** Results are files on disk. Aggregation across runs is your problem (and a small one).
 - **No distributed load generation.** `fy-loadtest` is single-process. If you need >1k RPS sustained, run multiple instances against the same target.
 - **No judge-of-judges calibration.** The dual-judge in `fy-quality` is a heuristic, not a calibrated detector.
+
+## Incident-driven regressions
+
+`incidents/` is the long-term memory of the toolkit. Every customer-facing
+failure that produced a permanent test hook gets a card here. The card is
+not a post-mortem — it's the human-readable index for the regression
+artifacts scattered across `go/` and `py/`. Read the card first, then the
+artifacts it points at.
+
+| Card | What broke | Regression artifacts shipped |
+|---|---|---|
+| [`2026-05-11-long-reasoning-timeout.md`](./incidents/2026-05-11-long-reasoning-timeout.md) | aime25 / gpqa-diamond on `kimi-k2-thinking` cut at 600s by Fy-api `RELAY_TIMEOUT`; nginx 900s couldn't save it | `go/ -long-thinking` flag + preset; `py/loadtest.long-thinking.yaml`; `py/fy_loadtest/fixtures/` long-reasoning prompts; `py/tests_conformance/test_long_reasoning_timeout.py` |

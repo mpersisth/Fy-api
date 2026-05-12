@@ -3,6 +3,8 @@
 > 分支：`overlay/tnbiz-b12-b18`
 > Round-3 FINAL ACCEPT 后 Fy-api 团队侧 PR-2 / PR-3 / PR-4 / PR-5 联合落地。
 > PR-1（BIGINT migration）由 ops 走 gh-ost，**不属于本分支**。
+>
+> **2026-05-12 更新**：partner-api 消费方已落（`~/Projects/apiGateway/TraceNexBiz/apps/partner-api`，W3 Fix-A/B'/C/D 全部完成，commits `a5728b8` → `ec367d2`）。HMAC parity 双向已对齐：partner-api 客户端 `internal/infra/fyapi/client.go::sign` 与本目录 `middleware/internal_auth.go::BuildCanonical` 字节级一致（`TestSign_FyApiParity` 6 个 case 全通过）。Round-2 五方 review 0 CRITICAL，进入 Round-3 收口（详见 `~/Projects/apiGateway/docs/TraceNexBiz-Round3-接手清单-20260512.md`）。
 
 ## 1. 新增文件清单（25 个）
 
@@ -82,9 +84,10 @@
 | POST | /api/internal/group_ratio_override/upsert | partner 维度 group_ratio override |
 | POST | /api/internal/channel_log_settings/upsert | partner 维度 channel log 设置 |
 
-**HMAC 头**：`X-Tnb-Key-Id` / `X-Tnb-Timestamp` / `X-Tnb-Nonce` / `X-Tnb-Signature`
+**HMAC 头**：`X-Auth-KeyId` / `X-Auth-Timestamp` / `X-Auth-Nonce` / `X-Signature`
+（**注**：v1 初稿用 `X-Tnb-*` 前缀；落地时统一为 `X-Auth-*` 与 `docs/integration-design.md` v1.2 §1.1.3 一致，partner-api 客户端 `fyapi/client.go::sign` 与本目录 `middleware/internal_auth.go::BuildCanonical` 严格对齐。）
 **幂等头**：`Idempotency-Key`（写接口必传，三元组键 = `auth_kid + idem_key + endpoint`）
-**响应回放头**：命中幂等记录回放时附 `X-Tnb-Idempotent-Replay: 1`
+**响应回放头**：命中幂等记录回放时附 `X-Tnb-Idempotent-Replay: 1`（响应头保留 `X-Tnb-` 前缀作为本 overlay 的标识，与请求侧 `X-Auth-` 不同）
 
 ## 4. Feature flag（biz_setting / OptionMap）
 
@@ -143,9 +146,30 @@ SetRouter → SetInternalRouter              # B-12
 
 ## 9. 已知未做事项 / 长期 debt
 
-1. **MNS publisher 真实接入**留给 Phase 2A —— 当前 NoopPublisher 即便在 `enabled` 模式也只 log，不真发。Phase 2A 引入 `aliyun-mns-go-sdk` 后注入即可。
-2. **internal_idempotency cleanup cron**目前是 model.CleanupExpiredIdempotency 函数，未挂上后台 leader-only 调度（review §11 LOW）—— 可在下次 PR 把它接到 `subscription_reset_task.go` 同款的启动期 cron 框架。
+1. **MNS publisher 真实接入**：~~Phase 2A debt~~ — partner-api 侧 W3 已自行落 raw-HTTP MNS publisher/consumer（`TraceNexBiz/apps/partner-api/internal/outbox/aliyun_mns_{publisher,consumer}.go`），Fy-api 侧 `service/outbox/runner.go` 仍是 NoopPublisher。Fy-api 这边什么时候真接由产品决定（partner-api 已能独立 publish 到 MNS，Fy-api outbox 仍可保持 noop / shadow 模式）。
+2. **internal_idempotency cleanup cron**：仍未挂上后台 leader-only 调度（review §11 LOW）。partner-api 侧已用 Redis SETNX leader（`pkg/leader/redis.go`），Fy-api 这边可参考同 pattern 把 `CleanupExpiredIdempotency` 接到 `subscription_reset_task.go` 启动期 cron 框架。
 3. **CSPRNG keystore secret rotation Pub/Sub** + admin endpoint `/api/admin/internal/keys/rotate`：本 PR 仅落 model + create 函数，rotate API 留给运维实际需要时再加。
+4. **`/user/group` 与 `/user/erase` handler 缺失**：partner-api 侧 `fyapi.Client.UpdateUserGroup` / `EraseUser` 因 Fy-api 端没有对应 handler 而返回非 retryable "not yet implemented" 错误（client_test.go::TestUpdateUserGroup_NotImplemented / TestEraseUser_NotImplemented）。`/user/erase` 是 PIPL §47 路径，Fy-api 这边需要补一个 handler；`/user/group` 由 customer transfer 流程触发。两者建议下一个 overlay PR 解决。
+5. **Spec drift（partner-api 侧已记录）**：
+   - `/user/refund`（Fy-api router）vs `/user/deduct`（integration-design §2.2.3 文本）—— 以 Fy-api router 为准
+   - `quota` 字段（Fy-api 期望）vs `amount` 字段（spec 文本）—— 以 Fy-api 为准
+   - `group_ratio_override/upsert` 用 POST（Fy-api router）vs PUT（spec 文本）—— 以 Fy-api 为准
+   - 这些 drift 在 partner-api 客户端代码注释 + commit `07305d3` body 里都明确标注。本文档 §3 表格反映 Fy-api 实际 router 状态。
+
+## 10. partner-api 消费方现状（2026-05-12）
+
+partner-api 侧（`~/Projects/apiGateway/TraceNexBiz`）已落以下与本 overlay 对接的代码：
+
+| 文件 | 用途 |
+|---|---|
+| `apps/partner-api/internal/infra/fyapi/client.go` | HMAC 4 元组 + 5 个真实方法（TopupCustomer/RefundCustomer/GetUserQuota/TokenCreate/GroupRatioOverrideUpsert）+ 2 stub（UpdateUserGroup/EraseUser，等 Fy-api handler） |
+| `apps/partner-api/internal/infra/fyapi/client_test.go::TestSign_FyApiParity` | partner-api 客户端 sign() 与本目录 `middleware/internal_auth.go::BuildCanonical` 字节级一致性测试（6 个 case） |
+| `apps/partner-api/internal/saga/{registry,instance,orchestrator}.go` | saga retry sweep step registry（消费 Fy-api 侧 5xx → retry，4xx → fail-fast）|
+| `apps/partner-api/internal/outbox/aliyun_mns_*.go` | 独立 MNS publisher/consumer，与 Fy-api `service/outbox/runner.go` 解耦 |
+
+partner-api 侧 Round-3 任务清单详见 `~/Projects/apiGateway/docs/TraceNexBiz-Round3-接手清单-20260512.md`。其中与 Fy-api overlay 相关的：
+- partner-api `RefundCustomer` 把 `saga_id=idemKey` `order_ref=traceID` 字段反了（Round-2 Fy-api team review NEW-H1），需要核对本目录 `controller/tnbiz_internal/user.go::Refund` 期望的字段映射后修正
+- partner-api `GetUserQuota` 只返回 `Quota int64`，丢了本目录 handler 返回的 `used_quota` / `aff_quota`（NEW-H2），改成结构体返回
 
 ---
 

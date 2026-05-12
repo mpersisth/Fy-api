@@ -8,6 +8,10 @@ This is **TraceNex**, a downstream fork of [QuantumNous/new-api](https://github.
 
 **Before changing anything, read [`OVERLAY.md`](./OVERLAY.md).** It is the single source of truth for which files are TraceNex customizations vs pure upstream, and what will/won't conflict on the next `upstream/main` merge. Preserving its accuracy is as important as the code changes themselves.
 
+### Sibling project: TraceNexBiz (consumer of `/api/internal/*`)
+
+A separate downstream project `~/Projects/apiGateway/TraceNexBiz/` (channel-distribution SaaS, product brand "TraceNex Partner") consumes Fy-api via the `/api/internal/*` routes added in OVERLAY entries B-12..B-18. The contract is HMAC-SHA256 (headers `X-Auth-KeyId` / `X-Auth-Timestamp` / `X-Auth-Nonce` / `X-Signature`; canonical defined in `middleware/internal_auth.go::BuildCanonical`) plus `Idempotency-Key`. **Any change to `middleware/internal_auth.go::BuildCanonical`, `controller/tnbiz_internal/*.go`, or the `/api/internal/*` routes is a contract change** — the partner-api side has a byte-level parity test (`TraceNexBiz/apps/partner-api/internal/infra/fyapi/client_test.go::TestSign_FyApiParity`) that will catch drift. See `OVERLAY-TNBIZ-HANDOFF.md` for the current state of the integration (HMAC drift to `X-Auth-*` resolved 2026-05-12; two stub handlers — `/user/group` and `/user/erase` — still owed to partner-api).
+
 Upstream remote is configured read-only:
 ```
 origin    git@github.com:seraph0017/Fy-api.git  (your remote)

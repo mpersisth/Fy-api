@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
@@ -43,13 +43,17 @@ import {
 import { useTranslation } from 'react-i18next';
 import {
   PAGE_SIZE,
+  PRICE_CURRENCIES,
   PRICE_SUFFIX,
   buildSummaryText,
+  getPriceSuffix,
+  getUsdExchangeRate,
   hasValue,
   useModelPricingEditorState,
 } from '../hooks/useModelPricingEditorState';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import TieredPricingEditor from './TieredPricingEditor';
+import { StatusContext } from '../../../../context/Status';
 
 const { Text } = Typography;
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
@@ -99,6 +103,10 @@ export default function ModelPricingEditor({
 }) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const [statusState] = useContext(StatusContext);
+  const usdExchangeRate = getUsdExchangeRate(
+    statusState?.status?.usd_exchange_rate ?? statusState?.status?.price,
+  );
   const [addVisible, setAddVisible] = useState(false);
   const [batchVisible, setBatchVisible] = useState(false);
   const [newModelName, setNewModelName] = useState('');
@@ -116,6 +124,8 @@ export default function ModelPricingEditor({
     loading,
     conflictOnly,
     setConflictOnly,
+    priceCurrency,
+    setPriceCurrency,
     filteredModels,
     pagedData,
     selectedWarnings,
@@ -146,6 +156,13 @@ export default function ModelPricingEditor({
       ? t('阶梯计费')
       : t('表达式计费');
   }, [t]);
+
+  const tokenPriceSuffix = getPriceSuffix(priceCurrency);
+  const requestPriceSuffix = getPriceSuffix(priceCurrency, 'request');
+  const tokenPricePlaceholder =
+    priceCurrency === PRICE_CURRENCIES.CNY
+      ? t('输入 ¥/1M tokens')
+      : t('输入 $/1M tokens');
 
   const columns = useMemo(
     () => [
@@ -208,7 +225,7 @@ export default function ModelPricingEditor({
         title: t('价格摘要'),
         dataIndex: 'summary',
         key: 'summary',
-        render: (_, record) => buildSummaryText(record, t),
+        render: (_, record) => buildSummaryText(record, t, priceCurrency),
       },
       {
         title: t('操作'),
@@ -231,6 +248,7 @@ export default function ModelPricingEditor({
       allowDeleteModel,
       deleteModel,
       getExprModeLabel,
+      priceCurrency,
       selectedModelName,
       selectedModelNames,
       setSelectedModelName,
@@ -267,7 +285,7 @@ export default function ModelPricingEditor({
             type='primary'
             icon={<IconSave />}
             loading={loading}
-            onClick={handleSubmit}
+            onClick={() => handleSubmit(usdExchangeRate)}
             style={isMobile ? { width: '100%' } : undefined}
           >
             {t('应用更改')}
@@ -423,6 +441,24 @@ export default function ModelPricingEditor({
                   </div>
                 </div>
 
+                {selectedModel.billingMode !== 'tiered_expr' ? (
+                  <div className='mb-4'>
+                    <div className='mb-2 font-medium text-gray-700'>
+                      {t('币种')}
+                    </div>
+                    <RadioGroup
+                      type='button'
+                      value={priceCurrency}
+                      onChange={(event) =>
+                        setPriceCurrency(event.target.value, usdExchangeRate)
+                      }
+                    >
+                      <Radio value={PRICE_CURRENCIES.USD}>USD ($)</Radio>
+                      <Radio value={PRICE_CURRENCIES.CNY}>CNY (¥)</Radio>
+                    </RadioGroup>
+                  </div>
+                ) : null}
+
                 {selectedWarnings.length > 0 ? (
                   <Card
                     bodyStyle={{ padding: 12 }}
@@ -445,7 +481,7 @@ export default function ModelPricingEditor({
                     label={t('固定价格')}
                     value={selectedModel.fixedPrice}
                     placeholder={t('输入每次调用价格')}
-                    suffix={t('$/次')}
+                    suffix={requestPriceSuffix}
                     onChange={(value) => handleNumericFieldChange('fixedPrice', value)}
                     extraText={t('适合 MJ / 任务类等按次收费模型。')}
                   />
@@ -470,7 +506,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('输入价格')}
                         value={selectedModel.inputPrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) => handleNumericFieldChange('inputPrice', value)}
                       />
                       {selectedModel.completionRatioLocked ? (
@@ -492,7 +529,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('补全价格')}
                         value={selectedModel.completionPrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) =>
                           handleNumericFieldChange('completionPrice', value)
                         }
@@ -535,7 +573,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('缓存读取价格')}
                         value={selectedModel.cachePrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) => handleNumericFieldChange('cachePrice', value)}
                         headerAction={
                           <Switch
@@ -557,7 +596,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('缓存创建价格')}
                         value={selectedModel.createCachePrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) =>
                           handleNumericFieldChange('createCachePrice', value)
                         }
@@ -604,7 +644,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('图片输入价格')}
                         value={selectedModel.imagePrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) => handleNumericFieldChange('imagePrice', value)}
                         headerAction={
                           <Switch
@@ -626,7 +667,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('音频输入价格')}
                         value={selectedModel.audioInputPrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) =>
                           handleNumericFieldChange('audioInputPrice', value)
                         }
@@ -656,7 +698,8 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('音频补全价格')}
                         value={selectedModel.audioOutputPrice}
-                        placeholder={t('输入 $/1M tokens')}
+                        placeholder={tokenPricePlaceholder}
+                        suffix={tokenPriceSuffix}
                         onChange={(value) =>
                           handleNumericFieldChange('audioOutputPrice', value)
                         }

@@ -24,7 +24,21 @@ import {
 } from '../components/requestRuleExpr';
 
 export const PAGE_SIZE = 10;
+export const PRICE_CURRENCIES = {
+  USD: 'USD',
+  CNY: 'CNY',
+};
 export const PRICE_SUFFIX = '$/1M tokens';
+const PRICE_FIELDS = [
+  'fixedPrice',
+  'inputPrice',
+  'completionPrice',
+  'cachePrice',
+  'createCachePrice',
+  'imagePrice',
+  'audioInputPrice',
+  'audioOutputPrice',
+];
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
 
 const EMPTY_MODEL = {
@@ -81,6 +95,36 @@ const formatNumber = (value) => {
     return '';
   }
   return parseFloat(num.toFixed(12)).toString();
+};
+
+export const getPriceSuffix = (currency, unit = 'token') => {
+  const symbol = currency === PRICE_CURRENCIES.CNY ? '¥' : '$';
+  return unit === 'request' ? `${symbol}/次` : `${symbol}/1M tokens`;
+};
+
+export const getUsdExchangeRate = (value) => {
+  const num = Number(value);
+  if (Number.isFinite(num) && num > 0) {
+    return num;
+  }
+  console.warn('Invalid usdExchangeRate, fallback to 1');
+  return 1;
+};
+
+const convertPriceValue = (value, rate, direction) => {
+  const num = toNumberOrNull(value);
+  if (num === null) {
+    return '';
+  }
+  return formatNumber(direction === 'toCny' ? num * rate : num / rate);
+};
+
+const convertModelCurrency = (model, rate, direction) => {
+  const nextModel = { ...model };
+  PRICE_FIELDS.forEach((field) => {
+    nextModel[field] = convertPriceValue(model[field], rate, direction);
+  });
+  return nextModel;
 };
 
 const toNormalizedNumber = (value) => {
@@ -288,11 +332,12 @@ export const getModelWarnings = (model, t) => {
   return warnings;
 };
 
-export const buildSummaryText = (model, t) => {
+export const buildSummaryText = (model, t, currency = PRICE_CURRENCIES.USD) => {
   const requestRuleSuffix =
     model.billingMode === 'tiered_expr' && model.requestRuleExpr
     ? `，${t('请求规则')}`
     : '';
+  const symbol = currency === PRICE_CURRENCIES.CNY ? '¥' : '$';
   if (model.billingMode === 'tiered_expr') {
     const expr = model.billingExpr;
     if (!expr) return `${t('表达式计费')}${requestRuleSuffix}`;
@@ -304,7 +349,7 @@ export const buildSummaryText = (model, t) => {
   }
 
   if (model.billingMode === 'per-request' && hasValue(model.fixedPrice)) {
-    return `${t('按次')} $${model.fixedPrice} / ${t('次')}${requestRuleSuffix}`;
+    return `${t('按次')} ${symbol}${model.fixedPrice} / ${t('次')}${requestRuleSuffix}`;
   }
 
   if (hasValue(model.inputPrice)) {
@@ -318,7 +363,7 @@ export const buildSummaryText = (model, t) => {
     ].filter(hasValue).length;
     const extraLabel =
       extraCount > 0 ? `，${t('额外价格项')} ${extraCount}` : '';
-    return `${t('输入')} $${model.inputPrice}${extraLabel}${requestRuleSuffix}`;
+    return `${t('输入')} ${symbol}${model.inputPrice}${extraLabel}${requestRuleSuffix}`;
   }
 
   return `${t('未设置价格')}${requestRuleSuffix}`;
@@ -633,6 +678,7 @@ export function useModelPricingEditorState({
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [conflictOnly, setConflictOnly] = useState(false);
+  const [priceCurrency, setPriceCurrency] = useState(PRICE_CURRENCIES.USD);
   const [optionalFieldToggles, setOptionalFieldToggles] = useState({});
 
   useEffect(() => {
@@ -732,6 +778,23 @@ export function useModelPricingEditorState({
     () => buildPreviewRows(selectedModel, t),
     [selectedModel, t],
   );
+
+  const handlePriceCurrencyChange = (nextCurrency, usdExchangeRate) => {
+    if (!nextCurrency || nextCurrency === priceCurrency) {
+      return;
+    }
+    const rate = getUsdExchangeRate(usdExchangeRate);
+    const direction = nextCurrency === PRICE_CURRENCIES.CNY ? 'toCny' : 'toUsd';
+    setModels((previous) =>
+      previous.map((model) => convertModelCurrency(model, rate, direction)),
+    );
+    setPriceCurrency(nextCurrency);
+  };
+
+  const getSerializableModel = (model, usdExchangeRate) =>
+    priceCurrency === PRICE_CURRENCIES.CNY
+      ? convertModelCurrency(model, getUsdExchangeRate(usdExchangeRate), 'toUsd')
+      : model;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1020,7 +1083,7 @@ export function useModelPricingEditorState({
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (usdExchangeRate) => {
     setLoading(true);
     try {
       const output = {
@@ -1040,14 +1103,15 @@ export function useModelPricingEditorState({
       };
 
       for (const model of models) {
-        if (model.billingMode === 'tiered_expr') {
+        const serializableModel = getSerializableModel(model, usdExchangeRate);
+        if (serializableModel.billingMode === 'tiered_expr') {
           const finalBillingExpr = combineBillingExpr(
-            model.billingExpr,
-            model.requestRuleExpr,
+            serializableModel.billingExpr,
+            serializableModel.requestRuleExpr,
           );
           if (finalBillingExpr) {
-            tieredOutput['billing_setting.billing_mode'][model.name] = 'tiered_expr';
-            tieredOutput['billing_setting.billing_expr'][model.name] = finalBillingExpr;
+            tieredOutput['billing_setting.billing_mode'][serializableModel.name] = 'tiered_expr';
+            tieredOutput['billing_setting.billing_expr'][serializableModel.name] = finalBillingExpr;
           }
         }
 
@@ -1056,14 +1120,14 @@ export function useModelPricingEditorState({
         // delay.  ModelPriceHelper checks billing_mode first, so these values
         // are only used when billing_setting hasn't propagated yet.
         try {
-          const serialized = serializeModel(model, t);
+          const serialized = serializeModel(serializableModel, t);
           Object.entries(serialized).forEach(([key, value]) => {
             if (value !== null) {
-              output[key][model.name] = value;
+              output[key][serializableModel.name] = value;
             }
           });
         } catch (e) {
-          if (model.billingMode !== 'tiered_expr') {
+          if (serializableModel.billingMode !== 'tiered_expr') {
             throw e;
           }
         }
@@ -1115,6 +1179,8 @@ export function useModelPricingEditorState({
     loading,
     conflictOnly,
     setConflictOnly,
+    priceCurrency,
+    setPriceCurrency: handlePriceCurrencyChange,
     filteredModels,
     pagedData,
     selectedWarnings,

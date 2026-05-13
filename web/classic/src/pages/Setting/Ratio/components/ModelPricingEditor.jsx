@@ -49,6 +49,7 @@ import {
   getPriceSuffix,
   getUsdExchangeRate,
   hasValue,
+  toDisplayPrice,
   useModelPricingEditorState,
 } from '../hooks/useModelPricingEditorState';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
@@ -61,6 +62,7 @@ const EMPTY_CANDIDATE_MODEL_NAMES = [];
 const PriceInput = ({
   label,
   value,
+  displayValue,
   placeholder,
   onChange,
   suffix = PRICE_SUFFIX,
@@ -76,7 +78,7 @@ const PriceInput = ({
     </div>
     {!hidden ? (
       <Input
-        value={value}
+        value={displayValue ?? value}
         placeholder={placeholder}
         onChange={onChange}
         suffix={suffix}
@@ -163,6 +165,14 @@ export default function ModelPricingEditor({
     priceCurrency === PRICE_CURRENCIES.CNY
       ? t('输入 ¥/1M tokens')
       : t('输入 $/1M tokens');
+  const displayPrice = useCallback(
+    (value) => toDisplayPrice(value, priceCurrency, usdExchangeRate),
+    [priceCurrency, usdExchangeRate],
+  );
+  const handlePriceInputChange = useCallback(
+    (field, value) => handleNumericFieldChange(field, value, usdExchangeRate),
+    [handleNumericFieldChange, usdExchangeRate],
+  );
 
   const columns = useMemo(
     () => [
@@ -285,7 +295,7 @@ export default function ModelPricingEditor({
             type='primary'
             icon={<IconSave />}
             loading={loading}
-            onClick={() => handleSubmit(usdExchangeRate)}
+            onClick={handleSubmit}
             style={isMobile ? { width: '100%' } : undefined}
           >
             {t('应用更改')}
@@ -450,7 +460,7 @@ export default function ModelPricingEditor({
                       type='button'
                       value={priceCurrency}
                       onChange={(event) =>
-                        setPriceCurrency(event.target.value, usdExchangeRate)
+                        setPriceCurrency(event.target.value)
                       }
                     >
                       <Radio value={PRICE_CURRENCIES.USD}>USD ($)</Radio>
@@ -480,9 +490,10 @@ export default function ModelPricingEditor({
                   <PriceInput
                     label={t('固定价格')}
                     value={selectedModel.fixedPrice}
+                    displayValue={displayPrice(selectedModel.fixedPrice)}
                     placeholder={t('输入每次调用价格')}
                     suffix={requestPriceSuffix}
-                    onChange={(value) => handleNumericFieldChange('fixedPrice', value)}
+                    onChange={(value) => handlePriceInputChange('fixedPrice', value)}
                     extraText={t('适合 MJ / 任务类等按次收费模型。')}
                   />
                 ) : selectedModel.billingMode === 'tiered_expr' ? (
@@ -506,9 +517,10 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('输入价格')}
                         value={selectedModel.inputPrice}
+                        displayValue={displayPrice(selectedModel.inputPrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
-                        onChange={(value) => handleNumericFieldChange('inputPrice', value)}
+                        onChange={(value) => handlePriceInputChange('inputPrice', value)}
                       />
                       {selectedModel.completionRatioLocked ? (
                         <Banner
@@ -529,10 +541,11 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('补全价格')}
                         value={selectedModel.completionPrice}
+                        displayValue={displayPrice(selectedModel.completionPrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
                         onChange={(value) =>
-                          handleNumericFieldChange('completionPrice', value)
+                          handlePriceInputChange('completionPrice', value)
                         }
                         headerAction={
                           <Switch
@@ -573,9 +586,10 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('缓存读取价格')}
                         value={selectedModel.cachePrice}
+                        displayValue={displayPrice(selectedModel.cachePrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
-                        onChange={(value) => handleNumericFieldChange('cachePrice', value)}
+                        onChange={(value) => handlePriceInputChange('cachePrice', value)}
                         headerAction={
                           <Switch
                             size='small'
@@ -596,10 +610,11 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('缓存创建价格')}
                         value={selectedModel.createCachePrice}
+                        displayValue={displayPrice(selectedModel.createCachePrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
                         onChange={(value) =>
-                          handleNumericFieldChange('createCachePrice', value)
+                          handlePriceInputChange('createCachePrice', value)
                         }
                         headerAction={
                           <Switch
@@ -644,9 +659,10 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('图片输入价格')}
                         value={selectedModel.imagePrice}
+                        displayValue={displayPrice(selectedModel.imagePrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
-                        onChange={(value) => handleNumericFieldChange('imagePrice', value)}
+                        onChange={(value) => handlePriceInputChange('imagePrice', value)}
                         headerAction={
                           <Switch
                             size='small'
@@ -667,10 +683,11 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('音频输入价格')}
                         value={selectedModel.audioInputPrice}
+                        displayValue={displayPrice(selectedModel.audioInputPrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
                         onChange={(value) =>
-                          handleNumericFieldChange('audioInputPrice', value)
+                          handlePriceInputChange('audioInputPrice', value)
                         }
                         headerAction={
                           <Switch
@@ -698,10 +715,11 @@ export default function ModelPricingEditor({
                       <PriceInput
                         label={t('音频补全价格')}
                         value={selectedModel.audioOutputPrice}
+                        displayValue={displayPrice(selectedModel.audioOutputPrice)}
                         placeholder={tokenPricePlaceholder}
                         suffix={tokenPriceSuffix}
                         onChange={(value) =>
-                          handleNumericFieldChange('audioOutputPrice', value)
+                          handlePriceInputChange('audioOutputPrice', value)
                         }
                         headerAction={
                           <Switch

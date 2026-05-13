@@ -29,16 +29,6 @@ export const PRICE_CURRENCIES = {
   CNY: 'CNY',
 };
 export const PRICE_SUFFIX = '$/1M tokens';
-const PRICE_FIELDS = [
-  'fixedPrice',
-  'inputPrice',
-  'completionPrice',
-  'cachePrice',
-  'createCachePrice',
-  'imagePrice',
-  'audioInputPrice',
-  'audioOutputPrice',
-];
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
 
 const EMPTY_MODEL = {
@@ -111,20 +101,24 @@ export const getUsdExchangeRate = (value) => {
   return 1;
 };
 
-const convertPriceValue = (value, rate, direction) => {
+export const toDisplayPrice = (value, currency, usdExchangeRate) => {
   const num = toNumberOrNull(value);
   if (num === null) {
     return '';
   }
-  return formatNumber(direction === 'toCny' ? num * rate : num / rate);
+  return currency === PRICE_CURRENCIES.CNY
+    ? formatNumber(num * getUsdExchangeRate(usdExchangeRate))
+    : formatNumber(num);
 };
 
-const convertModelCurrency = (model, rate, direction) => {
-  const nextModel = { ...model };
-  PRICE_FIELDS.forEach((field) => {
-    nextModel[field] = convertPriceValue(model[field], rate, direction);
-  });
-  return nextModel;
+const toUsdPrice = (value, currency, usdExchangeRate) => {
+  const num = toNumberOrNull(value);
+  if (num === null) {
+    return '';
+  }
+  return currency === PRICE_CURRENCIES.CNY
+    ? formatNumber(num / getUsdExchangeRate(usdExchangeRate))
+    : formatNumber(num);
 };
 
 const toNormalizedNumber = (value) => {
@@ -779,22 +773,11 @@ export function useModelPricingEditorState({
     [selectedModel, t],
   );
 
-  const handlePriceCurrencyChange = (nextCurrency, usdExchangeRate) => {
-    if (!nextCurrency || nextCurrency === priceCurrency) {
-      return;
+  const handlePriceCurrencyChange = (nextCurrency) => {
+    if (nextCurrency && nextCurrency !== priceCurrency) {
+      setPriceCurrency(nextCurrency);
     }
-    const rate = getUsdExchangeRate(usdExchangeRate);
-    const direction = nextCurrency === PRICE_CURRENCIES.CNY ? 'toCny' : 'toUsd';
-    setModels((previous) =>
-      previous.map((model) => convertModelCurrency(model, rate, direction)),
-    );
-    setPriceCurrency(nextCurrency);
   };
-
-  const getSerializableModel = (model, usdExchangeRate) =>
-    priceCurrency === PRICE_CURRENCIES.CNY
-      ? convertModelCurrency(model, getUsdExchangeRate(usdExchangeRate), 'toUsd')
-      : model;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -919,16 +902,18 @@ export function useModelPricingEditorState({
     };
   };
 
-  const handleNumericFieldChange = (field, value) => {
+  const handleNumericFieldChange = (field, value, usdExchangeRate) => {
     if (!selectedModel || !NUMERIC_INPUT_REGEX.test(value)) {
       return;
     }
 
+    const usdValue = toUsdPrice(value, priceCurrency, usdExchangeRate);
+
     upsertModel(selectedModel.name, (model) => {
-      const updatedModel = { ...model, [field]: value };
+      const updatedModel = { ...model, [field]: usdValue };
 
       if (field === 'inputPrice') {
-        return fillDerivedPricesFromBase(updatedModel, value);
+        return fillDerivedPricesFromBase(updatedModel, usdValue);
       }
 
       return updatedModel;
@@ -1083,7 +1068,7 @@ export function useModelPricingEditorState({
     return true;
   };
 
-  const handleSubmit = async (usdExchangeRate) => {
+  const handleSubmit = async () => {
     setLoading(true);
     try {
       const output = {
@@ -1103,15 +1088,14 @@ export function useModelPricingEditorState({
       };
 
       for (const model of models) {
-        const serializableModel = getSerializableModel(model, usdExchangeRate);
-        if (serializableModel.billingMode === 'tiered_expr') {
+        if (model.billingMode === 'tiered_expr') {
           const finalBillingExpr = combineBillingExpr(
-            serializableModel.billingExpr,
-            serializableModel.requestRuleExpr,
+            model.billingExpr,
+            model.requestRuleExpr,
           );
           if (finalBillingExpr) {
-            tieredOutput['billing_setting.billing_mode'][serializableModel.name] = 'tiered_expr';
-            tieredOutput['billing_setting.billing_expr'][serializableModel.name] = finalBillingExpr;
+            tieredOutput['billing_setting.billing_mode'][model.name] = 'tiered_expr';
+            tieredOutput['billing_setting.billing_expr'][model.name] = finalBillingExpr;
           }
         }
 
@@ -1120,14 +1104,14 @@ export function useModelPricingEditorState({
         // delay.  ModelPriceHelper checks billing_mode first, so these values
         // are only used when billing_setting hasn't propagated yet.
         try {
-          const serialized = serializeModel(serializableModel, t);
+          const serialized = serializeModel(model, t);
           Object.entries(serialized).forEach(([key, value]) => {
             if (value !== null) {
-              output[key][serializableModel.name] = value;
+              output[key][model.name] = value;
             }
           });
         } catch (e) {
-          if (serializableModel.billingMode !== 'tiered_expr') {
+          if (model.billingMode !== 'tiered_expr') {
             throw e;
           }
         }

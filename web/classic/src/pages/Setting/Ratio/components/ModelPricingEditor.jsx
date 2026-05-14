@@ -53,8 +53,8 @@ import {
   useModelPricingEditorState,
 } from '../hooks/useModelPricingEditorState';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
-import TieredPricingEditor from './TieredPricingEditor';
 import { StatusContext } from '../../../../context/Status';
+import TieredPricingEditor from './TieredPricingEditor';
 
 const { Text } = Typography;
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
@@ -235,7 +235,8 @@ export default function ModelPricingEditor({
         title: t('价格摘要'),
         dataIndex: 'summary',
         key: 'summary',
-        render: (_, record) => buildSummaryText(record, t, priceCurrency),
+        render: (_, record) =>
+          buildSummaryText(record, t, priceCurrency, usdExchangeRate),
       },
       {
         title: t('操作'),
@@ -263,6 +264,7 @@ export default function ModelPricingEditor({
       selectedModelNames,
       setSelectedModelName,
       t,
+      usdExchangeRate,
     ],
   );
 
@@ -451,23 +453,19 @@ export default function ModelPricingEditor({
                   </div>
                 </div>
 
-                {selectedModel.billingMode !== 'tiered_expr' ? (
-                  <div className='mb-4'>
-                    <div className='mb-2 font-medium text-gray-700'>
-                      {t('币种')}
-                    </div>
-                    <RadioGroup
-                      type='button'
-                      value={priceCurrency}
-                      onChange={(event) =>
-                        setPriceCurrency(event.target.value)
-                      }
-                    >
-                      <Radio value={PRICE_CURRENCIES.USD}>USD ($)</Radio>
-                      <Radio value={PRICE_CURRENCIES.CNY}>CNY (¥)</Radio>
-                    </RadioGroup>
+                <div className='mb-4'>
+                  <div className='mb-2 font-medium text-gray-700'>
+                    {t('币种')}
                   </div>
-                ) : null}
+                  <RadioGroup
+                    type='button'
+                    value={priceCurrency}
+                    onChange={(event) => setPriceCurrency(event.target.value)}
+                  >
+                    <Radio value={PRICE_CURRENCIES.USD}>USD ($)</Radio>
+                    <Radio value={PRICE_CURRENCIES.CNY}>CNY (¥)</Radio>
+                  </RadioGroup>
+                </div>
 
                 {selectedWarnings.length > 0 ? (
                   <Card

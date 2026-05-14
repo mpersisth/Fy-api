@@ -22,13 +22,27 @@ import {
   combineBillingExpr,
   splitBillingExprAndRequestRules,
 } from '../components/requestRuleExpr';
+export {
+  PRICE_CURRENCIES,
+  PRICE_SUFFIX,
+  buildSummaryText,
+  getPriceSuffix,
+  getUsdExchangeRate,
+  hasValue,
+  toDisplayPrice,
+  toUsdPrice,
+} from './modelPricingCurrency';
+import {
+  PRICE_CURRENCIES,
+  buildSummaryText,
+  getPriceSuffix,
+  getUsdExchangeRate,
+  hasValue,
+  toDisplayPrice,
+  toUsdPrice,
+} from './modelPricingCurrency';
 
 export const PAGE_SIZE = 10;
-export const PRICE_CURRENCIES = {
-  USD: 'USD',
-  CNY: 'CNY',
-};
-export const PRICE_SUFFIX = '$/1M tokens';
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
 
 const EMPTY_MODEL = {
@@ -60,9 +74,6 @@ const EMPTY_MODEL = {
 
 const NUMERIC_INPUT_REGEX = /^(\d+(\.\d*)?|\.\d*)?$/;
 
-export const hasValue = (value) =>
-  value !== '' && value !== null && value !== undefined && value !== false;
-
 const toNumericString = (value) => {
   if (!hasValue(value) && value !== 0) {
     return '';
@@ -84,41 +95,7 @@ const formatNumber = (value) => {
   if (num === null) {
     return '';
   }
-  return parseFloat(num.toFixed(12)).toString();
-};
-
-export const getPriceSuffix = (currency, unit = 'token') => {
-  const symbol = currency === PRICE_CURRENCIES.CNY ? '¥' : '$';
-  return unit === 'request' ? `${symbol}/次` : `${symbol}/1M tokens`;
-};
-
-export const getUsdExchangeRate = (value) => {
-  const num = Number(value);
-  if (Number.isFinite(num) && num > 0) {
-    return num;
-  }
-  console.warn('Invalid usdExchangeRate, fallback to 1');
-  return 1;
-};
-
-export const toDisplayPrice = (value, currency, usdExchangeRate) => {
-  const num = toNumberOrNull(value);
-  if (num === null) {
-    return '';
-  }
-  return currency === PRICE_CURRENCIES.CNY
-    ? formatNumber(num * getUsdExchangeRate(usdExchangeRate))
-    : formatNumber(num);
-};
-
-const toUsdPrice = (value, currency, usdExchangeRate) => {
-  const num = toNumberOrNull(value);
-  if (num === null) {
-    return '';
-  }
-  return currency === PRICE_CURRENCIES.CNY
-    ? formatNumber(num / getUsdExchangeRate(usdExchangeRate))
-    : formatNumber(num);
+  return parseFloat(num.toPrecision(12)).toString();
 };
 
 const toNormalizedNumber = (value) => {
@@ -324,43 +301,6 @@ export const getModelWarnings = (model, t) => {
   }
 
   return warnings;
-};
-
-export const buildSummaryText = (model, t, currency = PRICE_CURRENCIES.USD) => {
-  const requestRuleSuffix =
-    model.billingMode === 'tiered_expr' && model.requestRuleExpr
-    ? `，${t('请求规则')}`
-    : '';
-  const symbol = currency === PRICE_CURRENCIES.CNY ? '¥' : '$';
-  if (model.billingMode === 'tiered_expr') {
-    const expr = model.billingExpr;
-    if (!expr) return `${t('表达式计费')}${requestRuleSuffix}`;
-    const tierCount = (expr.match(/tier\(/g) || []).length;
-    if (tierCount === 0) {
-      return `${t('表达式计费')}${requestRuleSuffix}`;
-    }
-    return `${t('阶梯计费')} (${tierCount} ${t('档')})${requestRuleSuffix}`;
-  }
-
-  if (model.billingMode === 'per-request' && hasValue(model.fixedPrice)) {
-    return `${t('按次')} ${symbol}${model.fixedPrice} / ${t('次')}${requestRuleSuffix}`;
-  }
-
-  if (hasValue(model.inputPrice)) {
-    const extraCount = [
-      model.completionPrice,
-      model.cachePrice,
-      model.createCachePrice,
-      model.imagePrice,
-      model.audioInputPrice,
-      model.audioOutputPrice,
-    ].filter(hasValue).length;
-    const extraLabel =
-      extraCount > 0 ? `，${t('额外价格项')} ${extraCount}` : '';
-    return `${t('输入')} ${symbol}${model.inputPrice}${extraLabel}${requestRuleSuffix}`;
-  }
-
-  return `${t('未设置价格')}${requestRuleSuffix}`;
 };
 
 export const buildOptionalFieldToggles = (model) => ({
@@ -773,12 +713,6 @@ export function useModelPricingEditorState({
     [selectedModel, t],
   );
 
-  const handlePriceCurrencyChange = (nextCurrency) => {
-    if (nextCurrency && nextCurrency !== priceCurrency) {
-      setPriceCurrency(nextCurrency);
-    }
-  };
-
   useEffect(() => {
     setCurrentPage(1);
   }, [searchText, conflictOnly, filterMode, candidateModelNames]);
@@ -1164,7 +1098,7 @@ export function useModelPricingEditorState({
     conflictOnly,
     setConflictOnly,
     priceCurrency,
-    setPriceCurrency: handlePriceCurrencyChange,
+    setPriceCurrency,
     filteredModels,
     pagedData,
     selectedWarnings,

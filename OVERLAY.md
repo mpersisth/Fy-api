@@ -229,10 +229,12 @@
 
 ### F-8 [model-pricing] 管理端模型价格币种自选
 - **修改文件**：
-  - `web/classic/src/pages/Setting/Ratio/hooks/useModelPricingEditorState.js`（新增 USD/CNY suffix、汇率换算、CNY 保存前转 USD）
-  - `web/classic/src/pages/Setting/Ratio/components/ModelPricingEditor.jsx`（计费方式下方新增币种按钮组，并为按量/按次价格输入动态 suffix）
+  - `web/classic/src/pages/Setting/Ratio/hooks/modelPricingCurrency.js`（新增 USD/CNY suffix、输入/展示换算、摘要换算 helpers；state 和后端 option 始终保持 USD）
+  - `web/classic/src/pages/Setting/Ratio/hooks/useModelPricingEditorState.js`（接入币种换算 helpers 到编辑 state）
+  - `web/classic/src/pages/Setting/Ratio/hooks/useModelPricingEditorState.test.js`（新增币种 suffix、汇率 fallback、USD/CNY 换算、摘要显示单元测试）
+  - `web/classic/src/pages/Setting/Ratio/components/ModelPricingEditor.jsx`（计费方式下方新增币种按钮组，并为按量/按次价格输入动态 suffix 和展示值）
 - **背景**：管理员模型价格编辑页原来硬编码 `$/1M tokens` / `$/次`，只能按美元输入；需求 REQ-20260512-01 要求可切换人民币输入，但后端 option 存储仍保持 USD。
-- **行为**：默认 USD；按量/按次显示 USD/CNY 按钮；state 始终保存 USD 原值，CNY 模式仅在输入框展示和输入解析时按 `StatusContext.status.usd_exchange_rate` 换算；表达式/阶梯计费不显示币种选择。
+- **行为**：默认 USD；所有计费模式都显示 USD/CNY 按钮；CNY 模式下输入框与左侧价格摘要按 `StatusContext.status.usd_exchange_rate` 展示人民币，输入时转换回 USD 存入编辑 state；表达式/阶梯计费本身仍按表达式原文保存。
 - **冲突风险**：中（该编辑器是 upstream 设置页活跃区域）
 - **Merge 策略**：若 upstream 重构模型价格编辑器，保留“UI 输入币种可选但 option 始终 USD”的存储语义，换算继续复用 `usd_exchange_rate`。
 

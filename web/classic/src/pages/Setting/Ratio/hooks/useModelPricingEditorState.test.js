@@ -108,3 +108,17 @@ test('buildSummaryText keeps tiered expression summaries independent of currency
     '阶梯计费 (2 档)，请求规则',
   );
 });
+
+test('tiered unit cost conversion uses shared USD source of truth helpers', () => {
+  const storedUnitCost = toUsdPrice('7.3', PRICE_CURRENCIES.CNY, 7.3);
+
+  assert.equal(storedUnitCost, '1');
+  assert.equal(
+    toDisplayPrice(storedUnitCost, PRICE_CURRENCIES.CNY, 7.3),
+    '7.3',
+  );
+  assert.equal(
+    toDisplayPrice(storedUnitCost, PRICE_CURRENCIES.USD, 7.3),
+    '1',
+  );
+});

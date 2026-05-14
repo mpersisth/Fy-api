@@ -36,6 +36,12 @@ import { renderQuota } from '../../../../helpers/render';
 import { copy, showSuccess } from '../../../../helpers';
 import { BILLING_EXTRA_VARS, BILLING_CACHE_VAR_MAP, BILLING_CONDITION_VARS } from '../../../../constants';
 import {
+  PRICE_CURRENCIES,
+  getPriceSuffix,
+  toDisplayPrice,
+  toUsdPrice,
+} from '../hooks/modelPricingCurrency';
+import {
   createEmptyCondition,
   createEmptyTimeCondition,
   createEmptyRuleGroup,
@@ -59,15 +65,6 @@ import {
 } from './requestRuleExpr';
 
 const { Text } = Typography;
-
-const PRICE_SUFFIX = '$/1M tokens';
-
-function unitCostToPrice(uc) {
-  return Number(uc) || 0;
-}
-function priceToUnitCost(price) {
-  return Number(price) || 0;
-}
 
 const OPS = ['<', '<=', '>', '>='];
 const VAR_OPTIONS = [
@@ -338,16 +335,26 @@ function ConditionRow({ cond, onChange, onRemove, t }) {
 // Price input that preserves intermediate text like "7." or "0.5"
 // ---------------------------------------------------------------------------
 
-function PriceInput({ unitCost, field, index, onUpdate, placeholder }) {
-  const priceFromModel = unitCostToPrice(unitCost);
-  const [text, setText] = useState(priceFromModel === 0 ? '' : String(priceFromModel));
+function PriceInput({
+  unitCost,
+  field,
+  index,
+  onUpdate,
+  placeholder,
+  suffix,
+  priceCurrency = PRICE_CURRENCIES.USD,
+  usdExchangeRate = 1,
+}) {
+  const displayPrice = useMemo(
+    () => toDisplayPrice(unitCost, priceCurrency, usdExchangeRate),
+    [priceCurrency, unitCost, usdExchangeRate],
+  );
+  const [text, setText] = useState(displayPrice);
 
   useEffect(() => {
-    const current = Number(text);
-    if (text === '' && priceFromModel === 0) return;
-    if (!Number.isNaN(current) && current === priceFromModel) return;
-    setText(priceFromModel === 0 ? '' : String(priceFromModel));
-  }, [priceFromModel]);
+    if (text === displayPrice) return;
+    setText(displayPrice);
+  }, [displayPrice]);
 
   const handleChange = (val) => {
     setText(val);
@@ -357,7 +364,7 @@ function PriceInput({ unitCost, field, index, onUpdate, placeholder }) {
     }
     const num = Number(val);
     if (!Number.isNaN(num)) {
-      onUpdate(index, field, priceToUnitCost(num));
+      onUpdate(index, field, toUsdPrice(val, priceCurrency, usdExchangeRate));
     }
   };
 
@@ -365,7 +372,7 @@ function PriceInput({ unitCost, field, index, onUpdate, placeholder }) {
     <Input
       value={text}
       placeholder={placeholder || '0'}
-      suffix={PRICE_SUFFIX}
+      suffix={suffix}
       onChange={handleChange}
       style={{ width: '100%', marginTop: 2 }}
     />
@@ -387,7 +394,15 @@ const CACHE_FIELDS_GENERIC = [
   { field: 'cache_create_unit_cost', labelKey: '缓存创建价格' },
 ];
 
-function ExtendedPriceBlock({ tier, index, onUpdate, t }) {
+function ExtendedPriceBlock({
+  tier,
+  index,
+  onUpdate,
+  t,
+  suffix,
+  priceCurrency,
+  usdExchangeRate,
+}) {
   const mediaFields = BILLING_EXTRA_VARS.filter((v) => v.group === 'media');
   const hasAny = [...CACHE_FIELDS_TIMED, ...mediaFields.map((v) => v.tierField)].some(
     (f) => Number(tier[typeof f === 'string' ? f : f.field]) > 0,
@@ -458,6 +473,9 @@ function ExtendedPriceBlock({ tier, index, onUpdate, t }) {
                   field={cf.field}
                   index={index}
                   onUpdate={onUpdate}
+                  suffix={suffix}
+                  priceCurrency={priceCurrency}
+                  usdExchangeRate={usdExchangeRate}
                 />
               </div>
             ))}
@@ -485,6 +503,9 @@ function ExtendedPriceBlock({ tier, index, onUpdate, t }) {
                   field={cf.field}
                   index={index}
                   onUpdate={onUpdate}
+                  suffix={suffix}
+                  priceCurrency={priceCurrency}
+                  usdExchangeRate={usdExchangeRate}
                 />
               </div>
             ))}
@@ -499,7 +520,18 @@ function ExtendedPriceBlock({ tier, index, onUpdate, t }) {
 // Visual Tier Card (multi-condition)
 // ---------------------------------------------------------------------------
 
-function VisualTierCard({ tier, index, isLast, isOnly, onUpdate, onRemove, t }) {
+function VisualTierCard({
+  tier,
+  index,
+  isLast,
+  isOnly,
+  onUpdate,
+  onRemove,
+  t,
+  suffix,
+  priceCurrency,
+  usdExchangeRate,
+}) {
   const conditions = tier.conditions || [];
 
   const varLabel = { len: t('长度'), p: t('输入'), c: t('输出') };
@@ -665,7 +697,15 @@ function VisualTierCard({ tier, index, isLast, isOnly, onUpdate, onRemove, t }) 
       </div>
 
       {/* Extended prices (cache) — collapsible */}
-      <ExtendedPriceBlock tier={tier} index={index} onUpdate={onUpdate} t={t} />
+      <ExtendedPriceBlock
+        tier={tier}
+        index={index}
+        onUpdate={onUpdate}
+        t={t}
+        suffix={suffix}
+        priceCurrency={priceCurrency}
+        usdExchangeRate={usdExchangeRate}
+      />
     </div>
   );
 }
@@ -674,7 +714,14 @@ function VisualTierCard({ tier, index, isLast, isOnly, onUpdate, onRemove, t }) 
 // Visual editor
 // ---------------------------------------------------------------------------
 
-function VisualEditor({ visualConfig, onChange, t }) {
+function VisualEditor({
+  visualConfig,
+  onChange,
+  t,
+  priceSuffix,
+  priceCurrency,
+  usdExchangeRate,
+}) {
   const config = normalizeVisualConfig(visualConfig);
   const tiers = config.tiers || [];
 
@@ -739,6 +786,9 @@ function VisualEditor({ visualConfig, onChange, t }) {
           onUpdate={updateTier}
           onRemove={removeTier}
           t={t}
+          suffix={priceSuffix}
+          priceCurrency={priceCurrency}
+          usdExchangeRate={usdExchangeRate}
         />
       ))}
       <Button
@@ -873,7 +923,7 @@ function PresetSection({ applyPreset, t }) {
   );
 }
 
-function RawExprEditor({ exprString, onChange, t }) {
+function RawExprEditor({ exprString, onChange, t, priceSuffix }) {
   return (
     <div>
       <Banner
@@ -888,11 +938,7 @@ function RawExprEditor({ exprString, onChange, t }) {
               <code>cc1h</code> ({t('缓存创建-1小时')})
             </div>
             <div>
-              {t('函数')}: <code>tier(name, value)</code>,{' '}
-              <code>max(a, b)</code>, <code>min(a, b)</code>,{' '}
-              <code>ceil(x)</code>, <code>floor(x)</code>,{' '}
-              <code>abs(x)</code>, <code>header(name)</code>,{' '}
-              <code>param(path)</code>, <code>has(source, text)</code>
+              {t('价格系数')}: {priceSuffix}
             </div>
           </div>
         }
@@ -1231,7 +1277,8 @@ function RuleGroupCard({ group, index, onChange, onRemove, t }) {
 // LLM prompt helper — copyable prompt for LLM-assisted expression design
 // ---------------------------------------------------------------------------
 
-const LLM_PROMPT_TEMPLATE = `你是一个 AI API 计费表达式设计助手。用户需要你帮忙设计一个计费表达式（billing expression），用于 AI API 网关的模型计费。
+function buildLlmPromptTemplate(priceSuffix) {
+  return `你是一个 AI API 计费表达式设计助手。用户需要你帮忙设计一个计费表达式（billing expression），用于 AI API 网关的模型计费。
 
 ## 表达式语言
 
@@ -1271,7 +1318,7 @@ p 和 c 是兜底变量，代表所有没有被表达式单独定价的 token。
 
 ### 价格系数
 
-表达式中的数字系数是 $/1M tokens 的价格。例如 p * 2.5 表示输入 $2.50/1M tokens。
+表达式中的数字系数是 ${priceSuffix} 的价格。例如 p * 2.5 表示输入 2.50 ${priceSuffix}。
 
 ## 表达式示例
 
@@ -1305,21 +1352,23 @@ len <= 128000
 2. tier 名称用英文，如 "base"、"standard"、"long_context"
 3. 阶梯条件用 len（不要用 p），支持 <、<=、>、>=
 4. 多档用嵌套三元运算符：条件1 ? tier(...) : (条件2 ? tier(...) : tier(...))
-5. 价格系数直接写供应商官方 $/1M tokens 价格
+5. 价格系数直接写供应商官方 ${priceSuffix} 价格
 6. 不需要缓存/图片/音频单独定价时可以不写对应变量，它们的 token 会自动包含在 p/c 中
 
 请根据用户提供的模型信息和定价需求，生成计费表达式。`;
+}
 
-function LlmPromptHelper({ t, model }) {
+function LlmPromptHelper({ t, model, priceSuffix }) {
   const [open, setOpen] = useState(false);
 
   const modelName = model?.name || '';
   const prompt = useMemo(() => {
+    const template = buildLlmPromptTemplate(priceSuffix);
     if (modelName) {
-      return LLM_PROMPT_TEMPLATE + `\n\n当前模型：${modelName}`;
+      return template + `\n\n当前模型：${modelName}`;
     }
-    return LLM_PROMPT_TEMPLATE;
-  }, [modelName]);
+    return template;
+  }, [modelName, priceSuffix]);
 
   const handleCopy = useCallback(async () => {
     const ok = await copy(prompt);
@@ -1371,8 +1420,17 @@ function LlmPromptHelper({ t, model }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function TieredPricingEditor({ model, onExprChange, requestRuleExpr, onRequestRuleExprChange, t }) {
+export default function TieredPricingEditor({
+  model,
+  onExprChange,
+  requestRuleExpr,
+  onRequestRuleExprChange,
+  t,
+  priceCurrency = PRICE_CURRENCIES.USD,
+  usdExchangeRate = 1,
+}) {
   const currentExpr = model?.billingExpr || '';
+  const priceSuffix = getPriceSuffix(priceCurrency);
 
   const [editorMode, setEditorMode] = useState('visual');
   const [visualConfig, setVisualConfig] = useState(null);
@@ -1540,9 +1598,17 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
             visualConfig={visualConfig}
             onChange={handleVisualChange}
             t={t}
+            priceSuffix={priceSuffix}
+            priceCurrency={priceCurrency}
+            usdExchangeRate={usdExchangeRate}
           />
         ) : (
-          <RawExprEditor exprString={rawExpr} onChange={handleRawChange} t={t} />
+          <RawExprEditor
+            exprString={rawExpr}
+            onChange={handleRawChange}
+            t={t}
+            priceSuffix={priceSuffix}
+          />
         )}
 
         {editorMode === 'visual' && (
@@ -1690,7 +1756,7 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
         </div>
       </Card>
 
-      <LlmPromptHelper t={t} model={model} />
+      <LlmPromptHelper t={t} model={model} priceSuffix={priceSuffix} />
 
     </div>
   );

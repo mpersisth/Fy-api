@@ -501,6 +501,8 @@ export default function ModelPricingEditor({
                     requestRuleExpr={selectedModel.requestRuleExpr}
                     onRequestRuleExprChange={handleRequestRuleExprChange}
                     t={t}
+                    priceCurrency={priceCurrency}
+                    usdExchangeRate={usdExchangeRate}
                   />
                 ) : (
                   <>

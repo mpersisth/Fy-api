@@ -251,12 +251,6 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 	if otherRatio, ok := aliRatios[aliReq.Model]; ok {
 		if ratio, ok := otherRatio[resolution]; ok {
 			otherRatios[fmt.Sprintf("resolution-%s", resolution)] = ratio
-		} else {
-			supported := make([]string, 0, len(otherRatio))
-			for k := range otherRatio {
-				supported = append(supported, k)
-			}
-			return nil, fmt.Errorf("不支持的分辨率：%s，支持的分辨率：%s", resolution, strings.Join(supported, "、"))
 		}
 	}
 	return otherRatios, nil
@@ -329,6 +323,14 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 			} else {
 				aliReq.Parameters.Resolution = "720P"
 			}
+		}
+	}
+
+	// wan2.6 系列分辨率校验（此处 error 通过 BuildRequestBody 传播到用户）
+	if strings.HasPrefix(req.Model, "wan2.6") && aliReq.Parameters.Resolution != "" {
+		supported := map[string]bool{"720P": true, "1080P": true}
+		if !supported[aliReq.Parameters.Resolution] {
+			return nil, fmt.Errorf("不支持的分辨率：%s，支持的分辨率：720P、1080P", aliReq.Parameters.Resolution)
 		}
 	}
 

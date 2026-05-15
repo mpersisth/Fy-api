@@ -7,3 +7,6 @@
 # Go's default test cache / coverage
 *.out
 *.test
+
+# Local config (contains tokens)
+*.local.yaml

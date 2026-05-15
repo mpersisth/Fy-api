@@ -11,7 +11,7 @@ from rich.console import Console
 
 from . import __version__
 from .config import Config
-from .report import write_reports
+from .report import write_reports, write_suite_reports
 from .runner import Ramp
 
 
@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", help="Override export.output_dir")
     p.add_argument(
         "--formats",
-        help="Override export.formats (comma-separated: json,csv,markdown)",
+        help="Override export.formats (comma-separated: json,csv,markdown,pdf)",
     )
     p.add_argument("--dry-run", action="store_true", help="Validate config and exit")
     p.add_argument("-V", "--version", action="version", version=f"fy-loadtest {__version__}")
@@ -44,6 +44,7 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
         cfg.gateway.base_url = args.base_url
     if args.model:
         cfg.load.model = args.model
+        cfg.load.models = [args.model]
     if args.concurrencies:
         cfg.load.concurrency_levels = [int(x) for x in args.concurrencies.split(",") if x.strip()]
     if args.reps:
@@ -74,9 +75,19 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"[red]config invalid: {e}[/red]")
         return 2
 
+    multi_model = len(cfg.load.models) > 1
     console.print(f"[bold]Gateway:[/bold]      {cfg.gateway.base_url}")
-    console.print(f"[bold]Model:[/bold]        {cfg.load.model}")
-    console.print(f"[bold]Concurrency:[/bold]  {cfg.load.concurrency_levels}")
+    if multi_model:
+        console.print(f"[bold]Models:[/bold]       {cfg.load.models}")
+    else:
+        console.print(f"[bold]Model:[/bold]        {cfg.load.model}")
+    if cfg.gateway.channels:
+        ch_desc = ", ".join(f"{ch.name}(id={ch.pin_channel_id})" for ch in cfg.gateway.channels)
+        console.print(f"[bold]Channels:[/bold]    {ch_desc}")
+    if cfg.load.auto_ramp.enabled:
+        console.print(f"[bold]Auto-ramp:[/bold]   max={cfg.load.auto_ramp.max_concurrency}, stop<{cfg.load.auto_ramp.stop_success_pct}% success")
+    else:
+        console.print(f"[bold]Concurrency:[/bold]  {cfg.load.concurrency_levels}")
     console.print(f"[bold]Reps/level:[/bold]   {cfg.load.requests_per_level}")
     console.print(f"[bold]Warmup:[/bold]       {cfg.load.warmup_requests}")
     console.print(f"[bold]Stream:[/bold]       {cfg.load.stream}")
@@ -86,12 +97,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        result = asyncio.run(Ramp(cfg, console=console).run())
+        if multi_model:
+            suite = asyncio.run(Ramp(cfg, console=console).run_suite())
+            files = write_suite_reports(suite, cfg.export.formats, cfg.export.output_dir)
+        else:
+            mc_result = asyncio.run(Ramp(cfg, console=console).run())
+            files = write_reports(mc_result, cfg.export.formats, cfg.export.output_dir)
     except KeyboardInterrupt:
         console.print("[yellow]interrupted[/yellow]")
         return 130
 
-    files = write_reports(result, cfg.export.formats, cfg.export.output_dir)
     console.rule("[bold green]done")
     for f in files:
         console.print(f"wrote {f}")

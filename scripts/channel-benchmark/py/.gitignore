@@ -18,3 +18,11 @@ htmlcov/
 conformance-results/
 conformance.cn.yaml
 conformance.local.yaml
+quality.local.yaml
+quality-results/
+.cache-quality/
+loadtest.local.yaml
+
+# Report output
+reports/
+combined-report-*.pdf

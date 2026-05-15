@@ -273,18 +273,6 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		},
 	}
 
-	// r2v 首尾帧处理：首帧走 InputReference，尾帧从 Metadata 提取
-	if strings.Contains(req.Model, "r2v") {
-		aliReq.Input.FirstFrameURL = req.InputReference
-		aliReq.Input.ImgURL = ""
-
-		if req.Metadata != nil {
-			if lastFrameURL, ok := req.Metadata["last_frame_url"].(string); ok && lastFrameURL != "" {
-				aliReq.Input.LastFrameURL = lastFrameURL
-			}
-		}
-	}
-
 	// 处理分辨率映射
 	if req.Size != "" {
 		// text to video size must be contained *
@@ -362,6 +350,18 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 
 	if aliReq.Model != upstreamModel {
 		return nil, errors.New("can't change model with metadata")
+	}
+
+	// r2v 首尾帧处理（放在 metadata unmarshal 之后，防止被通用反序列化覆盖）
+	if strings.Contains(req.Model, "r2v") {
+		aliReq.Input.FirstFrameURL = req.InputReference
+		aliReq.Input.ImgURL = ""
+
+		if req.Metadata != nil {
+			if lastFrameURL, ok := req.Metadata["last_frame_url"].(string); ok && lastFrameURL != "" {
+				aliReq.Input.LastFrameURL = lastFrameURL
+			}
+		}
 	}
 
 	return aliReq, nil

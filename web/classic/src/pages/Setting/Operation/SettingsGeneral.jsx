@@ -52,6 +52,9 @@ export default function GeneralSettings(props) {
     'general_setting.custom_currency_exchange_rate': '',
     QuotaPerUnit: '',
     RetryTimes: '',
+    RetryBaseIntervalMs: 1000,
+    RetryMaxIntervalMs: 60000,
+    RetryTotalTimeoutMs: 120000,
     USDExchangeRate: '',
     DisplayTokenStatEnabled: false,
     DefaultCollapseSidebar: false,
@@ -273,6 +276,45 @@ export default function GeneralSettings(props) {
                   showClear
                 />
               </Col>
+              {/* Fy-api overlay: retry backoff settings. */}
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'RetryBaseIntervalMs'}
+                  label={t('重试基础退避间隔（毫秒）')}
+                  initValue={1000}
+                  min={0}
+                  step={100}
+                  placeholder={'1000'}
+                  extraText={t('第一次重试前等待的时间，默认 1000 毫秒')}
+                  onChange={handleFieldChange('RetryBaseIntervalMs')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'RetryMaxIntervalMs'}
+                  label={t('重试最大退避间隔（毫秒）')}
+                  initValue={60000}
+                  min={0}
+                  step={1000}
+                  placeholder={'60000'}
+                  extraText={t('单次重试等待时间上限，默认 60000 毫秒')}
+                  onChange={handleFieldChange('RetryMaxIntervalMs')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'RetryTotalTimeoutMs'}
+                  label={t('重试累计等待上限（毫秒）')}
+                  initValue={120000}
+                  min={0}
+                  step={1000}
+                  placeholder={'120000'}
+                  extraText={t(
+                    '同一请求所有重试等待时间的累计上限，默认 120000 毫秒',
+                  )}
+                  onChange={handleFieldChange('RetryTotalTimeoutMs')}
+                />
+              </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.Select
                   field='general_setting.quota_display_type'
@@ -282,12 +324,8 @@ export default function GeneralSettings(props) {
                     'general_setting.quota_display_type',
                   )}
                 >
-                  <Form.Select.Option value='USD'>
-                    USD ($)
-                  </Form.Select.Option>
-                  <Form.Select.Option value='CNY'>
-                    CNY (¥)
-                  </Form.Select.Option>
+                  <Form.Select.Option value='USD'>USD ($)</Form.Select.Option>
+                  <Form.Select.Option value='CNY'>CNY (¥)</Form.Select.Option>
                   {showTokensOption && (
                     <Form.Select.Option value='TOKENS'>
                       Tokens
@@ -398,7 +436,9 @@ export default function GeneralSettings(props) {
                   field={'token_setting.max_user_tokens'}
                   step={1}
                   min={1}
-                  extraText={t('每个用户最多可创建的令牌数量，默认 1000，设置过大可能会影响性能')}
+                  extraText={t(
+                    '每个用户最多可创建的令牌数量，默认 1000，设置过大可能会影响性能',
+                  )}
                   placeholder={'1000'}
                   onChange={handleFieldChange('token_setting.max_user_tokens')}
                 />

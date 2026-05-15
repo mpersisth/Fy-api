@@ -132,6 +132,11 @@ var PreConsumedQuota = 500
 
 var RetryTimes = 0
 
+// Fy-api overlay: retry backoff settings are configured in milliseconds.
+var RetryBaseIntervalMs = 1000
+var RetryMaxIntervalMs = 60000
+var RetryTotalTimeoutMs = 120000
+
 //var RootUserEmail = ""
 
 var IsMasterNode bool

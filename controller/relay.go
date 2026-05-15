@@ -191,6 +191,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	// Fy-api overlay: keep backoff state request-wide because RetryParam may reset during auto-group retry.
+	retryBackoff := &relayRetryBackoffState{}
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
@@ -236,6 +238,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+			break
+		}
+		if retryParam.GetRetry() >= common.RetryTimes {
+			break
+		}
+		// Fy-api overlay: wait before retrying upstream requests.
+		if waitErr := waitBeforeNextRelayRetry(c, retryBackoff, newAPIError.StatusCode, retryBackoff.retriesWaited+1, common.RetryTimes); waitErr != nil {
+			newAPIError = waitErr
 			break
 		}
 	}
@@ -517,6 +527,8 @@ func RelayTask(c *gin.Context) {
 		ModelName:  relayInfo.OriginModelName,
 		Retry:      common.GetPointer(0),
 	}
+	// Fy-api overlay: keep task backoff state request-wide because RetryParam may reset during auto-group retry.
+	retryBackoff := &relayRetryBackoffState{}
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		var channel *model.Channel
@@ -564,6 +576,14 @@ func RelayTask(c *gin.Context) {
 		}
 
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
+			break
+		}
+		if retryParam.GetRetry() >= common.RetryTimes {
+			break
+		}
+		// Fy-api overlay: wait before retrying task relay requests.
+		if waitErr := waitBeforeNextTaskRelayRetry(c, retryBackoff, taskErr.StatusCode, retryBackoff.retriesWaited+1, common.RetryTimes); waitErr != nil {
+			taskErr = waitErr
 			break
 		}
 	}

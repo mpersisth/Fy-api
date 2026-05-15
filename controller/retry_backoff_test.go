@@ -52,6 +52,62 @@ func TestNextRelayRetryBackoffDelayTotalTimeout(t *testing.T) {
 	}
 }
 
+func TestNextRelayRetryBackoffDelayAllowsExactTotalTimeout(t *testing.T) {
+	cfg := relayRetryBackoffConfig{
+		base:  500 * time.Millisecond,
+		max:   time.Second,
+		total: 1500 * time.Millisecond,
+	}
+	state := &relayRetryBackoffState{}
+
+	got, ok := nextRelayRetryBackoffDelay(state, cfg)
+	if !ok || got != 500*time.Millisecond {
+		t.Fatalf("first delay = %s, %v; want 500ms, true", got, ok)
+	}
+
+	got, ok = nextRelayRetryBackoffDelay(state, cfg)
+	if !ok || got != time.Second {
+		t.Fatalf("second delay = %s, %v; want 1s, true", got, ok)
+	}
+
+	if got, ok = nextRelayRetryBackoffDelay(state, cfg); ok {
+		t.Fatalf("third delay = %s, true; want stopped after exact total timeout", got)
+	}
+}
+
+func TestNextRelayRetryBackoffDelayUnlimitedTotalTimeout(t *testing.T) {
+	cfg := relayRetryBackoffConfig{
+		base:  time.Second,
+		max:   2 * time.Second,
+		total: 0,
+	}
+	state := &relayRetryBackoffState{}
+
+	expected := []time.Duration{time.Second, 2 * time.Second, 2 * time.Second}
+	for _, want := range expected {
+		got, ok := nextRelayRetryBackoffDelay(state, cfg)
+		if !ok || got != want {
+			t.Fatalf("delay = %s, %v; want %s, true", got, ok, want)
+		}
+	}
+}
+
+func TestNextRelayRetryBackoffDelayZeroBase(t *testing.T) {
+	cfg := relayRetryBackoffConfig{
+		base:  0,
+		max:   time.Second,
+		total: time.Second,
+	}
+	state := &relayRetryBackoffState{}
+
+	for i := 0; i < 3; i++ {
+		got, ok := nextRelayRetryBackoffDelay(state, cfg)
+		if !ok || got != 0 {
+			t.Fatalf("delay = %s, %v; want 0, true", got, ok)
+		}
+	}
+}
+
 func TestNormalizedRelayRetryBackoffConfig(t *testing.T) {
 	oldBase := common.RetryBaseIntervalMs
 	oldMax := common.RetryMaxIntervalMs

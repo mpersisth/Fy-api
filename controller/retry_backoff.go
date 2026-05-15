@@ -52,7 +52,8 @@ func normalizedRelayRetryBackoffConfig() relayRetryBackoffConfig {
 }
 
 func nextRelayRetryBackoffDelay(state *relayRetryBackoffState, cfg relayRetryBackoffConfig) (time.Duration, bool) {
-	if cfg.total <= 0 || state.totalWait >= cfg.total {
+	hasTotalLimit := cfg.total > 0
+	if hasTotalLimit && state.totalWait >= cfg.total {
 		return 0, false
 	}
 
@@ -73,7 +74,7 @@ func nextRelayRetryBackoffDelay(state *relayRetryBackoffState, cfg relayRetryBac
 	if cfg.max > 0 && delay > cfg.max {
 		delay = cfg.max
 	}
-	if state.totalWait+delay > cfg.total {
+	if hasTotalLimit && state.totalWait+delay > cfg.total {
 		return 0, false
 	}
 	state.retriesWaited++

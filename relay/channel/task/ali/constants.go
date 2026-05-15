@@ -1,6 +1,8 @@
 package ali
 
 var ModelList = []string{
+	"wan2.6-i2v",         // 万相2.6（图生视频）
+	"wan2.6-r2v",         // 万相2.6（首尾帧生视频）
 	"wan2.5-i2v-preview", // 万相2.5 preview（有声视频）推荐
 	"wan2.2-i2v-flash",   // 万相2.2极速版（无声视频）
 	"wan2.2-i2v-plus",    // 万相2.2专业版（无声视频）

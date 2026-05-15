@@ -21,6 +21,7 @@ import React from 'react';
 import { Avatar, Typography, Table, Tag } from '@douyinfe/semi-ui';
 import { IconCoinMoneyStroked } from '@douyinfe/semi-icons';
 import { calculateModelPrice, getModelPriceItems } from '../../../../../helpers';
+import VideoPricingDisplay, { VIDEO_PRICING } from './VideoPricingDisplay';
 
 const { Text } = Typography;
 
@@ -70,8 +71,9 @@ const ModelPricingTable = ({
         key: group,
         group: group,
         ratio: groupRatioValue,
-        billingType:
-          modelData?.billing_mode === 'tiered_expr'
+        billingType: VIDEO_PRICING[modelData?.model_name]
+          ? t('视频计费')
+          : modelData?.billing_mode === 'tiered_expr'
             ? t('动态计费')
             : modelData?.quota_type === 0
               ? t('按量计费')
@@ -119,6 +121,7 @@ const ModelPricingTable = ({
         if (text === t('按量计费')) color = 'violet';
         else if (text === t('按次计费')) color = 'teal';
         else if (text === t('动态计费')) color = 'amber';
+        else if (text === t('视频计费')) color = 'cyan';
         return (
           <Tag color={color} size='small' shape='circle'>
             {text || '-'}
@@ -130,7 +133,15 @@ const ModelPricingTable = ({
     columns.push({
       title: siteDisplayType === 'TOKENS' ? t('计费摘要') : t('价格摘要'),
       dataIndex: 'priceItems',
-      render: (items) => {
+      render: (items, record) => {
+        if (VIDEO_PRICING[modelData?.model_name]) {
+          return (
+            <VideoPricingDisplay
+              modelName={modelData.model_name}
+              groupRatioValue={record.ratio}
+            />
+          );
+        }
         if (items.length === 1 && items[0].isDynamic) {
           return (
             <Text type='tertiary' size='small'>

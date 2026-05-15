@@ -197,6 +197,10 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 			"720P":  1,
 			"1080P": 1 / 0.6,
 		},
+		"wan2.6-r2v": {
+			"720P":  1,
+			"1080P": 1 / 0.6,
+		},
 		"wan2.5-t2v-preview": {
 			"480P":  1,
 			"720P":  2,
@@ -247,6 +251,12 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 	if otherRatio, ok := aliRatios[aliReq.Model]; ok {
 		if ratio, ok := otherRatio[resolution]; ok {
 			otherRatios[fmt.Sprintf("resolution-%s", resolution)] = ratio
+		} else {
+			supported := make([]string, 0, len(otherRatio))
+			for k := range otherRatio {
+				supported = append(supported, k)
+			}
+			return nil, fmt.Errorf("不支持的分辨率：%s，支持的分辨率：%s", resolution, strings.Join(supported, "、"))
 		}
 	}
 	return otherRatios, nil
@@ -267,6 +277,18 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 			PromptExtend: true, // 默认开启智能改写
 			Watermark:    false,
 		},
+	}
+
+	// r2v 首尾帧处理：首帧走 InputReference，尾帧从 Metadata 提取
+	if strings.Contains(req.Model, "r2v") {
+		aliReq.Input.FirstFrameURL = req.InputReference
+		aliReq.Input.ImgURL = ""
+
+		if req.Metadata != nil {
+			if lastFrameURL, ok := req.Metadata["last_frame_url"].(string); ok && lastFrameURL != "" {
+				aliReq.Input.LastFrameURL = lastFrameURL
+			}
+		}
 	}
 
 	// 处理分辨率映射

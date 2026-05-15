@@ -197,6 +197,7 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 			"720P":  1,
 			"1080P": 1 / 0.6,
 		},
+		// Fy-api overlay: wan2.6 r2v shares the same resolution pricing ladder as i2v.
 		"wan2.6-r2v": {
 			"720P":  1,
 			"1080P": 1 / 0.6,
@@ -314,6 +315,7 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		}
 	}
 
+	// Fy-api overlay: validate wan2.6 resolution here so billing and request conversion stay consistent.
 	// wan2.6 系列分辨率校验（此处 error 通过 BuildRequestBody 传播到用户）
 	if strings.HasPrefix(req.Model, "wan2.6") && aliReq.Parameters.Resolution != "" {
 		supported := map[string]bool{"720P": true, "1080P": true}
@@ -352,6 +354,7 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		return nil, errors.New("can't change model with metadata")
 	}
 
+	// Fy-api overlay: keep r2v frame fields after metadata unmarshal to avoid overwrite by generic mapping.
 	// r2v 首尾帧处理（放在 metadata unmarshal 之后，防止被通用反序列化覆盖）
 	if strings.Contains(req.Model, "r2v") {
 		aliReq.Input.FirstFrameURL = req.InputReference

@@ -1,6 +1,7 @@
 package ali
 
 var ModelList = []string{
+	// Fy-api overlay: expose wan2.6 video models in Ali task model list.
 	"wan2.6-i2v",         // 万相2.6（图生视频）
 	"wan2.6-r2v",         // 万相2.6（首尾帧生视频）
 	"wan2.5-i2v-preview", // 万相2.5 preview（有声视频）推荐

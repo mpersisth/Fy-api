@@ -453,6 +453,7 @@ export default function ModelPricingEditor({
                   </div>
                 </div>
 
+                {/* Fy-api overlay: currency selector */}
                 <div className='mb-4'>
                   <div className='mb-2 font-medium text-gray-700'>
                     {t('币种')}

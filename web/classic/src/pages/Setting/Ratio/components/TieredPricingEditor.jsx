@@ -1580,6 +1580,7 @@ export default function TieredPricingEditor({
       imageTokens, imageOutputTokens, audioInputTokens, audioOutputTokens],
   );
 
+  {/* Fy-api overlay: currency-aware token estimator display */}
   const estimateCurrencyDisplay = useMemo(() => {
     if (!evalResult || evalResult.error || evalResult.rawCost == null) return null;
     const symbol = priceCurrency === PRICE_CURRENCIES.CNY ? '¥' : '$';

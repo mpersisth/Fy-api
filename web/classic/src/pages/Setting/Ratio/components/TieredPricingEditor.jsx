@@ -681,6 +681,9 @@ function VisualTierCard({
             field='input_unit_cost'
             index={index}
             onUpdate={onUpdate}
+            suffix={suffix}
+            priceCurrency={priceCurrency}
+            usdExchangeRate={usdExchangeRate}
           />
         </div>
         <div>
@@ -692,6 +695,9 @@ function VisualTierCard({
             field='output_unit_cost'
             index={index}
             onUpdate={onUpdate}
+            suffix={suffix}
+            priceCurrency={priceCurrency}
+            usdExchangeRate={usdExchangeRate}
           />
         </div>
       </div>

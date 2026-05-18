@@ -29,7 +29,11 @@ const VIDEO_PRICING = {
   'wan2.6-r2v': { '720P': 0.3, '1080P': 0.5 },
 };
 
-const VideoPricingDisplay = ({ modelName, groupRatioValue = 1 }) => {
+const VideoPricingDisplay = ({
+  modelName,
+  groupRatioValue = 1,
+  title = 'Fixed Price (RMB)',
+}) => {
   const { t } = useTranslation();
   const pricing = VIDEO_PRICING[modelName];
   if (!pricing) return null;
@@ -51,12 +55,17 @@ const VideoPricingDisplay = ({ modelName, groupRatioValue = 1 }) => {
   ];
 
   return (
-    <Table
-      columns={columns}
-      dataSource={data}
-      pagination={false}
-      size='small'
-    />
+    <div>
+      <Text type='tertiary' size='small' className='block mb-2'>
+        {title}
+      </Text>
+      <Table
+        columns={columns}
+        dataSource={data}
+        pagination={false}
+        size='small'
+      />
+    </div>
   );
 };
 

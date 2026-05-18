@@ -85,6 +85,7 @@
     - `go.mod` 只依赖 `gopkg.in/yaml.v3`
   - `py/` —— 三件套 Python 工具（共享一个 venv / 一个 JSONL schema）
     - `fy_loadtest/` —— 并发阶梯压测（E2E/TTFT/ITL/TPOT 分位、RPS、goodput）
+    - `fy_image_loadtest/` —— 图片生成持续压测（固定每渠道 worker 数、打 `/v1/images/generations`、支持多渠道同时 pin 到指定 channel id，持续跑到 Ctrl+C）
     - `fy_quality/` —— 质量评分（7 种 grader + 双裁判 rubric + 磁盘缓存）
       - `perturbation.py` —— 确定性扰动（`whitespace` / `trailing_marker` / `synonym`）防训练集污染
       - `datasets/public/quality.jsonl` —— 起手 15 条烟测样本（带扰动示例）
@@ -123,19 +124,18 @@
 - **修改文件**：
   - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` 视频基础倍率、`wan2.6-t2i` 单图价格）
   - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v`）
-  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 分辨率校验下沉到 `convertToAliRequest`；`r2v` 首尾帧逻辑放到 metadata 反序列化之后）
+  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 首尾帧逻辑放到 metadata 反序列化之后；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
+  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算）
   - `web/classic/src/components/table/model-pricing/modal/components/ModelPricingTable.jsx`（遇到 `wan2.6` 视频模型时改为“视频计费”展示）
   - `web/classic/src/components/table/model-pricing/modal/components/VideoPricingDisplay.jsx`（新增分辨率/每秒价格表）
 - **定价规则**：
   - `wan2.6-t2i`：`0.2` 元/张
   - `wan2.6-i2v` / `wan2.6-r2v`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒
-- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；同时 `r2v` 的首尾帧字段若先写入、后做 metadata 通用反序列化，会被覆盖导致请求错误
+- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；同时 `r2v` 的首尾帧字段若先写入、后做 metadata 通用反序列化，会被覆盖导致请求错误；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题
 - **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突）
 - **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则，并继续确保 `r2v` 首尾帧赋值位于 metadata unmarshal 之后
-- **冲突风险**：低（结构体新增一行字段；过滤函数新增一段独立 `if`，带 `// Fy-api overlay:` 注释）
-- **Merge 策略**：若 upstream 后续自行补上同样的过滤（推测会用同名字段 `AllowContextManagement`），merge 时直接 take theirs 即可；若它选了别的字段名，按 upstream 命名重写本 overlay
 
-### B-10 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
+### B-11 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：
   - `common/json_error_sanitizer.go`（`SanitizeJSONUnmarshalError`：把 stdlib `*json.UnmarshalTypeError` / `*json.SyntaxError` / 字符串型 wrapped 错误转成用户安全格式 `invalid type for field "X": expected <json type>, got <json type>`，去掉 Go 结构体路径）
   - `common/json_error_sanitizer_test.go`（typed errors / syntax / wrapped string fallback / nil-safe / 切片包路径泄漏 / 嵌套 struct 字段）
@@ -148,7 +148,7 @@
 - **冲突风险**：低（顶层 dispatcher 改 1 行；UnmarshalBodyReusable 错误处加 1 行；新增的 sanitizer 是独立文件）
 - **Merge 策略**：若 upstream 修了同一行（用同样的 `NewErrorWithStatusCode`），merge 时 take theirs 即可；sanitizer 独立文件不会冲突
 
-### B-11 [relay] /v1/messages 二级反序列化泄漏 + 图片块 nil-deref panic
+### B-12 [relay] /v1/messages 二级反序列化泄漏 + 图片块 nil-deref panic
 - **新增文件**：
   - `dto/claude_parse_content_test.go`（`ClaudeMessage.ParseContent` 防泄漏：scalar content / 错类型 text 块 / 合法快路径）
 - **修改文件**：
@@ -164,7 +164,7 @@
 - **冲突风险**：中（`Any2Type` 是高频函数，签名不变；image case 加 4 行守卫；`claude_handler.go` 改 2 个 if 分支）
 - **Merge 策略**：upstream 若改 `Any2Type` 签名（不太可能），同步时把 sanitizer 调用迁过去；image nil 守卫若 upstream 自行修了就 take theirs
 
-### B-12 [relay] base64 图片缺失 MIME type 自动识别
+### B-13 [relay] base64 图片缺失 MIME type 自动识别
 - **修改文件**：
   - `dto/openai_request.go`（`MessageImageUrl.MimeType` 增加 `json:"mime_type,omitempty"`，`Message.ParseContent` 保留 `image_url.mime_type/mimeType`）
   - `service/file_service.go`（raw base64 文件在 MIME 为空时通过图片解码 / content sniff / HEIF 检测补齐 MIME）
@@ -174,6 +174,32 @@
 - **背景**：用例明细 116 的 `content_image_url` 传裸 base64 且不带 MIME type 时，TraceNex/上游适配层可能拒绝或向 Claude/Gemini 发送空 MIME，触发 `base64 mime type can not be empty`。现在能识别的图片会自动补成 `image/png` / `image/jpeg` 等；无法识别的内容仍交给后续 provider 白名单校验拒绝
 - **冲突风险**：低（小范围解析/文件服务增强）
 - **Merge 策略**：若 upstream 后续支持同类自动 MIME 推断，优先采用 upstream 实现，但保留 OpenAI `image_url.mime_type` 不丢失的测试语义
+
+### B-14 [benchmark/image] gpt-image-2 压测工具与图片质量日志修正
+- **新增目录**：`scripts/channel-benchmark/py/fy_image_loadtest/`
+  - `cli.py` / `config.py` / `client.py` / `runner.py` / `report.py`
+  - 命令：`fy-image-loadtest`
+  - 用途：针对 `/v1/images/generations` 的持续压测，支持多渠道 pin、每渠道独立并发、`duration_sec` / `max_requests_per_channel` 结束条件、429 `retry-after` 冷却
+- **新增文件**：`scripts/channel-benchmark/py/image-loadtest.yaml`
+- **本地配置**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore）
+- **修改文件**：
+  - `scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-loadtest` CLI）
+  - `scripts/channel-benchmark/README.md` / `scripts/channel-benchmark/py/README.md`（补图片压测说明）
+  - `relay/image_handler.go`（`// Fy-api overlay:`：图片消费日志保留实际 `quality` 值，不再把 `high/medium/low` 统记成 `standard`）
+- **背景**：
+  1. 现有 `fy-loadtest` 固定打 `/v1/chat/completions`，不适合 `gpt-image-2`
+  2. Azure `gpt-image-2` 链路对 `response_format` 不兼容，工具默认不再发送该字段
+  3. 2026-05-15 CN 线上排查确认：channel `42` 和 `43` 共享同一个 Azure `base_url + key`，并非独立配额桶；本地图片压测配置已按此降并发标注
+- **冲突风险**：低（benchmark 子树独立；`relay/image_handler.go` 仅一小段日志文案逻辑）
+- **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现
+
+### B-15 [benchmark/image] 余额不足自动停机
+- **修改文件**：
+  - `scripts/channel-benchmark/py/fy_image_loadtest/client.py`（识别余额不足类错误）
+  - `scripts/channel-benchmark/py/fy_image_loadtest/runner.py`（任一请求命中后触发全局优雅停机）
+  - `scripts/channel-benchmark/py/tests/test_image_loadtest.py`（新增停机回归测试）
+- **行为**：`fy-image-loadtest` 遇到 `余额不足` / `额度不足` / `insufficient quota` 等错误时，立刻停止继续发新请求，已在飞请求自然收尾后输出最终报告
+- **冲突风险**：低（仅 benchmark 子树）
 
 ---
 

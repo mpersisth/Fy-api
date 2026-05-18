@@ -135,7 +135,11 @@ const ModelPricingTable = ({
     });
 
     columns.push({
-      title: siteDisplayType === 'TOKENS' ? t('计费摘要') : t('价格摘要'),
+      title: VIDEO_PRICING[modelData?.model_name]
+        ? `${t('固定价格')} (RMB)`
+        : siteDisplayType === 'TOKENS'
+          ? t('计费摘要')
+          : t('价格摘要'),
       dataIndex: 'priceItems',
       render: (items, record) => {
         if (VIDEO_PRICING[modelData?.model_name]) {
@@ -143,6 +147,7 @@ const ModelPricingTable = ({
             <VideoPricingDisplay
               modelName={modelData.model_name}
               groupRatioValue={record.ratio}
+              title={`${t('固定价格')} (RMB)`}
             />
           );
         }

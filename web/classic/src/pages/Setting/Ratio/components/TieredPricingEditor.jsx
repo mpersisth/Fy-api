@@ -1570,7 +1570,8 @@ export default function TieredPricingEditor({
   const evalResult = useMemo(() => {
       const result = evalExprLocally(effectiveExpr, promptTokens, completionTokens, extraTokenValues);
       if (!result.error) {
-        result.cost = result.cost / 1000000 * (parseFloat(localStorage.getItem('quota_per_unit')) || 500000);
+        result.rawCost = result.cost / 1000000;
+        result.cost = result.rawCost * (parseFloat(localStorage.getItem('quota_per_unit')) || 500000);
       }
       return result;
     },
@@ -1578,6 +1579,15 @@ export default function TieredPricingEditor({
       cacheReadTokens, cacheCreateTokens, cacheCreate1hTokens,
       imageTokens, imageOutputTokens, audioInputTokens, audioOutputTokens],
   );
+
+  const estimateCurrencyDisplay = useMemo(() => {
+    if (!evalResult || evalResult.error || evalResult.rawCost == null) return null;
+    const symbol = priceCurrency === PRICE_CURRENCIES.CNY ? '¥' : '$';
+    const value = priceCurrency === PRICE_CURRENCIES.CNY
+      ? evalResult.rawCost * usdExchangeRate
+      : evalResult.rawCost;
+    return `${symbol}${parseFloat(value.toPrecision(6))}`;
+  }, [evalResult, priceCurrency, usdExchangeRate]);
 
   return (
     <div>
@@ -1682,6 +1692,7 @@ export default function TieredPricingEditor({
         <div className='font-medium mb-2'>{t('Token 估算器')}</div>
         <div className='text-xs text-gray-500 mb-3'>
           {t('输入 Token 数量，查看按当前配置的预计费用（不含分组倍率）。')}
+          {t('价格单位')}：{priceSuffix}
         </div>
         <div
           style={{
@@ -1739,7 +1750,7 @@ export default function TieredPricingEditor({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Text strong style={{ fontSize: 15 }}>
-                  {t('预计费用')}：{renderQuota(evalResult.cost, 4)}
+                  {t('预计费用')}：{estimateCurrencyDisplay}
                 </Text>
                 {evalResult.matchedTier && (
                   <Tag size='small' color='blue' type='light'>
@@ -1755,7 +1766,7 @@ export default function TieredPricingEditor({
                   color: 'var(--semi-color-text-3)',
                 }}
               >
-                {t('原始额度')}：{evalResult.cost.toLocaleString()}
+                {t('等价额度')}：{renderQuota(evalResult.cost, 4)}（{t('原始额度')} {evalResult.cost.toLocaleString()}）
               </Text>
             </div>
           )}

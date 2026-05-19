@@ -201,6 +201,15 @@
 - **行为**：`fy-image-loadtest` 遇到 `余额不足` / `额度不足` / `insufficient quota` 等错误时，立刻停止继续发新请求，已在飞请求自然收尾后输出最终报告
 - **冲突风险**：低（仅 benchmark 子树）
 
+### B-16 [aws/bedrock] Claude `anthropic-beta` 兼容过滤
+- **修改文件**：
+  - `relay/channel/aws/dto.go`（Bedrock AK/SK 路径把 `anthropic-beta` header 转成 body `anthropic_beta` 前，先按 Bedrock 支持列表映射/过滤；无兼容 token 时不发送该字段；同时丢弃客户端 body 自带的 `anthropic_beta` / `output_config`）
+  - `relay/channel/aws/relay-aws.go`（AWS Claude pass-through body 路径同样删除 `anthropic_beta` / `output_config`，避免绕过 `formatRequest` 的兜底过滤）
+  - `relay/channel/aws/relay_aws_test.go`（覆盖支持 token 保留、`advanced-tool-use-2025-11-20` 映射成 `tool-search-tool-2025-10-19`、不支持 token 被删除、body 自带 beta 删除、pass-through 删除 Bedrock 不兼容字段）
+- **背景**：SG 生产 Bedrock 流式调用报 `ValidationException: invalid beta flag`，后续日志还出现 `output_config.format: Extra inputs are not permitted`。直连 Anthropic 支持的 beta/header/body 扩展集合大于 AWS Bedrock 支持集合，原实现把 `anthropic-beta` 原样拆分写入 Bedrock body 的 `anthropic_beta`，且 pass-through 会把原始 body 的不兼容字段直接发给 Bedrock。
+- **行为**：后端默认按 AWS Bedrock Claude Messages 当前支持的 beta token 做白名单，并保留已有前端 “AWS Bedrock Claude 兼容模板” 的核心映射语义；渠道级 header override 仍先执行，随后 Bedrock adaptor 做最后兜底过滤。客户端 body 自带的 `anthropic_beta` 不被信任，统一由过滤后的 header 重建；`output_config` 暂按 Bedrock 不兼容字段在 AWS 边界删除。
+- **冲突风险**：低（AWS adaptor 局部新增 helper；若 upstream 后续实现 Bedrock beta 白名单或官方支持 `output_config`，合并时对齐官方支持列表即可）
+
 ---
 
 ## 前端定制

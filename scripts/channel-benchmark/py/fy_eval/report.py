@@ -68,9 +68,33 @@ def generate_markdown(cfg: Config, result: EvalResult) -> str:
             for r in mr.results:
                 status = "PASS" if r.passed else "FAIL"
                 lines.append(f"| {r.test_name} | {status} | {r.detail[:80]} |")
-            # Performance metrics
+            # Performance matrix table
             for r in mr.results:
-                if r.metrics and r.test_name == "load":
+                if r.metrics and r.test_name == "load" and "matrix" in r.metrics:
+                    lines.append("")
+                    lines.append("**负载测试详情** "
+                                f"(并发: {r.metrics.get('concurrency', '-')})")
+                    lines.append("")
+                    matrix = r.metrics["matrix"]
+                    if any("p95_sec" in g for g in matrix):
+                        lines.append("| 参数组合 | 请求数 | 成功率 | P50 | P95 | 平均 |")
+                        lines.append("|---------|--------|--------|-----|-----|------|")
+                        for g in matrix:
+                            lines.append(
+                                f"| {g['label']} | {g['total']} | {g['success_rate']:.0%} "
+                                f"| {g.get('p50_sec', 0):.1f}s "
+                                f"| {g.get('p95_sec', 0):.1f}s "
+                                f"| {g['avg_sec']:.1f}s |"
+                            )
+                    else:
+                        lines.append("| 参数组合 | 请求数 | 成功率 | 平均 |")
+                        lines.append("|---------|--------|--------|------|")
+                        for g in matrix:
+                            lines.append(
+                                f"| {g['label']} | {g['total']} "
+                                f"| {g['success_rate']:.0%} | {g['avg_sec']:.1f}s |"
+                            )
+                elif r.metrics and r.test_name == "load":
                     lines.append("")
                     m = r.metrics
                     lines.append(f"  - 并发: {m.get('concurrency', '-')}, "

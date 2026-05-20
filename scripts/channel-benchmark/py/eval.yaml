@@ -29,6 +29,11 @@ image_models:
     load:
       concurrency: 2
       duration_sec: 60
+      # Parameter matrix: list dimension values, auto-generates all combinations
+      # e.g. 2 sizes × 2 qualities = 4 test groups
+      matrix:
+        size: ["1024x1024", "1536x1024"]
+        quality: ["low", "high"]
     quality:
       enabled: false
       judge_model: "gpt-4o"
@@ -41,7 +46,11 @@ video_models:
     smoke: true
     load:
       concurrency: 1
-      max_requests: 3
+      max_requests: 2
+      # Parameter matrix: auto-generates combinations
+      matrix:
+        duration: ["5s", "10s"]
+        resolution: ["720p", "1080p"]
 
 report:
   output_dir: "eval-results"

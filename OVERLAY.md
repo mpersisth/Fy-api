@@ -210,6 +210,16 @@
 - **行为**：后端默认按 AWS Bedrock Claude Messages 当前支持的 beta token 做白名单，并保留已有前端 “AWS Bedrock Claude 兼容模板” 的核心映射语义；渠道级 header override 仍先执行，随后 Bedrock adaptor 做最后兜底过滤。客户端 body 自带的 `anthropic_beta` 不被信任，统一由过滤后的 header 重建；`output_config` 暂按 Bedrock 不兼容字段在 AWS 边界删除。
 - **冲突风险**：低（AWS adaptor 局部新增 helper；若 upstream 后续实现 Bedrock beta 白名单或官方支持 `output_config`，合并时对齐官方支持列表即可）
 
+### B-17 [monitoring] Prometheus metrics overlay
+- **新增文件**：
+  - `middleware/prometheus_overlay.go`（Prometheus histogram/counter 定义 + Gin middleware + TTFT ResponseWriter wrapper）
+  - `router/prometheus_overlay.go`（`/metrics` 端点注册 + middleware 挂载，受 `PROMETHEUS_METRICS=1` 环境变量控制）
+  - `docs/prometheus-monitoring.md`（部署文档：Prometheus + Grafana + AlertManager 接入指南）
+- **修改文件**：`router/main.go`（1 行：`SetPrometheusRouter(router)` 调用）
+- **指标**：`fy_relay_requests_total`, `fy_relay_errors_total`, `fy_relay_duration_seconds`, `fy_relay_ttft_seconds`, `fy_image_duration_seconds`, `fy_relay_retries_total`
+- **冲突风险**：极低（新增文件 + main.go 1 行注册；upstream 不太可能在同一位置加同名函数）
+- **Merge 策略**：若 upstream 未来自己加 Prometheus 支持，评估是否迁移到 upstream 实现
+
 ---
 
 ## 前端定制

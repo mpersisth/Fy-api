@@ -1,0 +1,43 @@
+# fy_image_conformance sample config
+# Copy to image-conformance.local.yaml and fill in real values
+
+gateway:
+  base_url: ${FY_BASE_URL:-http://localhost:3000}
+  user_token: ${FY_USER_TOKEN}
+  channels:
+    - name: "supplier-A"
+      pin_channel_id: 30
+    - name: "supplier-B"
+      pin_channel_id: 31
+
+# If model.name is set, test that specific model.
+# If omitted or set to "auto", run probe to detect supported models first.
+model:
+  name: "gpt-image-1"
+  supported_sizes: ["1024x1024", "1536x1024", "1024x1536"]
+  supported_qualities: ["low", "medium", "high"]
+  supported_formats: ["png", "webp", "jpeg"]
+  supports_n_gt_1: true
+  max_n: 4
+  supports_background: true
+  default_prompt: "a red apple on a white wooden table, studio lighting"
+
+suites:
+  api_compat: true
+  output_valid: true
+  prompt_follow:
+    enabled: false          # requires VLM judge, costs extra
+    judge_model: "gpt-4o"
+    # judge_base_url: ""    # defaults to gateway.base_url
+    # judge_token: ""       # defaults to gateway.user_token
+    sample_count: 5
+  perf:
+    enabled: true
+    concurrency_per_channel: 2
+    duration_sec: 60
+    request_timeout_sec: 300
+    warmup_requests: 1
+  safety: true
+
+export:
+  output_dir: "image-conformance-results"

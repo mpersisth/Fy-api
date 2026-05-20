@@ -22,6 +22,8 @@ quality.local.yaml
 quality-results/
 .cache-quality/
 loadtest.local.yaml
+image-loadtest.local.yaml
+image-loadtest-results/
 
 # Report output
 reports/

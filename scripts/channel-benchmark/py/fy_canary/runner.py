@@ -317,7 +317,7 @@ class CanaryRunner:
     async def _sample_n(self, client: CanaryClient, row: PromptRow, n: int) -> list[str]:
         """Concurrently fetch N completions for one prompt."""
         max_tokens = row.max_tokens if row.max_tokens is not None else 200
-        temperature = row.temperature if row.temperature is not None else 1.0
+        temperature = row.temperature if row.temperature else None
         tasks = [
             client.complete(
                 model=self.cfg.source.model,

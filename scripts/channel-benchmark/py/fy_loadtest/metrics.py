@@ -56,6 +56,20 @@ class LevelAggregate:
     avg_completion_tokens: float = 0.0
     avg_cached_tokens: float = 0.0
 
+    # Rate metrics (per-minute)
+    rpm: float = 0.0
+    input_tpm: float = 0.0
+    output_tpm: float = 0.0
+    total_tpm: float = 0.0
+
+    # Error categorization
+    errors_429: int = 0
+    errors_5xx: int = 0
+    errors_timeout: int = 0
+    error_rate_429_pct: float = 0.0
+    error_rate_5xx_pct: float = 0.0
+    error_rate_timeout_pct: float = 0.0
+
     goodput_req_per_s: float | None = None  # None = no SLO configured
     error_breakdown: dict[str, int] = field(default_factory=dict)
 
@@ -137,10 +151,25 @@ def aggregate_level(
     per_req_tps = [r.tokens_per_sec() for r in ok if r.tokens_per_sec() > 0]
 
     errors: dict[str, int] = {}
+    n_429 = 0
+    n_5xx = 0
+    n_timeout = 0
     for r in results:
         if not r.success:
             sig = r.error or "unknown error"
             errors[sig] = errors.get(sig, 0) + 1
+            if r.http_status == 429:
+                n_429 += 1
+            elif r.http_status >= 500:
+                n_5xx += 1
+            if sig.startswith("timeout:"):
+                n_timeout += 1
+
+    minutes = wall_time_s / 60.0 if wall_time_s > 0 else 0.0
+    rpm = len(ok) / minutes if minutes > 0 else 0.0
+    input_tpm = prompt_tokens_total / minutes if minutes > 0 else 0.0
+    output_tpm = completion_tokens_total / minutes if minutes > 0 else 0.0
+    total_tpm = input_tpm + output_tpm
 
     agg = LevelAggregate(
         concurrency=concurrency,
@@ -159,6 +188,16 @@ def aggregate_level(
         avg_prompt_tokens=prompt_tokens_total / len(ok) if ok else 0.0,
         avg_completion_tokens=completion_tokens_total / len(ok) if ok else 0.0,
         avg_cached_tokens=cached_tokens_total / len(ok) if ok else 0.0,
+        rpm=rpm,
+        input_tpm=input_tpm,
+        output_tpm=output_tpm,
+        total_tpm=total_tpm,
+        errors_429=n_429,
+        errors_5xx=n_5xx,
+        errors_timeout=n_timeout,
+        error_rate_429_pct=100.0 * n_429 / total if total else 0.0,
+        error_rate_5xx_pct=100.0 * n_5xx / total if total else 0.0,
+        error_rate_timeout_pct=100.0 * n_timeout / total if total else 0.0,
         error_breakdown=errors,
     )
 

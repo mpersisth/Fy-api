@@ -163,7 +163,7 @@
 - **新增文件**：
   - `controller/tnbiz_internal/health.go`（GET /api/internal/health 自检 + envelope helper）
   - `controller/tnbiz_internal/token.go`（POST /api/internal/token/create — partner 永远不可见 sk-key 明文，仅返回 token_id + masked_key + 5 分钟一次性 delivery_handle）
-  - `controller/tnbiz_internal/user.go`（POST topup / quota/adjust / refund + GET quota）
+  - `controller/tnbiz_internal/user.go`（POST topup / quota/adjust / refund / erase，PUT group，GET quota）
   - `controller/tnbiz_internal/settings.go`（POST group_ratio_override/upsert + channel_log_settings/upsert）
   - `controller/tnbiz_internal/context.go`（context helper）
   - `controller/tnbiz_internal/health_test.go`

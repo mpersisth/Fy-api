@@ -22,7 +22,7 @@
 | `model/channel_log_settings.go` | 42 | partner 维度 channel log 配置 schema |
 | `controller/tnbiz_internal/health.go` | 60 | GET /health 自检 + envelope helper |
 | `controller/tnbiz_internal/token.go` | 115 | POST /token/create（partner 永远不可见 sk-key 明文，仅返回 5min 一次性 delivery_handle） |
-| `controller/tnbiz_internal/user.go` | 191 | POST topup / quota/adjust / refund + GET quota |
+| `controller/tnbiz_internal/user.go` | 270+ | POST topup / quota/adjust / refund / erase，PUT group，GET quota |
 | `controller/tnbiz_internal/settings.go` | 89 | POST group_ratio_override/upsert + channel_log_settings/upsert |
 | `controller/tnbiz_internal/context.go` | 13 | context helper |
 | `controller/tnbiz_internal/health_test.go` | 72 | health endpoint flag-state surfacing + envelope shape |
@@ -81,6 +81,8 @@
 | GET | /api/internal/user/quota?user_id= | 查余额 |
 | POST | /api/internal/user/quota/adjust | quota saga 调整（含 saga_id） |
 | POST | /api/internal/user/refund | 退款 saga |
+| PUT | /api/internal/user/group | 客户切换渠道商后同步 Fy-api 用户分组 |
+| POST | /api/internal/user/erase | PIPL 删除 / 去标识化：软删除 Fy-api 用户 |
 | POST | /api/internal/group_ratio_override/upsert | partner 维度 group_ratio override |
 | POST | /api/internal/channel_log_settings/upsert | partner 维度 channel log 设置 |
 
@@ -149,7 +151,7 @@ SetRouter → SetInternalRouter              # B-12
 1. **MNS publisher 真实接入**：~~Phase 2A debt~~ — partner-api 侧 W3 已自行落 raw-HTTP MNS publisher/consumer（`TraceNexBiz/apps/partner-api/internal/outbox/aliyun_mns_{publisher,consumer}.go`），Fy-api 侧 `service/outbox/runner.go` 仍是 NoopPublisher。Fy-api 这边什么时候真接由产品决定（partner-api 已能独立 publish 到 MNS，Fy-api outbox 仍可保持 noop / shadow 模式）。
 2. **internal_idempotency cleanup cron**：仍未挂上后台 leader-only 调度（review §11 LOW）。partner-api 侧已用 Redis SETNX leader（`pkg/leader/redis.go`），Fy-api 这边可参考同 pattern 把 `CleanupExpiredIdempotency` 接到 `subscription_reset_task.go` 启动期 cron 框架。
 3. **CSPRNG keystore secret rotation Pub/Sub** + admin endpoint `/api/admin/internal/keys/rotate`：本 PR 仅落 model + create 函数，rotate API 留给运维实际需要时再加。
-4. **`/user/group` 与 `/user/erase` handler 缺失**：partner-api 侧 `fyapi.Client.UpdateUserGroup` / `EraseUser` 因 Fy-api 端没有对应 handler 而返回非 retryable "not yet implemented" 错误（client_test.go::TestUpdateUserGroup_NotImplemented / TestEraseUser_NotImplemented）。`/user/erase` 是 PIPL §47 路径，Fy-api 这边需要补一个 handler；`/user/group` 由 customer transfer 流程触发。两者建议下一个 overlay PR 解决。
+4. **`/user/group` 与 `/user/erase` handler 已补齐（2026-05-19）**：`/user/group` 更新 `users.group` 并刷新 group 缓存；`/user/erase` 走 Fy-api 现有软删除，保留用量/账单/审计历史，供 TraceNexBiz PIPL 删除流程调用。
 5. **Spec drift（partner-api 侧已记录）**：
    - `/user/refund`（Fy-api router）vs `/user/deduct`（integration-design §2.2.3 文本）—— 以 Fy-api router 为准
    - `quota` 字段（Fy-api 期望）vs `amount` 字段（spec 文本）—— 以 Fy-api 为准
@@ -162,7 +164,7 @@ partner-api 侧（`~/Projects/apiGateway/TraceNexBiz`）已落以下与本 overl
 
 | 文件 | 用途 |
 |---|---|
-| `apps/partner-api/internal/infra/fyapi/client.go` | HMAC 4 元组 + 5 个真实方法（TopupCustomer/RefundCustomer/GetUserQuota/TokenCreate/GroupRatioOverrideUpsert）+ 2 stub（UpdateUserGroup/EraseUser，等 Fy-api handler） |
+| `apps/partner-api/internal/infra/fyapi/client.go` | HMAC 4 元组 + 7 个真实方法（TopupCustomer/RefundCustomer/GetUserQuota/TokenCreate/GroupRatioOverrideUpsert/UpdateUserGroup/EraseUser） |
 | `apps/partner-api/internal/infra/fyapi/client_test.go::TestSign_FyApiParity` | partner-api 客户端 sign() 与本目录 `middleware/internal_auth.go::BuildCanonical` 字节级一致性测试（6 个 case） |
 | `apps/partner-api/internal/saga/{registry,instance,orchestrator}.go` | saga retry sweep step registry（消费 Fy-api 侧 5xx → retry，4xx → fail-fast）|
 | `apps/partner-api/internal/outbox/aliyun_mns_*.go` | 独立 MNS publisher/consumer，与 Fy-api `service/outbox/runner.go` 解耦 |

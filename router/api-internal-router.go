@@ -31,6 +31,8 @@ func SetInternalRouter(router *gin.Engine) {
 	g.GET("/user/quota", internalctl.GetQuota)
 	g.POST("/user/quota/adjust", internalctl.AdjustQuota)
 	g.POST("/user/refund", internalctl.Refund)
+	g.PUT("/user/group", internalctl.UpdateGroup)
+	g.POST("/user/erase", internalctl.EraseUser)
 	g.POST("/group_ratio_override/upsert", internalctl.UpsertGroupRatioOverride)
 	g.POST("/channel_log_settings/upsert", internalctl.UpsertChannelLogSettings)
 

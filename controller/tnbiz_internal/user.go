@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
@@ -176,6 +177,86 @@ func Refund(c *gin.Context) {
 		NewQuota:  user.Quota,
 		UsedQuota: user.UsedQuota,
 	}
+	respondJSON(c, http.StatusOK, resp)
+	persistIdem(c, http.StatusOK, resp)
+}
+
+// UpdateGroupRequest：客户切换渠道商后，同步更新 Fy-api 用户分组。
+type UpdateGroupRequest struct {
+	UserId int    `json:"user_id" binding:"required"`
+	Group  string `json:"group" binding:"required"`
+	Reason string `json:"reason"`
+}
+
+// UpdateGroup 实现 PUT /api/internal/user/group。
+func UpdateGroup(c *gin.Context) {
+	var req UpdateGroupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	req.Group = strings.TrimSpace(req.Group)
+	if req.UserId <= 0 || req.Group == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request", "user_id 和 group 必填")
+		return
+	}
+	user, ok := userExists(req.UserId)
+	if !ok {
+		respondError(c, http.StatusNotFound, "user_not_found", "用户不存在")
+		return
+	}
+	if user.Group == req.Group {
+		resp := gin.H{"user_id": user.Id, "group": user.Group}
+		respondJSON(c, http.StatusOK, resp)
+		persistIdem(c, http.StatusOK, resp)
+		return
+	}
+	if err := model.DB.Model(&model.User{}).Where("id = ?", req.UserId).Update("group", req.Group).Error; err != nil {
+		respondError(c, http.StatusInternalServerError, "update_group_failed", err.Error())
+		return
+	}
+	if common.RedisEnabled && common.RDB != nil {
+		if err := model.UpdateUserGroupCache(req.UserId, req.Group); err != nil {
+			common.SysLog("internal_update_group cache failed: " + err.Error())
+		}
+	}
+	common.SysLog(fmt.Sprintf("internal_update_group uid=%d old_group=%s new_group=%s reason=%s", req.UserId, user.Group, req.Group, req.Reason))
+	resp := gin.H{"user_id": req.UserId, "group": req.Group}
+	respondJSON(c, http.StatusOK, resp)
+	persistIdem(c, http.StatusOK, resp)
+}
+
+// EraseUserRequest：PIPL 删除 / 去标识化路径。
+type EraseUserRequest struct {
+	UserId int    `json:"user_id" binding:"required"`
+	Reason string `json:"reason"`
+}
+
+// EraseUser 实现 POST /api/internal/user/erase。
+//
+// 这里使用 Fy-api 现有软删除能力：用户不可再登录和调用，但历史用量、账单、
+// 审计日志保留，用于对账和合规留痕。TraceNexBiz 侧负责把自己的客户资料做
+// 删除 / 去标识化处理。
+func EraseUser(c *gin.Context) {
+	var req EraseUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if req.UserId <= 0 {
+		respondError(c, http.StatusBadRequest, "invalid_request", "user_id 必填")
+		return
+	}
+	if _, ok := userExists(req.UserId); !ok {
+		respondError(c, http.StatusNotFound, "user_not_found", "用户不存在或已删除")
+		return
+	}
+	if err := model.DeleteUserById(req.UserId); err != nil {
+		respondError(c, http.StatusInternalServerError, "erase_failed", err.Error())
+		return
+	}
+	common.SysLog(fmt.Sprintf("internal_erase_user uid=%d reason=%s", req.UserId, req.Reason))
+	resp := gin.H{"user_id": req.UserId, "erased": true}
 	respondJSON(c, http.StatusOK, resp)
 	persistIdem(c, http.StatusOK, resp)
 }

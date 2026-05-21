@@ -203,7 +203,10 @@ func (a *Adaptor) doTencentAIArtImageRequest(c *gin.Context, info *relaycommon.R
 		return nil, err
 	}
 
-	submitBody, err := a.tencentAIArtPost(c, info, tencentAIArtSubmitAction, body, secretID, secretKey)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), tencentAIArtPollTimeout)
+	defer cancel()
+
+	submitBody, err := a.tencentAIArtPost(ctx, c, info, tencentAIArtSubmitAction, body, secretID, secretKey)
 	if err != nil {
 		return nil, err
 	}
@@ -211,9 +214,6 @@ func (a *Adaptor) doTencentAIArtImageRequest(c *gin.Context, info *relaycommon.R
 	if err != nil {
 		return nil, err
 	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), tencentAIArtPollTimeout)
-	defer cancel()
 
 	ticker := time.NewTicker(tencentAIArtPollInterval)
 	defer ticker.Stop()
@@ -224,7 +224,7 @@ func (a *Adaptor) doTencentAIArtImageRequest(c *gin.Context, info *relaycommon.R
 		if err != nil {
 			return nil, err
 		}
-		resultBody, err := a.tencentAIArtPost(c, info, tencentAIArtDescribeAction, describeBody, secretID, secretKey)
+		resultBody, err := a.tencentAIArtPost(ctx, c, info, tencentAIArtDescribeAction, describeBody, secretID, secretKey)
 		if err != nil {
 			return nil, err
 		}
@@ -247,8 +247,8 @@ func (a *Adaptor) doTencentAIArtImageRequest(c *gin.Context, info *relaycommon.R
 	}
 }
 
-func (a *Adaptor) tencentAIArtPost(c *gin.Context, info *relaycommon.RelayInfo, action string, body []byte, secretID, secretKey string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, strings.TrimRight(info.ChannelBaseUrl, "/")+"/", bytes.NewReader(body))
+func (a *Adaptor) tencentAIArtPost(ctx context.Context, c *gin.Context, info *relaycommon.RelayInfo, action string, body []byte, secretID, secretKey string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(info.ChannelBaseUrl, "/")+"/", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +368,13 @@ func writeTencentAIArtImageResponse(c *gin.Context, resp *http.Response, info *r
 		if image == "" {
 			continue
 		}
-		if wantsBase64 || !strings.HasPrefix(image, "http") {
+		if wantsBase64 && strings.HasPrefix(image, "http") {
+			_, b64, err := service.GetImageFromUrl(image)
+			if err != nil {
+				return nil, types.NewOpenAIError(fmt.Errorf("download Tencent AIArt image failed: %w", err), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			}
+			imageResponse.Data = append(imageResponse.Data, dto.ImageData{B64Json: b64})
+		} else if wantsBase64 || !strings.HasPrefix(image, "http") {
 			imageResponse.Data = append(imageResponse.Data, dto.ImageData{B64Json: image})
 		} else {
 			imageResponse.Data = append(imageResponse.Data, dto.ImageData{Url: image})

@@ -20,6 +20,14 @@ gateway:
   # wouldn't say anything about any single channel.
   # pin_channel_id: 8
 
+  # Multi-channel comparison: list channels to test sequentially and compare.
+  # Each channel needs a name and pin_channel_id (admin token required).
+  # channels:
+  #   - name: "Anthropic Direct"
+  #     pin_channel_id: 26
+  #   - name: "AWS Bedrock"
+  #     pin_channel_id: 30
+
 load:
   model: gpt-4o-mini
   prompt: "Reply with the single word: pong."
@@ -42,5 +50,5 @@ slo:
   e2e_p95_ms: null
 
 export:
-  formats: [json, csv, markdown]
+  formats: [json, csv, markdown, pdf]
   output_dir: "loadtest-results"

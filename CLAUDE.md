@@ -330,3 +330,23 @@ See `scripts/channel-benchmark/README.md` for the top-level navigation and per-t
 ### Rule 7: Billing Expression System — Read `pkg/billingexpr/expr.md`
 
 When working on tiered/dynamic billing (expression-based pricing), you MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language (variables, functions, examples), full system architecture (editor → storage → pre-consume → settlement → log display), token normalization rules (`p`/`c` auto-exclusion), quota conversion, and expression versioning. All code changes to the billing expression system must follow the patterns described in that document.
+
+### Rule 8: Versioning, Branches, and Docker Tags
+
+Use the TraceNex release version format `x.x.x-tracenex` for shipped builds and Docker images.
+
+**Version numbering:**
+- Version numbers start at 1, not 0. The first release line starts at `1.1.1-tracenex`
+- The middle number is the weekly release train. Each new week increments it and resets the patch number to 1: week 1 → `1.1.1-tracenex`, week 2 → `1.2.1-tracenex`, week 3 → `1.3.1-tracenex`
+- The last number increments for every release within the same week, including bugfix releases. Example: if week 2 ships three times, the third build is `1.2.3-tracenex`
+- Do not reuse a released version tag. If an image or release has been pushed, the next shipped build must increment the patch number
+
+**Branching rules:**
+- New feature → branch named `feature/xxxx`
+- Bugfix → branch named `bugfix/xxxx`
+- Keep `xxxx` short, lowercase, and descriptive; prefer hyphen-separated names, e.g. `feature/mns-refund-wiring` or `bugfix/idempotency-replay`
+
+**Docker image tagging:**
+- Every Docker image build intended for testing, staging, or production must have an explicit version tag
+- Release images must use the exact TraceNex version tag, e.g. `1.2.3-tracenex`
+- Do not push only `latest`. `latest` may be added as an extra convenience tag, but never as the only tag

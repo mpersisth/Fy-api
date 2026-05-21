@@ -46,6 +46,11 @@ TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 > - **下游消费方**：兄弟项目 [TraceNexBiz](../TraceNexBiz/)（渠道分销 SaaS，产品品牌 "TraceNex Partner"）通过 `/api/internal/*` 路由消费 Fy-api，详见 [`OVERLAY.md`](./OVERLAY.md) 的 B-12..B-18 条目 + [`OVERLAY-TNBIZ-HANDOFF.md`](./OVERLAY-TNBIZ-HANDOFF.md)。任何改动 `middleware/internal_auth.go` 或 `controller/tnbiz_internal/*.go` 都是契约变更——partner-api 侧有字节级 parity 测试守着。
 > - 严格遵守 AGPLv3 合规：LICENSE、版权头、上游 attribution **完整保留**。TraceNex 专属改动的详细清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
+> [!IMPORTANT]
+> - 本项目仅面向合法授权的 AI API 网关、组织鉴权、多模型管理、用量统计、成本核算和私有化部署场景。
+> - 使用者必须合法取得上游 API Key、账号、模型服务和接口权限，并遵守上游服务条款及适用法律法规。
+> - 面向公众提供生成式 AI 服务时，使用者应自行完成所在司法辖区要求的备案、许可、内容安全、实名、日志留存、税务、支付和上游授权等合规义务。
+
 ---
 
 ## ✨ TraceNex 在 new-api 之上增加了什么
@@ -115,6 +120,11 @@ bun run build
 ## 🚢 生产环境部署
 
 TraceNex 附带**经过生产验证的部署工具链**，在阿里云单机（ECS 16c32g）和 Kubernetes（ACK）两种拓扑上都有完整 runbook。单机部署有端到端验证；Kubernetes 侧使用标准 Helm-style values。
+
+> [!WARNING]
+> 将本项目作为面向公众的生成式 AI 服务或 API 转售服务运营前，应先完成备案、许可、内容安全、实名、日志留存、税务、支付和上游授权等合规义务。
+
+更多通用部署方式可参考上游 [部署指南](https://docs.newapi.pro/zh/docs/installation)。
 
 ### 支持的拓扑
 
@@ -284,6 +294,13 @@ git log HEAD..upstream/main --oneline | head -30
 | [`docs/deploy/test-podman.md`](./docs/deploy/test-podman.md) | QA/staging 的 Podman 部署 |
 
 跨项目的对比分析、DB 迁移 runbook、历史 bug 复盘等文档（横跨多个 sibling 项目如历史 fork、纯上游副本）位于 workspace 父目录的 `~/Projects/apiGateway/docs/` 下，不在本仓库内部。
+
+### 辅助工具
+
+| Project | Description |
+|------|------|
+| [new-api-key-tool](https://github.com/Calcium-Ion/new-api-key-tool) | Key quota query tool |
+| [new-api-horizon](https://github.com/Calcium-Ion/new-api-horizon) | New API high-performance optimized version |
 
 ---
 

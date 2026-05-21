@@ -1,0 +1,53 @@
+# Fy-api image load-test example config
+#
+# Runs real /v1/images/generations traffic through pinned channels.
+# Intended for models like gpt-image-2 where chat-completions load tests do
+# not apply.
+#
+# Usage:
+#   fy-image-loadtest -c image-loadtest.yaml
+#   fy-image-loadtest -c image-loadtest.yaml --dry-run
+#
+# Stop with Ctrl+C. The runner will finish in-flight requests, print a final
+# summary, and write reports.
+
+gateway:
+  base_url: "${FY_API_URL:-http://localhost:3000}"
+  user_token: "${FY_API_USER_TOKEN:-sk-placeholder}"
+  channels:
+    - name: "channel-28"
+      pin_channel_id: 28
+      concurrency: 2
+    - name: "channel-41"
+      pin_channel_id: 41
+      concurrency: 2
+    - name: "channel-42"
+      pin_channel_id: 42
+      concurrency: 2
+    - name: "channel-43"
+      pin_channel_id: 43
+      concurrency: 2
+
+image:
+  model: "gpt-image-2"
+  prompt: "A clean product photo of a ceramic mug on a white seamless background."
+  size: "1024x1024"
+  quality: "low"
+  n: 1
+  response_format: "b64_json"
+
+  # Default concurrency per channel. Any gateway.channels[].concurrency value
+  # overrides this for that specific channel.
+  concurrency_per_channel: 2
+  request_timeout_sec: 300
+  report_interval_sec: 60
+  warmup_requests: 0
+  continuous: true
+  # duration_sec: 1800
+
+  # Optional for bounded runs:
+  # max_requests_per_channel: 20
+
+export:
+  formats: [json, csv, markdown]
+  output_dir: "image-loadtest-results"

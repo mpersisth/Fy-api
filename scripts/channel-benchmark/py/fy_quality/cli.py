@@ -26,8 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="Validate config only")
     p.add_argument(
         "--formats",
-        default="json,csv,markdown",
-        help="Comma-separated: json,csv,markdown",
+        default="json,csv,markdown,pdf",
+        help="Comma-separated: json,csv,markdown,pdf",
     )
     p.add_argument("-V", "--version", action="version", version=f"fy-quality {__version__}")
     return p

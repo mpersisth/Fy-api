@@ -123,7 +123,17 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// ValidateMultipartDirect 负责解析并将原始 TaskSubmitReq 存入 context
-	return relaycommon.ValidateMultipartDirect(c, info)
+	if taskErr = relaycommon.ValidateMultipartDirect(c, info); taskErr != nil {
+		return taskErr
+	}
+	taskReq, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	if _, err = a.convertToAliRequest(info, taskReq); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	return nil
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -197,6 +207,11 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 			"720P":  1,
 			"1080P": 1 / 0.6,
 		},
+		// Fy-api overlay: wan2.6 r2v shares the same resolution pricing ladder as i2v.
+		"wan2.6-r2v": {
+			"720P":  1,
+			"1080P": 1 / 0.6,
+		},
 		"wan2.5-t2v-preview": {
 			"480P":  1,
 			"720P":  2,
@@ -252,11 +267,30 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 	return otherRatios, nil
 }
 
-func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq) (*AliVideoRequest, error) {
-	upstreamModel := req.Model
-	if info.IsModelMapped {
-		upstreamModel = info.UpstreamModelName
+func validateWan26Resolution(model, resolution string) error {
+	if !strings.HasPrefix(model, "wan2.6") || resolution == "" {
+		return nil
 	}
+	normalized := strings.ToUpper(resolution)
+	if !strings.HasSuffix(normalized, "P") {
+		normalized += "P"
+	}
+	supported := map[string]bool{"720P": true, "1080P": true}
+	if !supported[normalized] {
+		return fmt.Errorf("不支持的分辨率：%s，支持的分辨率：720P、1080P", resolution)
+	}
+	return nil
+}
+
+func effectiveTaskModel(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq) string {
+	if info != nil && info.ChannelMeta != nil && info.IsModelMapped && info.UpstreamModelName != "" {
+		return info.UpstreamModelName
+	}
+	return req.Model
+}
+
+func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq) (*AliVideoRequest, error) {
+	upstreamModel := effectiveTaskModel(info, req)
 	aliReq := &AliVideoRequest{
 		Model: upstreamModel,
 		Input: AliVideoInput{
@@ -272,7 +306,7 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 	// 处理分辨率映射
 	if req.Size != "" {
 		// text to video size must be contained *
-		if strings.Contains(req.Model, "t2v") && !strings.Contains(req.Size, "*") {
+		if strings.Contains(upstreamModel, "t2v") && !strings.Contains(req.Size, "*") {
 			return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920*1080")
 		}
 		if strings.Contains(req.Size, "*") {
@@ -287,22 +321,22 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		}
 	} else {
 		// 根据模型设置默认分辨率
-		if strings.Contains(req.Model, "t2v") { // image to video
-			if strings.HasPrefix(req.Model, "wan2.5") {
+		if strings.Contains(upstreamModel, "t2v") { // image to video
+			if strings.HasPrefix(upstreamModel, "wan2.5") {
 				aliReq.Parameters.Size = "1920*1080"
-			} else if strings.HasPrefix(req.Model, "wan2.2") {
+			} else if strings.HasPrefix(upstreamModel, "wan2.2") {
 				aliReq.Parameters.Size = "1920*1080"
 			} else {
 				aliReq.Parameters.Size = "1280*720"
 			}
 		} else {
-			if strings.HasPrefix(req.Model, "wan2.6") {
-				aliReq.Parameters.Resolution = "1080P"
-			} else if strings.HasPrefix(req.Model, "wan2.5") {
-				aliReq.Parameters.Resolution = "1080P"
-			} else if strings.HasPrefix(req.Model, "wan2.2-i2v-flash") {
+			if strings.HasPrefix(upstreamModel, "wan2.6") {
 				aliReq.Parameters.Resolution = "720P"
-			} else if strings.HasPrefix(req.Model, "wan2.2-i2v-plus") {
+			} else if strings.HasPrefix(upstreamModel, "wan2.5") {
+				aliReq.Parameters.Resolution = "1080P"
+			} else if strings.HasPrefix(upstreamModel, "wan2.2-i2v-flash") {
+				aliReq.Parameters.Resolution = "720P"
+			} else if strings.HasPrefix(upstreamModel, "wan2.2-i2v-plus") {
 				aliReq.Parameters.Resolution = "1080P"
 			} else {
 				aliReq.Parameters.Resolution = "720P"
@@ -338,6 +372,24 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 
 	if aliReq.Model != upstreamModel {
 		return nil, errors.New("can't change model with metadata")
+	}
+
+	// Fy-api overlay: validate the final wan2.6 resolution after metadata is applied.
+	if err := validateWan26Resolution(upstreamModel, aliReq.Parameters.Resolution); err != nil {
+		return nil, err
+	}
+
+	// Fy-api overlay: keep r2v frame fields after metadata unmarshal to avoid overwrite by generic mapping.
+	// r2v 首尾帧处理（放在 metadata unmarshal 之后，防止被通用反序列化覆盖）
+	if strings.Contains(upstreamModel, "r2v") {
+		aliReq.Input.FirstFrameURL = req.InputReference
+		aliReq.Input.ImgURL = ""
+
+		if req.Metadata != nil {
+			if lastFrameURL, ok := req.Metadata["last_frame_url"].(string); ok && lastFrameURL != "" {
+				aliReq.Input.LastFrameURL = lastFrameURL
+			}
+		}
 	}
 
 	return aliReq, nil
@@ -484,6 +536,33 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	}
 
 	return &taskResult, nil
+}
+
+func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, _ *relaycommon.TaskInfo) int {
+	if task == nil || task.PrivateData.BillingContext == nil {
+		return 0
+	}
+	var aliResp AliVideoResponse
+	if err := common.Unmarshal(task.Data, &aliResp); err != nil {
+		return 0
+	}
+	if aliResp.Usage == nil || aliResp.Usage.Duration <= 0 {
+		return 0
+	}
+	bc := task.PrivateData.BillingContext
+	if bc.ModelRatio <= 0 || bc.GroupRatio <= 0 {
+		return 0
+	}
+
+	baseQuota := int(bc.ModelRatio / 2 * common.QuotaPerUnit * bc.GroupRatio)
+	actualQuota := float64(baseQuota) * float64(aliResp.Usage.Duration)
+	for key, ratio := range bc.OtherRatios {
+		if key == "seconds" || ratio <= 0 || ratio == 1 {
+			continue
+		}
+		actualQuota *= ratio
+	}
+	return int(actualQuota)
 }
 
 func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {

@@ -9,17 +9,10 @@ from pathlib import Path
 
 import yaml
 
-# Matches ${VAR} and ${VAR:-default}. Mirrors Go-side regex so the two
-# harnesses parse the same config the same way.
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 def _expand_env(raw: str) -> str:
-    """Replace ${VAR} / ${VAR:-default} in raw YAML text.
-
-    Comment lines (first non-whitespace char '#') are skipped so that example
-    snippets in docs don't trigger 'missing env var' errors.
-    """
     missing: list[str] = []
 
     def _resolve(line: str) -> str:
@@ -50,47 +43,47 @@ def _expand_env(raw: str) -> str:
 
 
 @dataclass
+class ChannelTarget:
+    name: str
+    pin_channel_id: int
+
+
+@dataclass
 class Gateway:
     base_url: str
-    user_token: str  # sk-... — billed to the user, mirrors Go tool
-
-    # When set, every request appends "-{pin_channel_id}" to user_token, which
-    # Fy-api parses (middleware/auth.go ~line 431) as a forced channel
-    # selection. user_token must belong to an admin — otherwise the gateway
-    # returns 403 "普通用户不支持指定渠道".
-    #
-    # None = go through the normal distributor (group + priority + weight +
-    # affinity). Recommended ON when you're load-testing one specific channel,
-    # because a model offered by N channels would otherwise be load-balanced
-    # across them and the throughput numbers wouldn't say anything about any
-    # single channel.
+    user_token: str
     pin_channel_id: int | None = None
+    channels: list[ChannelTarget] = field(default_factory=list)
+
+
+@dataclass
+class AutoRamp:
+    enabled: bool = False
+    max_concurrency: int = 256
+    stop_success_pct: float = 90.0
+    stop_rps_gain_pct: float = 5.0
+    start_concurrency: int = 1
 
 
 @dataclass
 class LoadProfile:
-    """What and how much to send."""
     model: str
+    models: list[str] = field(default_factory=list)
     prompt: str = "Reply with the single word: pong."
     max_tokens: int = 64
     temperature: float = 0.0
     stream: bool = True
 
-    # Request volume + concurrency.
     concurrency_levels: list[int] = field(default_factory=lambda: [1, 2, 5, 10, 25, 50, 100])
     requests_per_level: int = 50
     warmup_requests: int = 5
 
-    # Per-request ceiling. Lower than the load test should ever need; when we
-    # trip this, we WANT the test to record a timeout rather than hang.
     request_timeout_sec: float = 120.0
+    auto_ramp: AutoRamp = field(default_factory=AutoRamp)
 
 
 @dataclass
 class Slo:
-    """Optional latency SLOs. A request is 'good' iff every SLO is met.
-    Goodput = good_requests / wall_clock.  None = goodput not reported.
-    """
     ttft_p95_ms: float | None = None
     itl_p95_ms: float | None = None
     e2e_p95_ms: float | None = None
@@ -98,7 +91,7 @@ class Slo:
 
 @dataclass
 class ExportConfig:
-    formats: list[str] = field(default_factory=lambda: ["json", "markdown"])
+    formats: list[str] = field(default_factory=lambda: ["json", "markdown", "pdf"])
     output_dir: str = "loadtest-results"
 
 
@@ -126,19 +119,47 @@ class Config:
             raise ValueError("gateway.base_url is required")
         if not gw.get("user_token"):
             raise ValueError("gateway.user_token is required (OpenAI-compatible bearer)")
-        if not ld.get("model"):
-            raise ValueError("load.model is required")
+        models_raw = ld.get("models") or []
+        model_single = ld.get("model") or ""
+        if not model_single and not models_raw:
+            raise ValueError("load.model or load.models is required")
+
+        channels: list[ChannelTarget] = []
+        for ch in gw.get("channels") or []:
+            channels.append(ChannelTarget(
+                name=str(ch.get("name", f"channel-{ch['pin_channel_id']}")),
+                pin_channel_id=int(ch["pin_channel_id"]),
+            ))
+
+        pin = gw.get("pin_channel_id")
+        if pin is not None and not channels:
+            channels.append(ChannelTarget(
+                name=f"channel-{int(pin)}",
+                pin_channel_id=int(pin),
+            ))
+
+        all_models = list(models_raw) if models_raw else ([model_single] if model_single else [])
+        primary_model = all_models[0] if all_models else ""
+
+        ar_raw = ld.get("auto_ramp") or {}
+        auto_ramp = AutoRamp(
+            enabled=bool(ar_raw.get("enabled", False)),
+            max_concurrency=int(ar_raw.get("max_concurrency", 256)),
+            stop_success_pct=float(ar_raw.get("stop_success_pct", 90.0)),
+            stop_rps_gain_pct=float(ar_raw.get("stop_rps_gain_pct", 5.0)),
+            start_concurrency=int(ar_raw.get("start_concurrency", 1)),
+        )
 
         return cls(
             gateway=Gateway(
                 base_url=gw["base_url"],
                 user_token=gw["user_token"],
-                pin_channel_id=(
-                    int(gw["pin_channel_id"]) if gw.get("pin_channel_id") is not None else None
-                ),
+                pin_channel_id=int(pin) if pin is not None else None,
+                channels=channels,
             ),
             load=LoadProfile(
-                model=ld["model"],
+                model=primary_model,
+                models=all_models,
                 prompt=ld.get("prompt", LoadProfile.prompt),
                 max_tokens=int(ld.get("max_tokens", 64)),
                 temperature=float(ld.get("temperature", 0.0)),
@@ -147,6 +168,7 @@ class Config:
                 requests_per_level=int(ld.get("requests_per_level", 50)),
                 warmup_requests=int(ld.get("warmup_requests", 5)),
                 request_timeout_sec=float(ld.get("request_timeout_sec", 120.0)),
+                auto_ramp=auto_ramp,
             ),
             slo=Slo(
                 ttft_p95_ms=slo.get("ttft_p95_ms"),
@@ -154,16 +176,20 @@ class Config:
                 e2e_p95_ms=slo.get("e2e_p95_ms"),
             ),
             export=ExportConfig(
-                formats=list(exp.get("formats", ["json", "markdown"])),
+                formats=list(exp.get("formats", ["json", "markdown", "pdf"])),
                 output_dir=str(exp.get("output_dir", "loadtest-results")),
             ),
         )
 
+    _VALID_FORMATS = {"json", "csv", "markdown", "pdf"}
+
     def validate(self) -> None:
-        if not self.load.concurrency_levels:
-            raise ValueError("load.concurrency_levels must have at least one entry")
+        if not self.load.auto_ramp.enabled and not self.load.concurrency_levels:
+            raise ValueError("load.concurrency_levels must have at least one entry (or enable auto_ramp)")
         if any(c <= 0 for c in self.load.concurrency_levels):
             raise ValueError(f"load.concurrency_levels must be positive: {self.load.concurrency_levels}")
+        if not self.load.models:
+            raise ValueError("load.model or load.models must specify at least one model")
         if self.load.requests_per_level <= 0:
             raise ValueError("load.requests_per_level must be > 0")
         if self.load.warmup_requests < 0:
@@ -172,3 +198,13 @@ class Config:
             raise ValueError(
                 f"gateway.pin_channel_id must be > 0, got {self.gateway.pin_channel_id}"
             )
+        for ch in self.gateway.channels:
+            if ch.pin_channel_id <= 0:
+                raise ValueError(
+                    f"channel {ch.name!r}: pin_channel_id must be > 0, got {ch.pin_channel_id}"
+                )
+        bad = set(self.export.formats) - self._VALID_FORMATS
+        if bad:
+            raise ValueError(f"unknown export formats: {sorted(bad)} (valid: {sorted(self._VALID_FORMATS)})")
+        if not self.export.formats:
+            raise ValueError("export.formats must have at least one entry")

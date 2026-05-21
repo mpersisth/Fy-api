@@ -117,6 +117,34 @@ groups:
         for: 1m
         labels: { severity: critical, team: sre }
 
-  # ─── 业务指标(从 SLS 补充,这里只占位说明)───────────────
-  # TraceNex 目前没有原生 /metrics,业务级别的 429 / 5xx /
-  # 客户消耗量等指标建议在 SLS 里配告警,不走 Prometheus
+  - name: fy-api-cache-affinity
+    interval: 30s
+    rules:
+      # 缓存命中率过低（按渠道，15min 窗口）
+      - alert: LowCacheHitRate
+        expr: |
+          sum(rate(fy_relay_cached_tokens_total[15m])) by (channel_id)
+          / sum(rate(fy_relay_prompt_tokens_total[15m])) by (channel_id) < 0.2
+        for: 10m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "ch#{{ $labels.channel_id }} 缓存命中率 < 20% 持续 10min"
+          description: "可能原因：亲和性 TTL 过短、渠道切换频繁、或客户端未传 cache_control"
+
+      # 亲和性命中率过低
+      - alert: LowAffinityHitRate
+        expr: |
+          sum(rate(fy_affinity_lookups_total{outcome="hit"}[15m]))
+          / sum(rate(fy_affinity_lookups_total[15m])) < 0.5
+        for: 10m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "亲和性命中率 < 50%，可能 TTL 过短或规则未覆盖"
+
+      # 亲和性缓存条目接近上限
+      - alert: AffinityEntriesHigh
+        expr: fy_affinity_active_entries > 80000
+        for: 5m
+        labels: { severity: warning, team: sre }
+        annotations:
+          summary: "{{ $labels.rule_name }} 亲和性缓存条目 > 80K（上限 100K），考虑扩容或缩短 TTL"

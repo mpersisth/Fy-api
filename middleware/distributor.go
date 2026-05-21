@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/prommetrics"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -125,6 +126,15 @@ func Distribute() func(c *gin.Context) {
 							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
 						}
 					}
+				}
+
+				// Fy-api overlay: record affinity lookup outcome for Prometheus
+				if channel != nil {
+					if statsCtx, ok := service.GetChannelAffinityStatsContext(c); ok {
+						prommetrics.RecordAffinityLookup(modelRequest.Model, statsCtx.RuleName, "hit")
+					}
+				} else if statsCtx, ok := service.GetChannelAffinityStatsContext(c); ok {
+					prommetrics.RecordAffinityLookup(modelRequest.Model, statsCtx.RuleName, "miss")
 				}
 
 				if channel == nil {

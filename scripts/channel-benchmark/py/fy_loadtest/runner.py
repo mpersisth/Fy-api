@@ -269,14 +269,28 @@ class Ramp:
         parts = [
             f"ok={a.ok}/{a.total}",
             f"succ={a.success_rate_pct:.1f}%",
+            f"rpm={a.rpm:.1f}",
             f"e2e_p50={a.e2e.p50_ms:.0f}ms",
             f"e2e_p95={a.e2e.p95_ms:.0f}ms",
         ]
         if a.ttft.samples:
             parts.append(f"ttft_p50={a.ttft.p50_ms:.0f}ms")
             parts.append(f"ttft_p95={a.ttft.p95_ms:.0f}ms")
+        if a.tpot.samples:
+            parts.append(f"tpot_p50={a.tpot.p50_ms:.0f}ms")
         parts.append(f"rps={a.throughput_req_per_s:.2f}")
         parts.append(f"tok/s={a.aggregate_tok_per_s:.1f}")
+        parts.append(f"in_tpm={a.input_tpm:.0f}")
+        parts.append(f"out_tpm={a.output_tpm:.0f}")
+        if a.errors_429 or a.errors_5xx or a.errors_timeout:
+            err_parts = []
+            if a.errors_429:
+                err_parts.append(f"429={a.errors_429}({a.error_rate_429_pct:.1f}%)")
+            if a.errors_5xx:
+                err_parts.append(f"5xx={a.errors_5xx}({a.error_rate_5xx_pct:.1f}%)")
+            if a.errors_timeout:
+                err_parts.append(f"timeout={a.errors_timeout}({a.error_rate_timeout_pct:.1f}%)")
+            parts.append(" ".join(err_parts))
         if a.goodput_req_per_s is not None:
             parts.append(f"goodput={a.goodput_req_per_s:.2f}")
         color = "green" if a.failed == 0 else ("yellow" if a.success_rate_pct >= 95 else "red")

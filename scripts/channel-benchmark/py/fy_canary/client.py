@@ -47,16 +47,17 @@ class CanaryClient:
         model: str,
         prompt: str,
         max_tokens: int = 200,
-        temperature: float = 1.0,
+        temperature: float | None = 1.0,
         seed: int | None = None,
     ) -> str:
         body: dict = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "stream": False,
         }
+        if temperature is not None:
+            body["temperature"] = temperature
         if seed is not None:
             body["seed"] = seed
         try:

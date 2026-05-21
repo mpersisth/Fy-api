@@ -151,3 +151,62 @@ artifacts it points at.
 | Card | What broke | Regression artifacts shipped |
 |---|---|---|
 | [`2026-05-11-long-reasoning-timeout.md`](./incidents/2026-05-11-long-reasoning-timeout.md) | aime25 / gpqa-diamond on `kimi-k2-thinking` cut at 600s by Fy-api `RELAY_TIMEOUT`; nginx 900s couldn't save it | `go/ -long-thinking` flag + preset; `py/loadtest.long-thinking.yaml`; `py/fy_loadtest/fixtures/` long-reasoning prompts; `py/tests_conformance/test_long_reasoning_timeout.py` |
+---
+
+## 综合压测提示词模板
+
+以下模板用于指导 AI 助手执行完整的渠道质量评估流程。使用时替换 `xxx` 为实际值即可。
+
+```
+对 Fy-api 网关进行综合通道质量评估，生成完整测试报告markdown文件。
+
+测试目标
+  - 网关地址: https://api-test.tracenex.cn/
+  - admin Token: sk-xxx
+  - 测试模型: xxx
+  - 渠道: xxx
+
+进行以下四轮测试
+  1. 存活性 + TTFT 冒烟（go 工具）
+     在 scripts/channel-benchmark/go/ 下编译运行，确认目标渠道基本可用。
+
+  2. 并发压测（fy-loadtest）
+     在 scripts/channel-benchmark/py/ 下创建 loadtest.yaml 配置并执行：
+     - 并发阶梯: 1, 10, 30, 50, 100
+     - 每级请求数: 30
+     - stream: true
+     - 导出格式: markdown
+     重点关注: RPM, input/output/total TPM, TTFT, TPOT, E2E 延迟, 429/5xx/timeout 错误率。
+
+  3. 质量评估（fy-quality）
+     跑一轮质量评分，确认模型回答准确性没退化。
+
+  4. 金丝雀检测（fy-canary）
+     检查是否有已存 baseline：
+     - 如果没有，先执行 `fy-canary baseline` 为每个测试模型建立基准
+     - 然后执行 `fy-canary audit` 确认没被偷换模型
+     - 两个模型分别建立和审计（需要切换 canary.yaml 中的 source.name 和 model）
+
+输出要求
+
+  汇总一份中文 markdown 报告，严格按以下顺序组织：
+  1. 总体结论（报告第一段）
+     - 第一句话直接给出判定：渠道可用/不可用
+     - 紧接着然后再用表格展示四轮测试的结果摘要一句话
+     - 然后说明：哪个模型适合高并发、哪个延迟更低
+
+  2. 优化问题（按优先级 P0→P3 排序）
+
+  3. 工具选型说明
+     - 每个工具是否使用，未使用给出原因
+
+  4. 存活性 + TTFT 冒烟详细分析
+  5. 质量评估详细分析
+  6. 金丝雀检测详细分析
+  7. 并发压测详细分析
+     - 各并发级别的 RPM / TPM / 延迟 / 错误率对比表
+     - 瓶颈并发点分析
+     - 是否触发限流（429）、是否有服务端错误（5xx）
+  8. 原始数据索引
+     - 保留原始 JSON 路径供后续分析
+```

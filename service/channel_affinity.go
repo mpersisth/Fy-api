@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/cachex"
+	"github.com/QuantumNous/new-api/pkg/prommetrics"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -968,4 +969,12 @@ func channelAffinityUsageCacheStatsLock(key string) *sync.Mutex {
 	_, _ = h.Write([]byte(key))
 	idx := h.Sum32() % uint32(len(channelAffinityUsageCacheStatsLocks))
 	return &channelAffinityUsageCacheStatsLocks[idx]
+}
+
+// Fy-api overlay: register Prometheus collector for affinity active entries gauge.
+func init() {
+	prommetrics.RegisterAffinityStatsProvider(func() map[string]int {
+		stats := GetChannelAffinityCacheStats()
+		return stats.ByRuleName
+	})
 }

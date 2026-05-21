@@ -210,13 +210,25 @@
 - **行为**：后端默认按 AWS Bedrock Claude Messages 当前支持的 beta token 做白名单，并保留已有前端 “AWS Bedrock Claude 兼容模板” 的核心映射语义；渠道级 header override 仍先执行，随后 Bedrock adaptor 做最后兜底过滤。客户端 body 自带的 `anthropic_beta` 不被信任，统一由过滤后的 header 重建；`output_config` 暂按 Bedrock 不兼容字段在 AWS 边界删除。
 - **冲突风险**：低（AWS adaptor 局部新增 helper；若 upstream 后续实现 Bedrock beta 白名单或官方支持 `output_config`，合并时对齐官方支持列表即可）
 
-### B-17 [monitoring] Prometheus metrics overlay
+### B-17 [aws/bedrock] 不支持的 tool type 过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_tools_filter.go`（Bedrock 支持的 tool type 白名单 + pass-through / struct 两条路径的过滤函数）
+  - `relay/channel/aws/bedrock_tools_filter_test.go`（覆盖：保留支持类型、删除不支持类型、全部不支持时删除 tools 字段、无 type 字段保留）
+- **修改文件**：
+  - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +1 行调用 `filterBedrockToolsRaw`）
+  - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +1 行调用 `filterBedrockToolsFromStruct`）
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
+- **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
+- **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
+
+### B-18 [monitoring] Prometheus metrics overlay
 - **新增文件**：
   - `middleware/prometheus_overlay.go`（Prometheus histogram/counter 定义 + Gin middleware + TTFT ResponseWriter wrapper）
   - `router/prometheus_overlay.go`（`/metrics` 端点注册 + middleware 挂载，受 `PROMETHEUS_METRICS=1` 环境变量控制）
   - `docs/prometheus-monitoring.md`（部署文档：Prometheus + Grafana + AlertManager 接入指南）
-- **修改文件**：`router/main.go`（1 行：`SetPrometheusRouter(router)` 调用）
-- **指标**：`fy_relay_requests_total`, `fy_relay_errors_total`, `fy_relay_duration_seconds`, `fy_relay_ttft_seconds`, `fy_image_duration_seconds`, `fy_relay_retries_total`
+  - `pkg/prommetrics/relay_cache.go`（缓存命中率 + 亲和性命中率 Prometheus 指标定义 + Collector）
+- **修改文件**：`router/main.go`（1 行：`SetPrometheusRouter(router)` 调用）、`middleware/distributor.go`（亲和性 lookup 指标记录）、`service/text_quota.go`（缓存 token 指标记录）、`service/channel_affinity.go`（注册 stats provider）
+- **指标**：`fy_relay_requests_total`, `fy_relay_errors_total`, `fy_relay_duration_seconds`, `fy_relay_ttft_seconds`, `fy_image_duration_seconds`, `fy_relay_retries_total`, `fy_relay_prompt_tokens_total`, `fy_relay_cached_tokens_total`, `fy_relay_cache_creation_tokens_total`, `fy_affinity_lookups_total`, `fy_affinity_active_entries`
 - **冲突风险**：极低（新增文件 + main.go 1 行注册；upstream 不太可能在同一位置加同名函数）
 - **Merge 策略**：若 upstream 未来自己加 Prometheus 支持，评估是否迁移到 upstream 实现
 

@@ -34,6 +34,23 @@ PROMETHEUS_METRICS=1
 |--------|------|--------|------|
 | `fy_image_duration_seconds` | Histogram | model, channel_id | 图片生成耗时 |
 
+### 缓存命中 & 渠道亲和性
+
+| 指标名 | 类型 | Labels | 说明 |
+|--------|------|--------|------|
+| `fy_relay_prompt_tokens_total` | Counter | model, channel_id | 输入 token 总数 |
+| `fy_relay_cached_tokens_total` | Counter | model, channel_id | 缓存命中 token 总数（上游 cache read） |
+| `fy_relay_cache_creation_tokens_total` | Counter | model, channel_id | 缓存创建 token 总数 |
+| `fy_affinity_lookups_total` | Counter | model, rule_name, outcome | 亲和性查询次数 |
+| `fy_affinity_active_entries` | Gauge | rule_name | 当前活跃亲和性缓存条目数 |
+
+**`fy_affinity_lookups_total` outcome 值域：**
+
+| outcome | 含义 |
+|---------|------|
+| `hit` | 亲和性缓存命中且渠道可用，使用了缓存的渠道 |
+| `miss` | 规则匹配但缓存未命中或渠道不可用，回退到随机选择 |
+
 ### Label 说明
 
 | Label | 值域 | 说明 |
@@ -217,7 +234,42 @@ sum(rate(fy_relay_errors_total{error_type="rate_limited"}[5m])) by (channel_id)
 
 # 重试率
 sum(rate(fy_relay_retries_total[5m])) by (model)
+
+# --- 缓存 & 亲和性 ---
+
+# 缓存命中率（按渠道）
+sum(rate(fy_relay_cached_tokens_total[5m])) by (channel_id)
+/ sum(rate(fy_relay_prompt_tokens_total[5m])) by (channel_id)
+
+# 缓存命中率（按模型）
+sum(rate(fy_relay_cached_tokens_total[5m])) by (model)
+/ sum(rate(fy_relay_prompt_tokens_total[5m])) by (model)
+
+# 缓存创建 token 速率（按渠道）
+sum(rate(fy_relay_cache_creation_tokens_total[5m])) by (channel_id)
+
+# 亲和性命中率（整体）
+sum(rate(fy_affinity_lookups_total{outcome="hit"}[5m]))
+/ sum(rate(fy_affinity_lookups_total[5m]))
+
+# 亲和性命中率（按规则）
+sum(rate(fy_affinity_lookups_total{outcome="hit"}[5m])) by (rule_name)
+/ sum(rate(fy_affinity_lookups_total[5m])) by (rule_name)
+
+# 每规则活跃亲和 key 数
+fy_affinity_active_entries
 ```
+
+### 推荐 Grafana 面板（缓存 & 亲和性）
+
+| 面板标题 | 类型 | PromQL |
+|----------|------|--------|
+| 缓存命中率 (按渠道) | Time series | `sum(rate(fy_relay_cached_tokens_total[5m])) by (channel_id) / sum(rate(fy_relay_prompt_tokens_total[5m])) by (channel_id)` |
+| 缓存命中率 (按模型) | Time series | `sum(rate(fy_relay_cached_tokens_total[5m])) by (model) / sum(rate(fy_relay_prompt_tokens_total[5m])) by (model)` |
+| 亲和性命中率 | Stat / Gauge | `sum(rate(fy_affinity_lookups_total{outcome="hit"}[5m])) / sum(rate(fy_affinity_lookups_total[5m]))` |
+| 亲和性查询分布 | Pie chart | `sum(rate(fy_affinity_lookups_total[5m])) by (outcome)` |
+| 活跃亲和 Key 数 | Bar gauge | `fy_affinity_active_entries` |
+| 缓存节省 token 速率 | Time series | `sum(rate(fy_relay_cached_tokens_total[5m])) by (channel_id)` |
 
 ## 7. 安全注意事项
 

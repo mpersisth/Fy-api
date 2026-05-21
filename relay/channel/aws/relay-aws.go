@@ -141,6 +141,7 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 		if err != nil {
 			return nil, types.NewError(errors.Wrap(err, "format aws request fail"), types.ErrorCodeBadRequestBody)
 		}
+		stripBedrockDeprecatedTemperature(info.UpstreamModelName, awsClaudeReq)
 
 		if info.IsStream {
 			awsReq := &bedrockruntime.InvokeModelWithResponseStreamInput{
@@ -186,6 +187,7 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 			return nil, errors.Wrap(err, "pass-through unmarshal request body fail")
 		}
 		sanitizeBedrockClaudeRawFields(data)
+		stripBedrockDeprecatedTemperatureRaw(info.UpstreamModelName, data)
 		delete(data, "model")
 		delete(data, "stream")
 		return common.Marshal(data)

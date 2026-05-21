@@ -202,6 +202,7 @@ func sanitizeBedrockClaudeRawFields(data map[string]interface{}) {
 	// formatRequest applies to converted Claude requests.
 	delete(data, "anthropic_beta")
 	delete(data, "output_config")
+	filterBedrockToolsRaw(data)
 }
 
 func getAwsRegionPrefix(awsRegionId string) string {

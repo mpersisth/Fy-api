@@ -71,7 +71,7 @@ class LoadProfile:
     models: list[str] = field(default_factory=list)
     prompt: str = "Reply with the single word: pong."
     max_tokens: int = 64
-    temperature: float = 0.0
+    temperature: float | None = None
     stream: bool = True
 
     concurrency_levels: list[int] = field(default_factory=lambda: [1, 2, 5, 10, 25, 50, 100])
@@ -162,7 +162,7 @@ class Config:
                 models=all_models,
                 prompt=ld.get("prompt", LoadProfile.prompt),
                 max_tokens=int(ld.get("max_tokens", 64)),
-                temperature=float(ld.get("temperature", 0.0)),
+                temperature=float(ld["temperature"]) if "temperature" in ld else None,
                 stream=bool(ld.get("stream", True)),
                 concurrency_levels=list(ld.get("concurrency_levels", [1, 2, 5, 10, 25, 50, 100])),
                 requests_per_level=int(ld.get("requests_per_level", 50)),

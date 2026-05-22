@@ -158,10 +158,8 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
 
-			if imageRequest.Model == "gpt-image-1" {
-				if imageRequest.Quality == "" {
-					imageRequest.Quality = "standard"
-				}
+			if imageRequest.Model == "gpt-image-1" || imageRequest.Model == "gpt-image-2" {
+				imageRequest.Quality = normalizeGptImageQuality(imageRequest.Quality)
 			}
 			if imageRequest.N == nil || *imageRequest.N == 0 {
 				imageRequest.N = common.GetPointer(uint(1))
@@ -208,10 +206,8 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageRequest.Size == "" {
 				imageRequest.Size = "1024x1024"
 			}
-		} else if imageRequest.Model == "gpt-image-1" {
-			if imageRequest.Quality == "" {
-				imageRequest.Quality = "auto"
-			}
+		} else if imageRequest.Model == "gpt-image-1" || imageRequest.Model == "gpt-image-2" {
+			imageRequest.Quality = normalizeGptImageQuality(imageRequest.Quality)
 		}
 
 		//if imageRequest.Prompt == "" {
@@ -337,4 +333,17 @@ func GetAndValidateGeminiBatchEmbeddingRequest(c *gin.Context) (*dto.GeminiBatch
 		return nil, err
 	}
 	return request, nil
+}
+
+func normalizeGptImageQuality(quality string) string {
+	switch quality {
+	case "low", "medium", "high", "auto":
+		return quality
+	case "hd":
+		return "high"
+	case "standard":
+		return "auto"
+	default:
+		return "auto"
+	}
 }

@@ -132,16 +132,17 @@ class ChatClient:
         model: str,
         prompt: str,
         max_tokens: int,
-        temperature: float,
+        temperature: float | None,
         stream: bool,
     ) -> ChatResult:
         body: dict[str, object] = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "stream": stream,
         }
+        if temperature is not None:
+            body["temperature"] = temperature
         if stream:
             # Ask Fy-api to include usage in the final pre-[DONE] chunk. Some
             # upstreams drop usage from streams without this flag.

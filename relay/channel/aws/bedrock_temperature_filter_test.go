@@ -8,8 +8,8 @@ func TestIsTemperatureDeprecatedForBedrock(t *testing.T) {
 		expected bool
 	}{
 		{"claude-opus-4-7", true},
-		{"claude-opus-4-6", true},
 		{"us.anthropic.claude-opus-4-7-v1:0", true},
+		{"claude-opus-4-6", false},
 		{"claude-sonnet-4-6", false},
 		{"claude-sonnet-4-5-20241022", false},
 		{"claude-haiku-4-5-20241022", false},
@@ -24,35 +24,89 @@ func TestIsTemperatureDeprecatedForBedrock(t *testing.T) {
 	}
 }
 
-func TestStripBedrockDeprecatedTemperature(t *testing.T) {
-	temp := 0.7
-	req := &AwsClaudeRequest{Temperature: &temp}
-	stripBedrockDeprecatedTemperature("claude-opus-4-7", req)
-	if req.Temperature != nil {
-		t.Error("expected Temperature to be nil for claude-opus-4-7")
-	}
+func TestSanitizeBedrockSamplingParams(t *testing.T) {
+	t.Run("opus-4-7 strips temperature", func(t *testing.T) {
+		temp := 0.7
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		sanitizeBedrockSamplingParams("claude-opus-4-7", req)
+		if req.Temperature != nil {
+			t.Error("expected Temperature to be nil for claude-opus-4-7")
+		}
+		if req.TopP != 0.9 {
+			t.Error("expected TopP to be preserved for claude-opus-4-7")
+		}
+	})
 
-	temp2 := 0.5
-	req2 := &AwsClaudeRequest{Temperature: &temp2}
-	stripBedrockDeprecatedTemperature("claude-sonnet-4-6", req2)
-	if req2.Temperature == nil || *req2.Temperature != 0.5 {
-		t.Error("expected Temperature to be preserved for claude-sonnet-4-6")
-	}
+	t.Run("opus-4-6 strips top_p when both present", func(t *testing.T) {
+		temp := 0.7
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
+		if req.Temperature == nil || *req.Temperature != 0.7 {
+			t.Error("expected Temperature to be preserved for claude-opus-4-6")
+		}
+		if req.TopP != 0 {
+			t.Error("expected TopP to be zeroed when both present")
+		}
+	})
+
+	t.Run("opus-4-6 preserves temperature alone", func(t *testing.T) {
+		temp := 0.5
+		req := &AwsClaudeRequest{Temperature: &temp}
+		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
+		if req.Temperature == nil || *req.Temperature != 0.5 {
+			t.Error("expected Temperature to be preserved")
+		}
+	})
+
+	t.Run("opus-4-6 preserves top_p alone", func(t *testing.T) {
+		req := &AwsClaudeRequest{TopP: 0.9}
+		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
+		if req.TopP != 0.9 {
+			t.Error("expected TopP to be preserved when temperature absent")
+		}
+	})
+
+	t.Run("sonnet preserves both", func(t *testing.T) {
+		temp := 0.7
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		sanitizeBedrockSamplingParams("claude-sonnet-4-6", req)
+		if req.Temperature == nil || *req.Temperature != 0.7 {
+			t.Error("expected Temperature preserved for sonnet")
+		}
+		if req.TopP != 0 {
+			t.Error("expected TopP stripped for sonnet when both present")
+		}
+	})
 }
 
-func TestStripBedrockDeprecatedTemperatureRaw(t *testing.T) {
-	data := map[string]interface{}{"temperature": 0.7, "max_tokens": 1024}
-	stripBedrockDeprecatedTemperatureRaw("claude-opus-4-7", data)
-	if _, ok := data["temperature"]; ok {
-		t.Error("expected temperature to be removed for claude-opus-4-7")
-	}
-	if _, ok := data["max_tokens"]; !ok {
-		t.Error("expected max_tokens to be preserved")
-	}
+func TestSanitizeBedrockSamplingParamsRaw(t *testing.T) {
+	t.Run("opus-4-7 strips temperature", func(t *testing.T) {
+		data := map[string]interface{}{"temperature": 0.7, "top_p": 0.9}
+		sanitizeBedrockSamplingParamsRaw("claude-opus-4-7", data)
+		if _, ok := data["temperature"]; ok {
+			t.Error("expected temperature removed for opus-4-7")
+		}
+		if _, ok := data["top_p"]; !ok {
+			t.Error("expected top_p preserved for opus-4-7")
+		}
+	})
 
-	data2 := map[string]interface{}{"temperature": 0.7}
-	stripBedrockDeprecatedTemperatureRaw("claude-sonnet-4-6", data2)
-	if _, ok := data2["temperature"]; !ok {
-		t.Error("expected temperature to be preserved for claude-sonnet-4-6")
-	}
+	t.Run("opus-4-6 strips top_p when both present", func(t *testing.T) {
+		data := map[string]interface{}{"temperature": 0.7, "top_p": 0.9}
+		sanitizeBedrockSamplingParamsRaw("claude-opus-4-6", data)
+		if _, ok := data["temperature"]; !ok {
+			t.Error("expected temperature preserved for opus-4-6")
+		}
+		if _, ok := data["top_p"]; ok {
+			t.Error("expected top_p removed when both present")
+		}
+	})
+
+	t.Run("preserves temperature alone", func(t *testing.T) {
+		data := map[string]interface{}{"temperature": 0.7}
+		sanitizeBedrockSamplingParamsRaw("claude-opus-4-6", data)
+		if _, ok := data["temperature"]; !ok {
+			t.Error("expected temperature preserved when alone")
+		}
+	})
 }

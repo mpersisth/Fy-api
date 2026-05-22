@@ -1,0 +1,157 @@
+"""Load result JSONs from each benchmark tool and extract scoring inputs."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+
+def _read_json(path: Path) -> dict:
+    for enc in ("utf-8", "utf-8-sig", "gbk"):
+        try:
+            return json.loads(path.read_text(encoding=enc))
+        except (UnicodeDecodeError, ValueError):
+            continue
+    return json.loads(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def _extract_channel_id(name: str) -> int | None:
+    """Extract channel id from names like 'claude-opus-4-7-ch3' or '长安数科(id=3)'."""
+    m = re.search(r"-ch(\d+)$", name)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\(id=(\d+)\)", name)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+@dataclass
+class SmokeMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    success_rate: float
+
+
+@dataclass
+class LoadtestMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    ttft_p95_ms: float | None
+    e2e_p95_ms: float | None
+    throughput_toks: float | None
+
+
+@dataclass
+class QualityMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    pass_rate: float
+    avg_score: float
+
+
+@dataclass
+class CanaryMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    probe_pass_rate: float
+    avg_probe_score: float
+
+
+def load_smoke(path: Path) -> list[SmokeMetrics]:
+    """Parse Go smoke-test JSON."""
+    data = _read_json(path)
+    results: list[SmokeMetrics] = []
+    for item in data.get("results", []):
+        rate = item.get("SuccessRatePct", 0.0) / 100.0
+        results.append(SmokeMetrics(
+            channel_name=item.get("ChannelName", ""),
+            channel_id=item.get("ChannelID"),
+            model=item.get("Model", ""),
+            success_rate=rate,
+        ))
+    return results
+
+
+def load_loadtest(path: Path) -> list[LoadtestMetrics]:
+    """Parse fy-loadtest JSON. Uses concurrency=1 level (baseline)."""
+    data = _read_json(path)
+    model = data.get("model", "")
+    results: list[LoadtestMetrics] = []
+    for ch in data.get("channels", []):
+        levels = ch.get("levels", [])
+        baseline = next((lv for lv in levels if lv.get("concurrency") == 1), levels[0] if levels else None)
+        if baseline is None:
+            continue
+        ttft = baseline.get("ttft", {})
+        e2e = baseline.get("e2e", {})
+        toks = baseline.get("per_request_tok_per_s", {})
+        results.append(LoadtestMetrics(
+            channel_name=ch.get("channel_name", ""),
+            channel_id=ch.get("pin_channel_id"),
+            model=model,
+            ttft_p95_ms=ttft.get("p95_ms"),
+            e2e_p95_ms=e2e.get("p95_ms"),
+            throughput_toks=toks.get("avg"),
+        ))
+    return results
+
+
+def load_quality(path: Path) -> list[QualityMetrics]:
+    """Parse fy-quality JSON."""
+    data = _read_json(path)
+    by_channel: dict[str, dict] = {}
+    for item in data.get("per_prompt", data.get("results", [])):
+        ch = item.get("channel", item.get("channel_name", item.get("source_name", "unknown")))
+        if ch not in by_channel:
+            by_channel[ch] = {"passed": 0, "total": 0, "scores": [], "model": "", "channel_id": None}
+        by_channel[ch]["total"] += 1
+        if item.get("passed"):
+            by_channel[ch]["passed"] += 1
+        if "score" in item:
+            by_channel[ch]["scores"].append(item["score"])
+        if not by_channel[ch]["model"]:
+            by_channel[ch]["model"] = item.get("model", "")
+        if by_channel[ch]["channel_id"] is None:
+            by_channel[ch]["channel_id"] = item.get("channel_id", item.get("pin_channel_id"))
+
+    results: list[QualityMetrics] = []
+    for ch_name, info in by_channel.items():
+        total = info["total"]
+        pass_rate = info["passed"] / total if total > 0 else 0.0
+        scores = info["scores"]
+        avg_score = sum(scores) / len(scores) if scores else pass_rate
+        results.append(QualityMetrics(
+            channel_name=ch_name,
+            channel_id=info["channel_id"],
+            model=info["model"],
+            pass_rate=pass_rate,
+            avg_score=avg_score,
+        ))
+    return results
+
+
+def load_canary(path: Path) -> list[CanaryMetrics]:
+    """Parse fy-canary JSON."""
+    data = _read_json(path)
+    outcomes = data.get("outcomes", [])
+    if not outcomes:
+        return []
+    passed = sum(1 for o in outcomes if o.get("passed"))
+    total = len(outcomes)
+    scores = [o.get("score", 0.0) for o in outcomes]
+    source_name = data.get("source_name", "")
+    return [CanaryMetrics(
+        channel_name=source_name,
+        channel_id=_extract_channel_id(source_name),
+        model=data.get("model", ""),
+        probe_pass_rate=passed / total if total > 0 else 0.0,
+        avg_probe_score=sum(scores) / len(scores) if scores else 0.0,
+    )]
+

@@ -281,6 +281,12 @@ func migrateDB() error {
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		// Fy-api overlay: B-13/B-15/B-18 TraceNex Partner integration tables.
+		// (B-16 ConsumeLogOutbox migrated separately in migrateLOGDB.)
+		&InternalAPIKey{},
+		&InternalIdempotencyRecord{},
+		&GroupRatioOverride{},
+		&ChannelLogSetting{},
 	)
 	if err != nil {
 		return err
@@ -370,6 +376,11 @@ func migrateDBFast() error {
 func migrateLOGDB() error {
 	var err error
 	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
+		return err
+	}
+	// Fy-api overlay: B-16 consume_log_outbox lives in LOG_DB so it can be
+	// written in the same TX as logs (see model/log_outbox.go::InsertOutboxInTx).
+	if err = LOG_DB.AutoMigrate(&ConsumeLogOutbox{}); err != nil {
 		return err
 	}
 	return nil

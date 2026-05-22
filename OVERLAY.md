@@ -210,13 +210,35 @@
 - **行为**：后端默认按 AWS Bedrock Claude Messages 当前支持的 beta token 做白名单，并保留已有前端 “AWS Bedrock Claude 兼容模板” 的核心映射语义；渠道级 header override 仍先执行，随后 Bedrock adaptor 做最后兜底过滤。客户端 body 自带的 `anthropic_beta` 不被信任，统一由过滤后的 header 重建；`output_config` 暂按 Bedrock 不兼容字段在 AWS 边界删除。
 - **冲突风险**：低（AWS adaptor 局部新增 helper；若 upstream 后续实现 Bedrock beta 白名单或官方支持 `output_config`，合并时对齐官方支持列表即可）
 
-### B-17 [monitoring] Prometheus metrics overlay
+### B-17 [aws/bedrock] 不支持的 tool type 过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_tools_filter.go`（Bedrock 支持的 tool type 白名单 + pass-through / struct 两条路径的过滤函数）
+  - `relay/channel/aws/bedrock_tools_filter_test.go`（覆盖：保留支持类型、删除不支持类型、全部不支持时删除 tools 字段、无 type 字段保留）
+- **修改文件**：
+  - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +1 行调用 `filterBedrockToolsRaw`）
+  - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +1 行调用 `filterBedrockToolsFromStruct`）
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
+- **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
+- **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
+
+### B-18 [aws/bedrock] deprecated temperature 参数过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_temperature_filter.go`（模型黑名单 + struct / pass-through 两条路径的 temperature 剥离函数）
+  - `relay/channel/aws/bedrock_temperature_filter_test.go`（覆盖：黑名单模型剥离、非黑名单模型保留、raw map 路径）
+- **修改文件**：
+  - `relay/channel/aws/relay-aws.go`（`doAwsClientRequest` +1 行 `stripBedrockDeprecatedTemperature`；`buildAwsRequestBody` +1 行 `stripBedrockDeprecatedTemperatureRaw`）
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27）。Bedrock 对部分新模型不再接受 temperature 参数。
+- **行为**：在发送请求到 Bedrock 前，根据模型黑名单剥离 temperature 字段，静默丢弃而非返回 400 给客户端。
+- **冲突风险**：极低（独立新文件 + relay-aws.go 两处各 +1 行；与 B-17 同一区域但不同行）
+
+### B-19 [monitoring] Prometheus metrics overlay
 - **新增文件**：
   - `middleware/prometheus_overlay.go`（Prometheus histogram/counter 定义 + Gin middleware + TTFT ResponseWriter wrapper）
   - `router/prometheus_overlay.go`（`/metrics` 端点注册 + middleware 挂载，受 `PROMETHEUS_METRICS=1` 环境变量控制）
   - `docs/prometheus-monitoring.md`（部署文档：Prometheus + Grafana + AlertManager 接入指南）
-- **修改文件**：`router/main.go`（1 行：`SetPrometheusRouter(router)` 调用）
-- **指标**：`fy_relay_requests_total`, `fy_relay_errors_total`, `fy_relay_duration_seconds`, `fy_relay_ttft_seconds`, `fy_image_duration_seconds`, `fy_relay_retries_total`
+  - `pkg/prommetrics/relay_cache.go`（缓存命中率 + 亲和性命中率 Prometheus 指标定义 + Collector）
+- **修改文件**：`router/main.go`（1 行：`SetPrometheusRouter(router)` 调用）、`middleware/distributor.go`（亲和性 lookup 指标记录）、`service/text_quota.go`（缓存 token 指标记录）、`service/channel_affinity.go`（注册 stats provider）
+- **指标**：`fy_relay_requests_total`, `fy_relay_errors_total`, `fy_relay_duration_seconds`, `fy_relay_ttft_seconds`, `fy_image_duration_seconds`, `fy_relay_retries_total`, `fy_relay_prompt_tokens_total`, `fy_relay_cached_tokens_total`, `fy_relay_cache_creation_tokens_total`, `fy_affinity_lookups_total`, `fy_affinity_active_entries`
 - **冲突风险**：极低（新增文件 + main.go 1 行注册；upstream 不太可能在同一位置加同名函数）
 - **Merge 策略**：若 upstream 未来自己加 Prometheus 支持，评估是否迁移到 upstream 实现
 
@@ -229,6 +251,82 @@
 - **配置**：后台不改 UI。渠道类型选 Tencent，Base URL 填 `https://aiart.tencentcloudapi.com`，模型填 `gpt-image-2`，密钥填 `AppId|SecretId|SecretKey`。不要为该渠道启用 pass-through body；图片价格/倍率仍需按模型单独配置。
 - **冲突风险**：低（核心逻辑在新增文件；`adaptor.go` 仅三处小分支）
 - **Merge 策略**：upstream 若改 Tencent 文本 adaptor，保留 AIArt 分支即可；若 upstream 后续原生支持 AIArt 或图片异步任务，可优先迁移到 upstream 实现，但保留 `AppId|SecretId|SecretKey` 后台兼容配置。
+
+> Note: tnbiz integration code comments still reference the historical B-12..B-18 identifiers from the original overlay branch. The list below is renumbered here to avoid colliding with later main-branch overlay entries.
+
+### B-19 [tnbiz] TraceNex Partner 集成内部 API 路由 + HMAC 鉴权
+- **新增文件**：
+  - `router/api-internal-router.go`（`/api/internal/*` 独立路由组，**不**继承 `/api` 全局 `GlobalAPIRateLimit`；改用 per-kid quota 占位）
+  - `middleware/internal_auth.go` + `middleware/internal_auth_test.go`（HMAC-SHA256 timestamp ±5min + nonce SETNX 24h（go-redis/v8 ctx-first） + body sha256 + endpoint allowlist 精确匹配）
+- **修改文件**：`router/main.go`（+1 行 `SetInternalRouter(router)`，紧接 `SetVideoRouter` 之后）
+- **冲突风险**：低（router/main.go 1 行 + 独立路由文件）
+- **Merge 策略**：upstream 若改 `SetRouter` 签名同步对齐，独立 file 零冲突
+- **Feature flag**：`overlay.internal_api_enabled`（OVERLAY_INTERNAL_API），prod 默认 false
+
+### B-20 [tnbiz] 内部 controllers + ChannelLogSetting upsert
+- **新增文件**：
+  - `controller/tnbiz_internal/health.go`（GET /api/internal/health 自检 + envelope helper）
+  - `controller/tnbiz_internal/token.go`（POST /api/internal/token/create — partner 永远不可见 sk-key 明文，仅返回 token_id + masked_key + 5 分钟一次性 delivery_handle）
+  - `controller/tnbiz_internal/user.go`（POST topup / quota/adjust / refund / erase，PUT group，GET quota）
+  - `controller/tnbiz_internal/settings.go`（POST group_ratio_override/upsert + channel_log_settings/upsert）
+  - `controller/tnbiz_internal/context.go`（context helper）
+  - `controller/tnbiz_internal/health_test.go`
+  - `model/channel_log_settings.go`（schema-only，B-13 partner 维度 channel log 配置）
+- **冲突风险**：极低（独立子包 + 新增 model 表）
+- **Feature flag**：与 B-12 共用 `overlay.internal_api_enabled`
+
+### B-21 [tnbiz] OVERLAY feature flag 框架（biz_setting + 5-15s polling）
+- **新增文件**：
+  - `setting/overlay_flag/flag.go`（5 个 atomic-cached flag + ctx-first poller；优先读 `common.OptionMap`，env 兜底）
+  - `setting/overlay_flag/flag_test.go`
+- **修改文件**：`main.go`（`+overlayCtx := context.Background()` + `overlay_flag.StartPoller(overlayCtx)`，紧接 Redis 初始化之后）
+- **冲突风险**：低（main.go 集中 patch + 新建独立子包）
+- **Merge 策略**：5 个 flag key 写入 `OptionMap`，prod 默认全 false / shadow，灰度时按 PR 单独切换
+
+### B-22 [tnbiz] User per-customer GroupRatioOverride（hot path 6 调用站 / 4 文件）
+- **新增文件**：
+  - `model/group_ratio_override.go`（`group_ratio_override` 表 + Upsert + LookupUserOverride DAO）
+  - `setting/ratio_setting/effective_group_ratio.go`（`ApplyOverride(override, fallback) float64` —— hot path 唯一入口，atomic flag check + 1 float compare）
+  - `setting/ratio_setting/effective_group_ratio_test.go`
+  - `relay/common/override_lookup.go`（callback registry 避免 relay/common → model 的潜在循环依赖）
+- **修改文件**（每处加 `// Fy-api overlay: B-15 ...` 注释）：
+  - `relay/common/relay_info.go`（struct 末尾 +`UserGroupRatioOverride float64`；`GenRelayInfo` best-effort 从 context 拷入；context 缺失时回库一次）
+  - `constant/context_key.go`（+`ContextKeyUserGroupRatioOverride`）
+  - `service/quota.go`（行 110 / 115 / 121-124 三处 `GetGroupRatio` / `GetGroupGroupRatio` 后串 `ApplyOverride`）
+  - `relay/helper/price.go`（行 53-62 user-group / normal-group 两个分支都串 `ApplyOverride`）
+  - `service/task_billing.go`（行 276-277 task 路径用 `model.LookupUserOverride(task.UserId, group)` 因为没有 RelayInfo）
+  - `service/group.go`（新增 `GetUserGroupRatioWithOverride(userId, userGroup, group)` 给 cold path 调用方）
+  - `main.go`（+`relaycommon.SetOverrideLookup(model.LookupUserOverride)` 注入 callback）
+- **冲突风险**：HIGH（ratio 系统是上游持续演进区；4 文件都打上 overlay 注释，merge 时 grep `B-15` 即可定位）
+- **Feature flag**：`overlay.group_ratio_override`（prod 默认 false，逐 partner 灰度）
+
+### B-23 [tnbiz] consume_log_outbox + RecordConsumeLog 同事务写 outbox
+- **新增文件**：
+  - `model/consume_log_outbox.go`（落 LOG_DB；status: pending/in_flight/published/failed/dead_letter；`(data_region, status)` + `(status, locked_until)` 双索引；`InsertOutboxInTx` / `LeaseOutboxBatch` / `MarkOutboxPublished` / `MarkOutboxFailed` 含 retry_count++ ≤ 10 → DLQ）
+  - `model/log_outbox.go`（`recordConsumeLogWithOutbox` —— flag off 走原 `LOG_DB.Create(log)` 单语句；flag on 用 `LOG_DB.Transaction` 同时 Create(log)+Create(outbox)，任一失败整批回滚）
+  - `model/log_outbox_integration_test.go`（in-memory sqlite 验证 flag on / flag off 两条路径）
+- **修改文件**：
+  - `model/log.go::RecordConsumeLog`（`LOG_DB.Create(log).Error` → `recordConsumeLogWithOutbox(...)`；函数顶部加注释规约「**仅** LogTypeConsume 走 outbox；行 87 / 112 / 139 / 183 / 292 等 5 个非 consume LOG_DB.Create 调用站一律 NOT outbox-eligible」；LogQuotaData fire-and-forget goroutine 仍在 TX 之后异步触发）
+  - `model/main.go::migrateLOGDB`（+`LOG_DB.AutoMigrate(&ConsumeLogOutbox{})`）
+- **冲突风险**：HIGH（log.go 是上游高活跃区；overlay 集中在 helper 函数，注释打满）
+- **Feature flag**：`overlay.outbox_tx_enabled` + `overlay.outbox_mode`（off / shadow / enabled）
+
+### B-24 [tnbiz] Outbox publisher (Aliyun MNS, shadow + enabled)
+- **新增文件**：
+  - `service/outbox/runner.go`（Publisher interface + NoopPublisher + Runner with batch/lease/interval；shadow 模式下 publisher inject NoopPublisher，仅 simulate；MNS SDK 接入留 Phase 2A）
+  - `service/outbox/runner_test.go`
+- **修改文件**：`main.go`（+`outbox.NewRunner(region, topic, nil).Start(overlayCtx)`，紧接 flag poller / OverrideLookup 注入之后）
+- **冲突风险**：极低（独立子包 + main.go 一段 patch）
+- **Feature flag**：`overlay.outbox_mode`（off / shadow / enabled），region 由 `DATA_REGION` 环境变量注入（cn / sg），强制 region 隔离 invariant
+
+### B-25 [tnbiz] internal_idempotency + internal_api_key (HMAC keystore + idempotency 表)
+- **新增文件**：
+  - `model/internal_api_key.go` + `model/internal_api_key_test.go`（HMAC keystore：key_id / secret_cipher（AES-GCM with `common.CryptoSecret` 派生 KEK）/ region / status / allowed_endpoints JSON / created_at / rotated_at；明文 secret 永不入库）
+  - `model/internal_idempotency.go`（`internal_idempotency` 表，UNIQUE(auth_kid, idempotency_key, endpoint)；`Lookup` / `Save` / `CleanupExpiredIdempotency`；7 天 TTL leader-only cron 兜底）
+  - `middleware/internal_idempotency.go`（middleware：命中 (auth_kid, idem_key, endpoint) 三元组直接 replay 200，body hash 不一致则 409）
+- **修改文件**：`model/main.go`（+`InternalAPIKey{}` / `InternalIdempotencyRecord{}` / `GroupRatioOverride{}` / `ChannelLogSetting{}` 进 AutoMigrate）
+- **冲突风险**：极低（全独立 model + middleware）
+- **Feature flag**：`overlay.hmac_keystore_enabled`（B-12 InternalAuth middleware 双 flag 校验：InternalAPI ON + HMACKeystore ON 才放行；任一 OFF 即 503）
 
 ---
 

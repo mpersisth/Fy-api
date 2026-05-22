@@ -7,7 +7,7 @@
 | 环境 | 容器运行时 | 数据库 | 缓存 | 对外 | 镜像源 | 文档 |
 |------|:---:|------|------|------|:---:|------|
 | **本地开发** | 任意 | SQLite | 无 | localhost | 本地 build | [`local-dev.md`](./local-dev.md) |
-| **测试环境**（staging） | Podman + compose | 阿里云 RDS（与生产同构） | — | SSH port-forward / 内网 | 本地 build，`podman save` 传输 | [`test-podman.md`](./test-podman.md) |
+| **测试环境**（staging） | Podman + compose | 阿里云 RDS（与生产同构） | 可选；多节点必配阿里云 Redis/Tair | SSH port-forward / 内网 / Nginx HTTPS | 本地 build 或 ACR 明确版本 tag | [`test-podman.md`](./test-podman.md) |
 | **正式环境 · 单机**（起步推荐） | Podman + 蓝绿 | 阿里云 RDS | 阿里云 Redis | Nginx + Let's Encrypt | ACR 拉内网镜像 | [`prod-podman-single.md`](./prod-podman-single.md) |
 | **正式环境 · K8s**（规模化） | ACK (Deployment + HPA) | 阿里云 RDS | 阿里云 Redis | Nginx Ingress + cert-manager | ACR（运维手动 push） | [`prod-ack.md`](./prod-ack.md) |
 
@@ -27,7 +27,8 @@
 
 ## 版本约定
 
-- 镜像 tag 规则：`v<VERSION>`（如 `v0.9.3`）+ `latest` + `sha-<git-short>`。
+- TraceNex 发行镜像 tag 规则：`x.x.x-tracenex`，版本号从 `1.1.1-tracenex` 开始；每周递增中间位，周内每次上线递增最后位，例如第二周第三次上线为 `1.2.3-tracenex`。
+- 不允许只推 `latest`。`latest` 和 `sha-<git-short>` 可以作为附加 tag，但发布/测试/回滚必须依赖明确版本 tag。
 - CI 拉取策略：`IfNotPresent`；需要强制拉新时用 `rollout restart`，不要滥用 `:latest`+`Always`。
 - 数据迁移：不走独立脚本，靠 GORM `AutoMigrate`，但**每次发版前阅读 `git diff model/` 确认新增字段**。
 

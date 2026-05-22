@@ -247,10 +247,16 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := LOG_DB.Create(log).Error
+	// Fy-api overlay: B-16/B-18 outbox same-TX wrap (TraceNex Partner integration).
+	// 关键 invariant：**仅** LogTypeConsume 走 outbox；其他 LOG_DB.Create 调用站
+	// （行 87 / 112 / 139 / 183 / 292，对应 RecordTopupLog / RecordLogWithAdminInfo /
+	// RecordErrorLog / RecordTaskBillingLog 等）一律 NOT outbox-eligible。
+	// 下次 upstream 引入新 LogType 写 LOG_DB 时，必须明确决议是否纳入 outbox 范围。
+	err := recordConsumeLogWithOutbox(c, log, userId, params)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}
+	// LogQuotaData fire-and-forget goroutine 必须放在 TX 之后（commit 后才异步写）。
 	if common.DataExportEnabled {
 		gopool.Go(func() {
 			LogQuotaData(userId, username, params.ModelName, params.Quota, common.GetTimestamp(), params.PromptTokens+params.CompletionTokens)

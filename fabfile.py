@@ -84,6 +84,22 @@ TARGETS = {
         "repo": "fy-api",
         "repo_url": "git@github.com:seraph0017/Fy-api.git",
     },
+    "test": {
+        "host": "8.156.88.148",
+        "port": 58422,
+        "user": "root",
+        "key": "",
+        "app_dir": "/opt/fy-api",
+        "src_dir": "/root/Fy-api",
+        "build_dir": "/tmp/fy-api-build",
+        "registry": "",
+        "namespace": "",
+        "repo": "fy-api",
+        "repo_url": "git@github.com:seraph0017/Fy-api.git",
+        "nginx_conf": "/etc/nginx/conf.d/tracenex-test.conf",
+        "mem": "6g",
+        "cpus": "2",
+    },
 }
 
 DEFAULT_REPO_URL = "git@github.com:seraph0017/Fy-api.git"
@@ -131,13 +147,17 @@ def _config(target: str | None = None) -> dict[str, object]:
 
     cfg["key"] = os.path.expanduser(str(cfg.get("key") or ""))
     cfg["env_file"] = os.getenv("FYAPI_ENV_FILE", f"{cfg['app_dir']}/config/fy-api.env")
-    cfg["nginx_conf"] = os.getenv("FYAPI_NGINX_CONF", "/etc/nginx/conf.d/fy-api.conf")
+    cfg.setdefault("nginx_conf", "/etc/nginx/conf.d/fy-api.conf")
+    if os.getenv("FYAPI_NGINX_CONF"):
+        cfg["nginx_conf"] = os.getenv("FYAPI_NGINX_CONF")
     return cfg
 
 
 def _image(cfg: dict[str, object], tag: str) -> str:
     tag = _validate_arg("tag", tag)
-    return f"{cfg['registry']}/{cfg['namespace']}/{cfg['repo']}:{tag}"
+    if cfg.get("registry") and cfg.get("namespace"):
+        return f"{cfg['registry']}/{cfg['namespace']}/{cfg['repo']}:{tag}"
+    return f"{cfg['repo']}:{tag}"
 
 
 def _connect(cfg: dict[str, object]) -> Connection:
@@ -339,12 +359,24 @@ def deploy(ctx, target="cn", tag=""):
     cfg = _config(target)
     c = _connect(cfg)
     deploy_dir = f"{cfg['src_dir']}/scripts/prod"
+    has_registry = bool(cfg.get("registry") and cfg.get("namespace"))
+    image = _image(cfg, tag)
+    env_parts = [
+        f"IMAGE={_q(image)}",
+        f"REPO={_q(str(cfg['repo']))}",
+    ]
+    if not has_registry:
+        env_parts.append("SKIP_PULL=1")
+    if cfg.get("nginx_conf"):
+        env_parts.append(f"NGINX_CONF={_q(str(cfg['nginx_conf']))}")
+    if cfg.get("mem"):
+        env_parts.append(f"MEM={_q(str(cfg['mem']))}")
+    if cfg.get("cpus"):
+        env_parts.append(f"CPUS={_q(str(cfg['cpus']))}")
     deploy_cmd = (
         f"cd {_q(deploy_dir)} && "
-        f"REGISTRY={_q(str(cfg['registry']))} "
-        f"NAMESPACE={_q(str(cfg['namespace']))} "
-        f"REPO={_q(str(cfg['repo']))} "
-        f"./06-deploy-blue-green.sh {_q(tag)}"
+        + " ".join(env_parts)
+        + f" ./06-deploy-blue-green.sh {_q(tag)}"
     )
     _run(c, f"flock {_q(DEPLOY_LOCK)} -c {_q(deploy_cmd)}")
 
@@ -362,9 +394,11 @@ def release(ctx, target="cn", tag="", ref="", skip_build=False, skip_push=False)
     """Full release: checkout, build, push to ACR, blue-green deploy, health check."""
     tag = _validate_arg("tag", tag)
     ref = ref or tag
+    cfg = _config(target)
+    has_registry = bool(cfg.get("registry") and cfg.get("namespace"))
     if not skip_build:
         build(ctx, target=target, tag=tag, ref=ref)
-    if not skip_push:
+    if not skip_push and has_registry:
         push_image(ctx, target=target, tag=tag)
     deploy(ctx, target=target, tag=tag)
     health(ctx, target=target)

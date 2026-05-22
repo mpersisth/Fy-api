@@ -53,12 +53,16 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
 	if ok {
 		// user group special ratio
+		// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+		userGroupRatio = ratio_setting.ApplyOverride(relayInfo.UserGroupRatioOverride, userGroupRatio)
 		groupRatioInfo.GroupSpecialRatio = userGroupRatio
 		groupRatioInfo.GroupRatio = userGroupRatio
 		groupRatioInfo.HasSpecialRatio = true
 	} else {
 		// normal group ratio
-		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+		fallback := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+		// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+		groupRatioInfo.GroupRatio = ratio_setting.ApplyOverride(relayInfo.UserGroupRatioOverride, fallback)
 	}
 
 	return groupRatioInfo

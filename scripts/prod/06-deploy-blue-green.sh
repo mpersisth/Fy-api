@@ -17,12 +17,18 @@ NEW_TAG="${1:-}"
 REGISTRY="${REGISTRY:-registry-vpc.cn-hangzhou.aliyuncs.com}"
 NAMESPACE="${NAMESPACE:-fy-api}"
 REPO="${REPO:-fy-api}"
-IMAGE="$REGISTRY/$NAMESPACE/$REPO:$NEW_TAG"
+if [ -n "${IMAGE:-}" ]; then
+  :
+elif [ -n "$REGISTRY" ] && [ -n "$NAMESPACE" ]; then
+  IMAGE="$REGISTRY/$NAMESPACE/$REPO:$NEW_TAG"
+else
+  IMAGE="$REPO:$NEW_TAG"
+fi
 
-ENV_FILE=/opt/fy-api/config/fy-api.env
-LOG_DIR=/opt/fy-api/logs
-DATA_DIR=/opt/fy-api/data
-NGINX_CONF=/etc/nginx/conf.d/fy-api.conf
+ENV_FILE="${ENV_FILE:-/opt/fy-api/config/fy-api.env}"
+LOG_DIR="${LOG_DIR:-/opt/fy-api/logs}"
+DATA_DIR="${DATA_DIR:-/opt/fy-api/data}"
+NGINX_CONF="${NGINX_CONF:-/etc/nginx/conf.d/fy-api.conf}"
 MEM="${MEM:-22g}"
 CPUS="${CPUS:-12}"
 
@@ -49,8 +55,12 @@ log "当前活跃:$CUR ($CUR_PORT)  →  准备上线:$NEXT ($NEXT_PORT)  tag=$N
 # ─────────────────────────────────────────────────────────
 # 2) 拉镜像
 # ─────────────────────────────────────────────────────────
-log "拉镜像 $IMAGE ..."
-podman pull "$IMAGE"
+if [ "${SKIP_PULL:-0}" = "1" ]; then
+  log "跳过 pull(本地镜像): $IMAGE"
+else
+  log "拉镜像 $IMAGE ..."
+  podman pull "$IMAGE"
+fi
 
 # ─────────────────────────────────────────────────────────
 # 3) 启动 NEXT 容器

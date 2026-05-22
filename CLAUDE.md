@@ -75,20 +75,22 @@ bun run i18n:lint
 
 ### Server-side deploy / operations (Fabric)
 
-Use the root `fabfile.py` from the local repo. The conda env is `fy-api-deploy`.
+Use the root `fabfile.py` from the local repo. Python version is pinned via `.python-version` (pyenv), so `fab` works directly in the project directory.
 
 ```bash
-conda run -n fy-api-deploy fab info --target=cn
-conda run -n fy-api-deploy fab status --target=cn
-conda run -n fy-api-deploy fab logs --target=cn --tail=200
-conda run -n fy-api-deploy fab release --target=cn --tag=v0.9.8 --ref=origin/main
+fab info --target=cn
+fab status --target=cn
+fab logs --target=cn --tail=200
+fab release --target=cn --tag=v0.9.8 --ref=origin/main
 
-conda run -n fy-api-deploy fab info --target=sg
-conda run -n fy-api-deploy fab status --target=sg
-conda run -n fy-api-deploy fab logs --target=sg --tail=200
-conda run -n fy-api-deploy fab deploy --target=sg --tag=sg-5d733d85
+fab info --target=sg
+fab status --target=sg
+fab logs --target=sg --tail=200
+fab deploy --target=sg --tag=sg-5d733d85
 
-conda run -n fy-api-deploy fab preflight --target=legacy
+fab preflight --target=legacy
+
+fab release --target=test --tag=1.2.3-tracenex --ref=origin/main
 ```
 
 Known Fabric targets:
@@ -97,6 +99,7 @@ Known Fabric targets:
 |--------|---------|-----|-------|
 | `cn` | Hangzhou production | `root@8.136.146.211:58422` via `~/.ssh/tracenex_XN.pem` | Builds from `/root/Fy-api`, runtime config in `/opt/fy-api/config/fy-api.env` |
 | `sg` | Singapore production | `root@47.236.133.70:58422` via `~/.ssh/AI_tracenex.pem` | Public URL `https://api.aitracenex.com`; ACR namespace `ai_transnext`; active blue/green behind Nginx |
+| `test` | Chengdu test env | `root@8.156.88.148:58422` via default SSH key/agent | Local build + deploy (no ACR); nginx at `/etc/nginx/conf.d/tracenex-test.conf`; domains `*-test.tracenex.cn` |
 | `legacy` | Legacy source server | `root@8.222.175.17` via default SSH key/agent | Contains old `/root/TraceNex` deployment and local MySQL source data |
 
 Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. For SG, current deployed image tag is `sg-5d733d85`.

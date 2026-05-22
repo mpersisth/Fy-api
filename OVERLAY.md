@@ -221,7 +221,17 @@
 - **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
 - **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
 
-### B-18 [monitoring] Prometheus metrics overlay
+### B-18 [aws/bedrock] deprecated temperature 参数过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_temperature_filter.go`（模型黑名单 + struct / pass-through 两条路径的 temperature 剥离函数）
+  - `relay/channel/aws/bedrock_temperature_filter_test.go`（覆盖：黑名单模型剥离、非黑名单模型保留、raw map 路径）
+- **修改文件**：
+  - `relay/channel/aws/relay-aws.go`（`doAwsClientRequest` +1 行 `stripBedrockDeprecatedTemperature`；`buildAwsRequestBody` +1 行 `stripBedrockDeprecatedTemperatureRaw`）
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27）。Bedrock 对部分新模型不再接受 temperature 参数。
+- **行为**：在发送请求到 Bedrock 前，根据模型黑名单剥离 temperature 字段，静默丢弃而非返回 400 给客户端。
+- **冲突风险**：极低（独立新文件 + relay-aws.go 两处各 +1 行；与 B-17 同一区域但不同行）
+
+### B-19 [monitoring] Prometheus metrics overlay
 - **新增文件**：
   - `middleware/prometheus_overlay.go`（Prometheus histogram/counter 定义 + Gin middleware + TTFT ResponseWriter wrapper）
   - `router/prometheus_overlay.go`（`/metrics` 端点注册 + middleware 挂载，受 `PROMETHEUS_METRICS=1` 环境变量控制）

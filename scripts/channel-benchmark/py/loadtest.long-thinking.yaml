@@ -1,0 +1,79 @@
+# fy-loadtest preset for the 2026-05-11 long-reasoning incident.
+#
+# What this exercises: the FULL timeout chain (nginx -> Fy-api RELAY_TIMEOUT
+# -> Fy-api STREAMING_TIMEOUT -> upstream provider) on a single long stream.
+#
+# Use this when you suspect a timeout regression. The customer's failure mode
+# was: aime25 / gpqa-diamond on kimi-k2-thinking, single questions taking
+# 10-30 minutes. RELAY_TIMEOUT=600 was killing them at 10 minutes flat.
+#
+# Run:
+#   FY_API_URL=https://api.tracenex.com FY_API_USER_TOKEN=sk-... \
+#     fy-loadtest -c loadtest.long-thinking.yaml
+#
+# Pass criteria:
+#   - p95 e2e_ms < 1500000 (25 min) — i.e. the request actually completed
+#   - 0 timeouts under request_timeout_sec=1800
+#   - finish_reason == "stop" on every rep (not "length", not transport_error)
+#
+# If you see request_timeout_sec hit, suspect /opt/fy-api/config/fy-api.env
+# regressed to RELAY_TIMEOUT=600 or nginx fell back to its 60s default.
+# See incidents/2026-05-11-long-reasoning-timeout.md.
+
+gateway:
+  base_url: "${FY_API_URL:-http://localhost:3000}"
+  user_token: "${FY_API_USER_TOKEN}"
+
+  # Recommended ON: a model offered by N channels would be balanced across
+  # them, and we'd never know which channel actually carried the long stream.
+  # Pin to the exact channel under audit. Requires admin token.
+  # pin_channel_id: 8     # uncomment when probing one channel
+
+load:
+  # Pick a thinking model. Non-thinking models complete in under a minute
+  # and won't exercise the timeout chain at all.
+  model: "${FY_LONG_THINKING_MODEL:-kimi-k2-thinking}"
+
+  # Override below at runtime via env. The fixture text in
+  # py/fy_loadtest/fixtures/__init__.py (proof-style-number-theory) is the
+  # heaviest one; switch to aime-style or gpqa-style if your billing budget
+  # is tighter. The fixture is copied verbatim here to keep the YAML
+  # self-contained for the operator.
+  #
+  # NOTE: this is the proof-style fixture. ~5,000-15,000 completion tokens
+  # is typical; with kimi-k2-thinking expect 8-25 min wall time per rep.
+  prompt: |
+    Prove that for every prime p > 3, there exist infinitely many integers n
+    such that n^2 + 1 has at least one prime factor congruent to 1 mod p,
+    and characterize the density of such n. Be rigorous: state every lemma
+    you depend on, give a fully-stated proof, and conclude with a quantitative
+    density estimate. End with QED on its own line.
+
+  # Generous: thinking models can emit 10-30k tokens before terminating.
+  max_tokens: 32000
+  temperature: 0.0
+  stream: true
+
+  # Single-thread on purpose. We're testing the upper bound of one stream,
+  # not capacity. concurrency=1 keeps billing predictable AND isolates the
+  # variable: if 1 rep times out, it's the timeout chain. If the same rep
+  # times out at concurrency=10 only, it's queueing.
+  concurrency_levels: [1]
+  requests_per_level: 2          # 2 reps so a transient-network blip can be ruled out
+  warmup_requests: 0             # no warmup — every rep is the experiment
+
+  # 30 minutes. Must be > nginx (1800s post-fix) and > Fy-api RELAY_TIMEOUT
+  # (1800s post-fix). If the gateway closes the stream earlier than this, the
+  # gateway is the bottleneck and the regression is on the gateway side.
+  request_timeout_sec: 1800
+
+# No SLO thresholds — long-reasoning has no meaningful TTFT bound. We only
+# care that it COMPLETES. Goodput math is meaningless here.
+slo:
+  ttft_p95_ms: null
+  itl_p95_ms: null
+  e2e_p95_ms: null
+
+export:
+  formats: [json, csv, markdown]
+  output_dir: "loadtest-long-thinking-results"

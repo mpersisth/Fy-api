@@ -9,13 +9,28 @@
 
 ## 一、前置准备（一次性）
 
+### 1.0 阿里云低成本测试环境清单
+
+测试环境优先目标是 QA 联调、回归、验证 RDS schema 与 Redis/session 行为，不按生产压测规格采购。
+
+| 资源 | 最低可用 | 推荐低配 | 备注 |
+|------|----------|----------|------|
+| ECS | `2c4g` / 40-80G ESSD | `4c8g` / 80G ESSD | `2c4g` 可跑单容器；如果在服务器上构建镜像或同时跑 TraceNexBiz，建议 `4c8g` |
+| EIP | 1-5 Mbps 按量 | 5 Mbps 按量 | 仅供 QA 访问；大文件/流式压测再临时升带宽 |
+| RDS MySQL 8.0 | 1c2g / 40G | 1c2g 或 2c4g / 50-100G | 独立测试库，禁止复用 prod |
+| Redis/Tair | 可不配 | 256-512MB | 单节点 smoke 可不配；多节点/session/rate-limit 联调必须配 |
+| ACR | 个人版/基础私有仓库 | 基础私有仓库 | 测试镜像也必须打明确版本 tag |
+| SLS | 可选，7 天保留 | 7-15 天保留 | 需要排查跨服务 trace 时开启 |
+
+省钱做法：前端静态资源直接由 Nginx 服务或临时本地构建，不在测试机上长跑 4 个 dev server；ECS 只跑 `fy-api` 容器和 Nginx。
+
 ### 1.1 服务器基线
 
 | 项 | 要求 |
 |----|------|
 | OS | 任意主流 Linux（Rocky / RHEL 9、Ubuntu 22.04+、Debian 12+、Fedora 40+） |
 | 架构 | x86_64（若是 arm64 服务器，后续构建命令加 `--platform linux/arm64`） |
-| 内存 | ≥ 8 GB（构建阶段 vite 吃内存，≤ 4 GB 可能 OOM） |
+| 内存 | 运行 ≥ 4 GB；服务器本机构建建议 ≥ 8 GB（构建阶段 vite 吃内存，≤ 4 GB 可能 OOM） |
 | 磁盘 | ≥ 30 GB 可用（镜像约 200 MB，但构建缓存和 RDS 导出副本会占空间） |
 | 网络 | 出站可访问：`docker.io`、`registry.access.redhat.com`、`github.com`、目标 RDS 实例 |
 
@@ -192,9 +207,18 @@ cd ~/TraceNex
 # 首次构建 5-15 分钟（主要在 bun install + vite build + golang module download）
 podman build -t fy-api:local .
 
-# 查看镜像
+# 查看镜像。测试/发版镜像也必须打明确版本 tag，不能只用 latest。
 podman images | grep fy-api
 # 预期：localhost/fy-api   local   xxxxxxx   <1 min ago   ~190 MB
+```
+
+如镜像会推到 ACR，按工作区版本规则打 tag，例如：
+
+```bash
+VERSION=1.2.1-tracenex
+ACR=registry-vpc.cn-hangzhou.aliyuncs.com/fy-api/fy-api
+podman tag fy-api:local ${ACR}:${VERSION}
+podman push ${ACR}:${VERSION}
 ```
 
 **构建常见坑**：

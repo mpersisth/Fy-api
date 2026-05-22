@@ -1,0 +1,42 @@
+# Channel integrity audit configuration.
+# Copy this file and fill in your gateway details.
+
+gateway:
+  base_url: "${FY_API_URL}"
+  user_token: "${FY_API_USER_TOKEN}"
+  # Pin to a specific channel for targeted testing (admin-only feature).
+  pin_channel_id: 30
+  # Required only for the cross-user cache isolation probe.
+  secondary_token: "${FY_API_SECONDARY_TOKEN:-}"
+
+target:
+  model: "claude-opus-4-7"
+  max_tokens: 256
+  request_timeout_sec: 120.0
+
+probes:
+  cache:
+    enabled: true
+    rounds: 5
+  inflation:
+    enabled: true
+    tolerance_tokens: 10
+  determinism:
+    enabled: true
+    rounds: 5
+    min_consistency: 0.95
+  tool_use:
+    enabled: true
+  stream:
+    enabled: true
+    rounds: 3
+    burst_threshold: 0.5
+  filtering:
+    enabled: true
+  isolation:
+    enabled: false
+    rounds: 3
+
+export:
+  formats: [json, markdown]
+  output_dir: "integrity-results"

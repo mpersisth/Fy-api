@@ -43,6 +43,7 @@ TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 > - **仓库身份**：代码和 GitHub 仓库名沿用 `Fy-api`（远端：`github.com/seraph0017/Fy-api`）以保持连续性；**TraceNex 是对外的产品品牌**（`SystemName = "TraceNex"`，体现在 UI、文档、用户界面）。两个名字是故意区分开的——设计原因见 `CLAUDE.md`。
 > - TraceNex 以**周节奏**合并 `upstream/main`，**按需发版**到生产：每一个上游改进（新模型适配、bug 修复、schema 迁移）会在每周一通过 [upstream-sync workflow](./.github/workflows/upstream-sync.yml) 自动开 PR 流入 TraceNex 的 main，但生产发版独立判定（详见 [`docs/Weekly-upstream-sync-runbook.md`](./docs/Weekly-upstream-sync-runbook.md)）。
 > - Go module path 保持为 `github.com/QuantumNous/new-api`，这样合并上游补丁时不需要重写数千个 import。
+> - **下游消费方**：兄弟项目 [TraceNexBiz](../TraceNexBiz/)（渠道分销 SaaS，产品品牌 "TraceNex Partner"）通过 `/api/internal/*` 路由消费 Fy-api，详见 [`OVERLAY.md`](./OVERLAY.md) 的 B-12..B-18 条目 + [`OVERLAY-TNBIZ-HANDOFF.md`](./OVERLAY-TNBIZ-HANDOFF.md)。任何改动 `middleware/internal_auth.go` 或 `controller/tnbiz_internal/*.go` 都是契约变更——partner-api 侧有字节级 parity 测试守着。
 > - 严格遵守 AGPLv3 合规：LICENSE、版权头、上游 attribution **完整保留**。TraceNex 专属改动的详细清单见 [`OVERLAY.md`](./OVERLAY.md)。
 
 > [!IMPORTANT]

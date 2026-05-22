@@ -91,6 +91,7 @@ func sanitizeBedrockClaudeRawFieldsFromStruct(request *AwsClaudeRequest) {
 	// Bedrock Claude Messages today. Drop it at the AWS boundary so upstream
 	// schema changes do not leak through pass-through or native Claude calls.
 	request.OutputConfig = nil
+	filterBedrockToolsFromStruct(request)
 }
 
 func normalizeBedrockAnthropicBeta(value string) []string {

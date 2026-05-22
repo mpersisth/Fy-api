@@ -153,6 +153,12 @@ type RelayInfo struct {
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
 
+	// Fy-api overlay: B-15 TraceNex Partner per-customer pricing override.
+	// 由 distributor 阶段从 user.GroupRatioOverride / model.LookupUserOverride
+	// 拷入；hot path（quota.go / price.go / task_billing.go / group.go）在
+	// 读 GetGroupRatio 之前先看本字段，> 0 即覆盖。flag = OVERLAY_GROUP_RATIO_OVERRIDE。
+	UserGroupRatioOverride float64
+
 	PriceData types.PriceData
 
 	// TieredBillingSnapshot is a frozen snapshot of tiered billing rules
@@ -485,6 +491,20 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 			//promptTokens: common.GetContextKeyInt(c, constant.ContextKeyPromptTokens),
 			estimatePromptTokens: common.GetContextKeyInt(c, constant.ContextKeyEstimatedTokens),
 		},
+	}
+	// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+	// 由 distributor 阶段在 context 写入 ContextKeyUserGroupRatioOverride（auth/distributor 路径）。
+	// 此处 best-effort 拷贝；context 没注入时回库一次（用 user_id+using_group 查 override 表）。
+	if v, ok := c.Get(string(constant.ContextKeyUserGroupRatioOverride)); ok {
+		if f, ok := v.(float64); ok {
+			info.UserGroupRatioOverride = f
+		}
+	}
+	if info.UserGroupRatioOverride == 0 && info.UserId > 0 && info.UsingGroup != "" {
+		if override, ok := overrideLookup(info.UserId, info.UsingGroup); ok {
+			info.UserGroupRatioOverride = override
+			c.Set(string(constant.ContextKeyUserGroupRatioOverride), override)
+		}
 	}
 
 	if info.RelayMode == relayconstant.RelayModeUnknown {

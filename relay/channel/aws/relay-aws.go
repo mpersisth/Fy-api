@@ -141,6 +141,7 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 		if err != nil {
 			return nil, types.NewError(errors.Wrap(err, "format aws request fail"), types.ErrorCodeBadRequestBody)
 		}
+		sanitizeBedrockSamplingParams(info.UpstreamModelName, awsClaudeReq)
 
 		if info.IsStream {
 			awsReq := &bedrockruntime.InvokeModelWithResponseStreamInput{
@@ -186,6 +187,7 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 			return nil, errors.Wrap(err, "pass-through unmarshal request body fail")
 		}
 		sanitizeBedrockClaudeRawFields(data)
+		sanitizeBedrockSamplingParamsRaw(info.UpstreamModelName, data)
 		delete(data, "model")
 		delete(data, "stream")
 		return common.Marshal(data)
@@ -202,6 +204,7 @@ func sanitizeBedrockClaudeRawFields(data map[string]interface{}) {
 	// formatRequest applies to converted Claude requests.
 	delete(data, "anthropic_beta")
 	delete(data, "output_config")
+	filterBedrockToolsRaw(data)
 }
 
 func getAwsRegionPrefix(awsRegionId string) string {

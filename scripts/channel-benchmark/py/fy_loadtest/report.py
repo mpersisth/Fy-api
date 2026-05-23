@@ -219,6 +219,12 @@ def _build_conclusion(mc: MultiChannelResult) -> list[str]:
         lines.append(f"  峰值吞吐: {max_rps:.2f} req/s（并发={max_rps_c}）")
         if r.bottleneck_concurrency is not None:
             lines.append(f"  瓶颈并发: {r.bottleneck_concurrency}（auto-ramp 探测）")
+        if low_c_lv.per_request_tok_per_s.samples > 0:
+            tps_avg = low_c_lv.per_request_tok_per_s.avg
+            tps_p50 = low_c_lv.per_request_tok_per_s.p50
+            lines.append(f"  生成速度: avg {tps_avg:.1f} tok/s, p50 {tps_p50:.1f} tok/s (C={low_c_lv.concurrency})")
+            if tps_p50 > 0 and tps_p50 < 50:
+                lines.append(f"  ⚠ 生成速度偏低（p50 < 50 tok/s），建议排查渠道链路延迟")
         if low_c_lv.ttft.p95_ms > 0:
             lines.append(f"  TTFT p95: {low_c_lv.ttft.p95_ms:.0f}ms (C={low_c_lv.concurrency}) → {high_c_lv.ttft.p95_ms:.0f}ms (C={high_c_lv.concurrency})")
         lines.append(f"  E2E p95: {low_c_lv.e2e.p95_ms:.0f}ms (C={low_c_lv.concurrency}) → {high_c_lv.e2e.p95_ms:.0f}ms (C={high_c_lv.concurrency})")
@@ -237,6 +243,15 @@ def _build_conclusion(mc: MultiChannelResult) -> list[str]:
         best_ttft_val = min((lv.ttft.p95_ms for lv in best_ttft.levels if lv.ttft.p95_ms > 0), default=0)
         if best_ttft_val > 0:
             lines.append(f"  TTFT p95 最低: {_ch_label(best_ttft)} ({best_ttft_val:.0f}ms，低并发)")
+
+        tps_by_channel = [
+            (r, min(r.levels, key=lambda lv: lv.concurrency).per_request_tok_per_s.p50)
+            for r in mc.results
+            if r.levels and min(r.levels, key=lambda lv: lv.concurrency).per_request_tok_per_s.samples > 0
+        ]
+        if tps_by_channel:
+            best_tps = max(tps_by_channel, key=lambda x: x[1])
+            lines.append(f"  生成速度最快: {_ch_label(best_tps[0])} (p50 {best_tps[1]:.1f} tok/s，低并发)")
 
         high_c_levels = [max(r.levels, key=lambda lv: lv.concurrency) for r in mc.results if r.levels]
         if high_c_levels:

@@ -48,6 +48,7 @@ fy-image-conformance = "fy_image_conformance.cli:main"
 fy-eval        = "fy_eval.cli:main"
 fy-score       = "fy_score.cli:main"
 fy-integrity   = "fy_integrity.cli:main"
+fy-cache-affinity = "fy_cache_affinity.cli:main"
 
 [build-system]
 requires = ["hatchling"]

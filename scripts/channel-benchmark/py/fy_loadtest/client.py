@@ -50,6 +50,7 @@ class ChatResult:
 
     # Content / counting
     content_chars: int = 0
+    content_text: str = ""
     chunks: int = 0
     finish_reason: str = ""
     usage: Usage = field(default_factory=Usage)
@@ -134,17 +135,26 @@ class ChatClient:
         self,
         *,
         model: str,
-        prompt: str,
+        prompt: str = "",
         max_tokens: int,
         temperature: float | None,
         stream: bool,
+        messages: list[dict] | None = None,
     ) -> ChatResult:
-        body: dict[str, object] = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "stream": stream,
-        }
+        if messages is not None:
+            body: dict[str, object] = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
+        else:
+            body = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
         if temperature is not None:
             body["temperature"] = temperature
         if stream:
@@ -182,6 +192,7 @@ class ChatClient:
         if choices:
             msg = (choices[0].get("message") or {}).get("content", "")
             result.content_chars = len(msg)
+            result.content_text = msg
             result.finish_reason = choices[0].get("finish_reason", "") or ""
         _extract_usage(payload.get("usage"), result.usage)
         result.success = True
@@ -202,6 +213,7 @@ class ChatClient:
                 return
 
             last_content_at = 0.0
+            content_parts: list[str] = []
             async for raw_line in resp.aiter_lines():
                 if not raw_line:
                     continue
@@ -230,11 +242,13 @@ class ChatClient:
                         last_content_at = now
                         result.chunks += 1
                         result.content_chars += len(content)
+                        content_parts.append(content)
                     fr = ch.get("finish_reason")
                     if fr and not result.finish_reason:
                         result.finish_reason = str(fr)
 
         result.e2e_s = time.monotonic() - t0
+        result.content_text = "".join(content_parts)
         # Successful iff we got some content OR usage (some providers legitimately
         # emit empty content for safety filters but still report tokens).
         if result.content_chars > 0 or result.usage.completion_tokens > 0:

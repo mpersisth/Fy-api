@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 
+from fy_score.scorer import build_scorecard, ChannelScorecard, WEIGHTS
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -648,6 +650,66 @@ def _fab_section(s):
     return elems
 
 
+def _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
+    cards: list[ChannelScorecard] = []
+
+    for model in MODELS:
+        for channel_id, channel_name in [(26, CH26), (30, CH30)]:
+            go_row = next(
+                (
+                    r for r in go_data.get("results", [])
+                    if r.get("ChannelID") == channel_id and r.get("Model") == model and r.get("Streamed")
+                ),
+                None,
+            )
+            lt_row = lt_by_model.get(model, {}).get(channel_id, {})
+            qa_row = qa_by_ch_model.get((channel_name, model))
+            cf_row = cf_by_ch_model.get((channel_id, model))
+
+            card = build_scorecard(
+                channel_name=channel_name,
+                channel_id=channel_id,
+                model=model,
+                success_rate=(go_row.get("SuccessRatePct", 0.0) / 100.0) if go_row else None,
+                ttft_p95_ms=lt_row.get("ttft_p95_low"),
+                e2e_p95_ms=lt_row.get("e2e_p95_low"),
+                throughput_toks=lt_row.get("levels", [{}])[0].get("per_request_tok_per_s", {}).get("avg") if lt_row.get("levels") else None,
+                quality_pass_rate=(qa_row[0] / qa_row[1]) if qa_row and qa_row[1] else None,
+                quality_avg_score=(qa_row[0] / qa_row[1]) if qa_row and qa_row[1] else None,
+                canary_probe_pass_rate=cf_row.get("pass_rate") if cf_row else None,
+                canary_avg_probe_score=cf_row.get("pass_rate") if cf_row else None,
+            )
+            cards.append(card)
+
+    rows = [["渠道", "模型", "可用性", "性能", "质量", "真实性", "综合分", "等级"]]
+    for card in sorted(cards, key=lambda c: c.composite_score, reverse=True):
+        dims = card.dimensions
+        rows.append([
+            card.channel_name,
+            MODEL_SHORT.get(card.model, card.model),
+            f"{dims['availability'].score:.0f}" if dims['availability'].available else "N/A",
+            f"{dims['performance'].score:.0f}" if dims['performance'].available else "N/A",
+            f"{dims['quality'].score:.0f}" if dims['quality'].available else "N/A",
+            f"{dims['authenticity'].score:.0f}" if dims['authenticity'].available else "N/A",
+            f"{card.composite_score:.1f}",
+            card.grade,
+        ])
+
+    elems = [
+        _p("Channel Scorecard（绝对评级）", "H2", s),
+        HRFlowable(width="100%", thickness=2, color=colors.HexColor("#2563EB")),
+        Spacer(1, 0.3*cm),
+        _p("采用 SLO 锚定的绝对评分：每个渠道独立评分，不依赖其他渠道表现。综合分 = 可用性 20% + 性能 30% + 质量 35% + 真实性 15%。", "Body", s),
+        Spacer(1, 0.2*cm),
+        Table(rows, colWidths=[3.5*cm, 3.2*cm, 2.2*cm, 2.2*cm, 2.2*cm, 2.2*cm, 2.4*cm, 1.8*cm], style=_tbl_style()),
+        Spacer(1, 0.3*cm),
+        _p("等级说明：A ≥ 90，B ≥ 75，C ≥ 60，D ≥ 40，F < 40。可用性低于 95% 时直接判 F。", "Bullet", s),
+        _p("说明：当前真实性分数临时复用 conformance pass_rate 占位；待 fy-canary vendor 基线配置完成后，应替换为 canary alignment/drift/mmd 探针结果。", "Bullet", s),
+        PageBreak(),
+    ]
+    return elems
+
+
 # ── section 8: final summary ─────────────────────────────────────────────────
 def _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
     def _tally(metric_fn):
@@ -772,6 +834,7 @@ def main():
     story = []
     story += _cover(s)
     story += _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
+    story += _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
     story += _exec_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
     story += _go_section(s, go_data)
     story += _loadtest_section(s, lt_by_model)

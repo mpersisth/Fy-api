@@ -248,15 +248,20 @@ class CanaryRunner:
                 return ProbeOutcome(row.id, method, False, 0.0, "baseline has no samples")
             sample = await self._sample_n(client, row, 1)
             current = sample[0] if sample else ""
-            v = alignment.evaluate_alignment(
-                prompt_id=row.id,
-                baseline_sample=b.samples[0],
-                current_sample=current,
-                threshold=0.70,
-            )
+            thresh = row.raw.get("threshold", 0.70)
+            best_v = None
+            for bs in b.samples:
+                v = alignment.evaluate_alignment(
+                    prompt_id=row.id,
+                    baseline_sample=bs,
+                    current_sample=current,
+                    threshold=thresh,
+                )
+                if best_v is None or v.similarity > best_v.similarity:
+                    best_v = v
             return ProbeOutcome(
-                row.id, method, v.passed, v.similarity,
-                f"edit-sim={v.similarity:.3f} threshold={v.threshold:.2f}",
+                row.id, method, best_v.passed, best_v.similarity,
+                f"edit-sim={best_v.similarity:.3f} threshold={best_v.threshold:.2f} (best of {len(b.samples)})",
             )
 
         if method == "drift":
@@ -274,12 +279,13 @@ class CanaryRunner:
             if not vecs:
                 return ProbeOutcome(row.id, method, False, 0.0, "failed to embed current samples")
             current_centroid = drift.centroid(vecs)
+            drift_thresh = row.raw.get("threshold", 0.93)
             v = drift.evaluate_drift(
                 prompt_id=row.id,
                 baseline_centroid=b.centroid,
                 current_centroid=current_centroid,
                 n_samples=len(vecs),
-                threshold=0.93,
+                threshold=drift_thresh,
             )
             return ProbeOutcome(
                 row.id, method, v.passed, v.similarity,

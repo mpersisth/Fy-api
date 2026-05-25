@@ -205,6 +205,8 @@ func sanitizeBedrockClaudeRawFields(data map[string]interface{}) {
 	delete(data, "anthropic_beta")
 	delete(data, "output_config")
 	filterBedrockToolsRaw(data)
+	stripCacheControlScopeRaw(data)
+	filterEmptyTextBlocksRaw(data)
 }
 
 func getAwsRegionPrefix(awsRegionId string) string {

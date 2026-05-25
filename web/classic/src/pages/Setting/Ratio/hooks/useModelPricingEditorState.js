@@ -22,9 +22,27 @@ import {
   combineBillingExpr,
   splitBillingExprAndRequestRules,
 } from '../components/requestRuleExpr';
+export {
+  PRICE_CURRENCIES,
+  PRICE_SUFFIX,
+  buildSummaryText,
+  getPriceSuffix,
+  getUsdExchangeRate,
+  hasValue,
+  toDisplayPrice,
+  toUsdPrice,
+} from './modelPricingCurrency';
+import {
+  PRICE_CURRENCIES,
+  buildSummaryText,
+  getPriceSuffix,
+  getUsdExchangeRate,
+  hasValue,
+  toDisplayPrice,
+  toUsdPrice,
+} from './modelPricingCurrency';
 
 export const PAGE_SIZE = 10;
-export const PRICE_SUFFIX = '$/1M tokens';
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
 
 const EMPTY_MODEL = {
@@ -56,9 +74,6 @@ const EMPTY_MODEL = {
 
 const NUMERIC_INPUT_REGEX = /^(\d+(\.\d*)?|\.\d*)?$/;
 
-export const hasValue = (value) =>
-  value !== '' && value !== null && value !== undefined && value !== false;
-
 const toNumericString = (value) => {
   if (!hasValue(value) && value !== 0) {
     return '';
@@ -80,7 +95,7 @@ const formatNumber = (value) => {
   if (num === null) {
     return '';
   }
-  return parseFloat(num.toFixed(12)).toString();
+  return parseFloat(num.toPrecision(12)).toString();
 };
 
 const toNormalizedNumber = (value) => {
@@ -286,42 +301,6 @@ export const getModelWarnings = (model, t) => {
   }
 
   return warnings;
-};
-
-export const buildSummaryText = (model, t) => {
-  const requestRuleSuffix =
-    model.billingMode === 'tiered_expr' && model.requestRuleExpr
-    ? `，${t('请求规则')}`
-    : '';
-  if (model.billingMode === 'tiered_expr') {
-    const expr = model.billingExpr;
-    if (!expr) return `${t('表达式计费')}${requestRuleSuffix}`;
-    const tierCount = (expr.match(/tier\(/g) || []).length;
-    if (tierCount === 0) {
-      return `${t('表达式计费')}${requestRuleSuffix}`;
-    }
-    return `${t('阶梯计费')} (${tierCount} ${t('档')})${requestRuleSuffix}`;
-  }
-
-  if (model.billingMode === 'per-request' && hasValue(model.fixedPrice)) {
-    return `${t('按次')} $${model.fixedPrice} / ${t('次')}${requestRuleSuffix}`;
-  }
-
-  if (hasValue(model.inputPrice)) {
-    const extraCount = [
-      model.completionPrice,
-      model.cachePrice,
-      model.createCachePrice,
-      model.imagePrice,
-      model.audioInputPrice,
-      model.audioOutputPrice,
-    ].filter(hasValue).length;
-    const extraLabel =
-      extraCount > 0 ? `，${t('额外价格项')} ${extraCount}` : '';
-    return `${t('输入')} $${model.inputPrice}${extraLabel}${requestRuleSuffix}`;
-  }
-
-  return `${t('未设置价格')}${requestRuleSuffix}`;
 };
 
 export const buildOptionalFieldToggles = (model) => ({
@@ -633,6 +612,7 @@ export function useModelPricingEditorState({
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [conflictOnly, setConflictOnly] = useState(false);
+  const [priceCurrency, setPriceCurrency] = useState(PRICE_CURRENCIES.USD);
   const [optionalFieldToggles, setOptionalFieldToggles] = useState({});
 
   useEffect(() => {
@@ -856,16 +836,18 @@ export function useModelPricingEditorState({
     };
   };
 
-  const handleNumericFieldChange = (field, value) => {
+  const handleNumericFieldChange = (field, value, usdExchangeRate) => {
     if (!selectedModel || !NUMERIC_INPUT_REGEX.test(value)) {
       return;
     }
 
+    const usdValue = toUsdPrice(value, priceCurrency, usdExchangeRate);
+
     upsertModel(selectedModel.name, (model) => {
-      const updatedModel = { ...model, [field]: value };
+      const updatedModel = { ...model, [field]: usdValue };
 
       if (field === 'inputPrice') {
-        return fillDerivedPricesFromBase(updatedModel, value);
+        return fillDerivedPricesFromBase(updatedModel, usdValue);
       }
 
       return updatedModel;
@@ -1115,6 +1097,8 @@ export function useModelPricingEditorState({
     loading,
     conflictOnly,
     setConflictOnly,
+    priceCurrency,
+    setPriceCurrency,
     filteredModels,
     pagedData,
     selectedWarnings,

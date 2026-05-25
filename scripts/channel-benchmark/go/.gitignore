@@ -10,3 +10,4 @@
 
 # Local config (contains tokens)
 *.local.yaml
+benchmark-ch*.yaml

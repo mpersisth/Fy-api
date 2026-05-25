@@ -328,6 +328,17 @@
 - **冲突风险**：极低（全独立 model + middleware）
 - **Feature flag**：`overlay.hmac_keystore_enabled`（B-12 InternalAuth middleware 双 flag 校验：InternalAPI ON + HMACKeystore ON 才放行；任一 OFF 即 503）
 
+### B-26 [aws/bedrock] cache_control.scope 剥离 + 空 text content block 过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_content_filter.go`（cache_control.scope 剥离 + 空 text block 过滤，struct / pass-through 双路径）
+  - `relay/channel/aws/bedrock_content_filter_test.go`（7 个 table-driven 测试覆盖：scope 剥离、保留无 scope 的 cache_control、string content 不 panic、空 text 过滤、非 text 保留、raw map 路径）
+- **修改文件**：
+  - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +2 行调用）
+  - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +2 行调用）
+- **背景**：SG 生产 momo 客户流量（channel #27 AWS Bedrock）5/21 出现 18 次 400 `cache_control.ephemeral.scope: Extra inputs are not permitted` 和 5 次 `text content blocks must be non-empty`。Bedrock schema 校验比 Anthropic 原生 API 更严格：(1) 不接受 `cache_control` 内的 `scope` 字段；(2) 不允许 `type:"text"` 且 `text:""` 的空块。
+- **行为**：请求发往 Bedrock 前，静默移除 system/messages 中所有 `cache_control.scope`，并过滤掉空 text content block。不改变请求语义——`cache_control.type` 保留，非空 text block 保留。
+- **冲突风险**：极低（独立新文件 + 两处各 +2 行，与 B-17 同一函数但不同行）
+
 ---
 
 ## 前端定制

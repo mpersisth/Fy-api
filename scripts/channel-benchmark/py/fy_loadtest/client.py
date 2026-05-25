@@ -97,11 +97,18 @@ class ChatClient:
         *,
         request_timeout: float = 120.0,
         pin_channel_id: int | None = None,
+        extra_headers: dict[str, str] | None = None,
     ):
         self._url = base_url.rstrip("/") + "/v1/chat/completions"
         # Channel-pin is implemented by appending "-{id}" to the user token.
         # Fy-api admin-only feature; see middleware/auth.go ~line 431.
         effective_token = token if pin_channel_id is None else f"{token}-{pin_channel_id}"
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {effective_token}",
+            "Content-Type": "application/json",
+        }
+        if extra_headers:
+            headers.update(extra_headers)
         # Generous connect timeout, tight read timeout controlled by caller.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
@@ -110,10 +117,7 @@ class ChatClient:
                 write=30.0,
                 pool=10.0,
             ),
-            headers={
-                "Authorization": f"Bearer {effective_token}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             http2=False,  # Fy-api advertises HTTP/1.1 for SSE; avoid h2/SSE quirks
         )
 

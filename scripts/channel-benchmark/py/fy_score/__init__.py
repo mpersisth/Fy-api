@@ -1,3 +1,3 @@
-"""Channel scorecard — SLO-anchored absolute rating for Fy-api channels."""
+"""Channel scorecard — SLO-anchored 5-dimension rating for Fy-api channels."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

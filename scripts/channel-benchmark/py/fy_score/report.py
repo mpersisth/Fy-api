@@ -41,19 +41,35 @@ def write_json(cards: list[ChannelScorecard], path: Path) -> None:
 
 def write_markdown(cards: list[ChannelScorecard], path: Path) -> None:
     lines: list[str] = ["# Channel Scorecard", ""]
-    lines.append("| Channel | Model | Avail | Perf | Quality | Auth | Composite | Grade |")
-    lines.append("|---------|-------|-------|------|---------|------|-----------|-------|")
+    lines.append("| Channel | Model | Avail | Perf | Quality | Auth | Comply | Composite | Grade |")
+    lines.append("|---------|-------|-------|------|---------|------|--------|-----------|-------|")
     for c in sorted(cards, key=lambda x: x.composite_score, reverse=True):
         dims = c.dimensions
-        a = f"{dims['availability'].score:.0f}" if dims["availability"].available else "N/A"
-        p = f"{dims['performance'].score:.0f}" if dims["performance"].available else "N/A"
-        q = f"{dims['quality'].score:.0f}" if dims["quality"].available else "N/A"
-        au = f"{dims['authenticity'].score:.0f}" if dims["authenticity"].available else "N/A"
+
+        def _val(name: str) -> str:
+            d = dims.get(name)
+            return f"{d.score:.0f}" if d and d.available else "N/A"
+
         flags = f" {''.join(c.flags)}" if c.flags else ""
         lines.append(
-            f"| {c.channel_name} | {c.model} | {a} | {p} | {q} | {au} "
+            f"| {c.channel_name} | {c.model} | {_val('availability')} | {_val('performance')} "
+            f"| {_val('quality')} | {_val('authenticity')} | {_val('compliance')} "
             f"| {c.composite_score:.1f} | **{c.grade}**{flags} |"
         )
     lines.append("")
+
+    # Detail section
+    for c in sorted(cards, key=lambda x: x.composite_score, reverse=True):
+        lines.append(f"## {c.channel_name} / {c.model}")
+        lines.append("")
+        for name, dim in c.dimensions.items():
+            status = "✓" if dim.available else "—"
+            lines.append(f"- **{name}** ({dim.weight:.0%}): {dim.score:.1f}/100 {status} | {dim.detail}")
+        if c.flags:
+            lines.append("")
+            for flag in c.flags:
+                lines.append(f"- ⚠ {flag}")
+        lines.append("")
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")

@@ -64,6 +64,22 @@ class CanaryMetrics:
     avg_probe_score: float
 
 
+@dataclass
+class ConformanceMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    pass_rate: float
+
+
+@dataclass
+class IntegrityMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    probes: list[dict]
+
+
 def load_smoke(path: Path) -> list[SmokeMetrics]:
     """Parse Go smoke-test JSON."""
     data = _read_json(path)
@@ -91,14 +107,14 @@ def load_loadtest(path: Path) -> list[LoadtestMetrics]:
             continue
         ttft = baseline.get("ttft", {})
         e2e = baseline.get("e2e", {})
-        toks = baseline.get("per_request_tok_per_s", {})
+        toks = baseline.get("aggregate_tok_per_s")
         results.append(LoadtestMetrics(
             channel_name=ch.get("channel_name", ""),
             channel_id=ch.get("pin_channel_id"),
             model=model,
             ttft_p95_ms=ttft.get("p95_ms"),
             e2e_p95_ms=e2e.get("p95_ms"),
-            throughput_toks=toks.get("avg"),
+            throughput_toks=toks,
         ))
     return results
 
@@ -153,5 +169,32 @@ def load_canary(path: Path) -> list[CanaryMetrics]:
         model=data.get("model", ""),
         probe_pass_rate=passed / total if total > 0 else 0.0,
         avg_probe_score=sum(scores) / len(scores) if scores else 0.0,
+    )]
+
+
+def load_conformance(path: Path) -> list[ConformanceMetrics]:
+    """Parse fy-conformance summary.json. Model extracted from filename."""
+    data = _read_json(path)
+    pass_rate = data.get("pass_rate", 0.0)
+    # Filename pattern: conformance-{model}-{timestamp}.summary.json
+    m = re.match(r"conformance-(.+?)-\d{8}T\d{6}Z", path.stem.replace(".summary", ""))
+    model = m.group(1) if m else ""
+    return [ConformanceMetrics(
+        channel_name="", channel_id=None, model=model, pass_rate=pass_rate,
+    )]
+
+
+def load_integrity(path: Path) -> list[IntegrityMetrics]:
+    """Parse fy-integrity JSON. Extracts probe list + channel/model from config."""
+    data = _read_json(path)
+    cfg = data.get("config", {})
+    model = cfg.get("model", "")
+    channel_id = cfg.get("pin_channel_id")
+    probes = data.get("probes", [])
+    return [IntegrityMetrics(
+        channel_name=f"channel-{channel_id}" if channel_id else "",
+        channel_id=channel_id,
+        model=model,
+        probes=probes,
     )]
 

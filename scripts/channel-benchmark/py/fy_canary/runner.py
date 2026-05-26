@@ -21,6 +21,10 @@ from . import alignment, drift, mmd
 from .baseline import BaselineStore, ChannelBaseline, ProbeBaseline
 from .client import CanaryClient
 from .config import CanaryConfig
+from .metadata import evaluate_metadata
+from .tokenizer import evaluate_tokenizer
+
+_STATELESS_METHODS = {"metadata", "tokenizer"}
 
 
 @dataclass
@@ -116,6 +120,8 @@ class CanaryRunner:
         self, row: PromptRow, client: CanaryClient, emb: EmbeddingClient | None,
     ) -> ProbeBaseline:
         method = row.method or "alignment"
+        if method in _STATELESS_METHODS:
+            return ProbeBaseline(prompt_id=row.id, method=method, samples=[], centroid=None)
         n = self._n_samples_for(row, method)
         samples = await self._sample_n(client, row, n)
         centroid_vec: list[float] | None = None
@@ -134,12 +140,20 @@ class CanaryRunner:
     # --------- audit mode -----------------------------------------------------
     async def audit(self) -> CanaryReport:
         """Compare current source against stored baseline."""
-        baseline = self.store.load(self.cfg.source.name)
-        if baseline is None:
-            raise FileNotFoundError(
-                f"no baseline found at {self.store.path_for(self.cfg.source.name)} — "
-                f"run `fy-canary baseline -c ...` first."
-            )
+        all_stateless = all(
+            (row.method or "alignment") in _STATELESS_METHODS
+            for row in self.dataset
+        )
+
+        if all_stateless:
+            baseline = None
+        else:
+            baseline = self.store.load(self.cfg.source.name)
+            if baseline is None:
+                raise FileNotFoundError(
+                    f"no baseline found at {self.store.path_for(self.cfg.source.name)} — "
+                    f"run `fy-canary baseline -c ...` first."
+                )
 
         emb = self._maybe_emb_client()
         outcomes: list[ProbeOutcome] = []
@@ -230,10 +244,20 @@ class CanaryRunner:
 
     async def _audit_one(
         self, row: PromptRow,
-        baseline: ChannelBaseline,
+        baseline: ChannelBaseline | None,
         client: CanaryClient,
         emb: EmbeddingClient | None,
     ) -> ProbeOutcome | None:
+        method = row.method or "alignment"
+
+        # Stateless probes — no baseline needed
+        if method == "metadata":
+            return await self._audit_metadata(row, client)
+        if method == "tokenizer":
+            return await self._audit_tokenizer(row, client)
+
+        # Stateful probes require baseline
+        assert baseline is not None
         b = baseline.probes.get(row.id)
         if b is None:
             return ProbeOutcome(
@@ -318,6 +342,31 @@ class CanaryRunner:
             )
 
         return ProbeOutcome(row.id, method, False, 0.0, f"unknown method: {method!r}")
+
+    # --------- stateless probe helpers -----------------------------------------
+    async def _audit_metadata(self, row: PromptRow, client: CanaryClient) -> ProbeOutcome:
+        max_t = row.max_tokens or 200
+        resp = await client.complete_raw(
+            model=self.cfg.source.model, prompt=row.prompt,
+            max_tokens=max_t, temperature=row.temperature or 0.0,
+        )
+        v = evaluate_metadata(
+            prompt_id=row.id, resp=resp,
+            expected_model=self.cfg.source.model, max_tokens=max_t,
+        )
+        return ProbeOutcome(row.id, "metadata", v.passed, 1.0 if v.passed else 0.0, v.detail)
+
+    async def _audit_tokenizer(self, row: PromptRow, client: CanaryClient) -> ProbeOutcome:
+        resp = await client.complete_raw(
+            model=self.cfg.source.model, prompt=row.prompt,
+            max_tokens=row.max_tokens or 16, temperature=row.temperature or 0.0,
+        )
+        v = evaluate_tokenizer(
+            prompt_id=row.id, resp=resp,
+            expected_model=self.cfg.source.model, prompt_text=row.prompt,
+            row_expected_range=row.raw.get("expected_prompt_tokens"),
+        )
+        return ProbeOutcome(row.id, "tokenizer", v.passed, v.deviation, v.detail)
 
     # --------- shared helpers -------------------------------------------------
     async def _sample_n(self, client: CanaryClient, row: PromptRow, n: int) -> list[str]:

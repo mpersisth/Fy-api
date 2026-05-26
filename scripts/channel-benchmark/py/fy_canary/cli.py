@@ -77,7 +77,13 @@ def main(argv: list[str] | None = None) -> int:
     runner = CanaryRunner(cfg)
 
     # Health-check the baseline up-front for the two modes that need it.
-    if args.cmd in {"audit", "verify-baseline"}:
+    # Skip when dataset is purely stateless (metadata/tokenizer only).
+    _STATELESS_METHODS = {"metadata", "tokenizer"}
+    all_stateless = all(
+        (row.method or "alignment") in _STATELESS_METHODS
+        for row in runner.dataset
+    )
+    if args.cmd in {"audit", "verify-baseline"} and not all_stateless:
         health = runner.baseline_health()
         if health is None:
             console.print(

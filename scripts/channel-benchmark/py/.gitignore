@@ -42,6 +42,10 @@ integrity-ch*.yaml
 loadtest-ch*.yaml
 quality-ch*.yaml
 
+# Scorecard output
+scorecard-*.json
+scorecard-*.md
+
 # Report output
 reports/
 combined-report-*.pdf

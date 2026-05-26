@@ -100,6 +100,22 @@ TARGETS = {
         "mem": "6g",
         "cpus": "2",
     },
+    "sg-test": {
+        "host": "8.222.175.17",
+        "port": 22,
+        "user": "root",
+        "key": "",
+        "app_dir": "/opt/fy-api",
+        "src_dir": "/root/Fy-api",
+        "build_dir": "/tmp/fy-api-build",
+        "registry": "",
+        "namespace": "",
+        "repo": "fy-api",
+        "repo_url": "https://github.com/seraph0017/Fy-api.git",
+        "nginx_conf": "/etc/nginx/conf.d/fy-api.conf",
+        "mem": "6g",
+        "cpus": "4",
+    },
 }
 
 DEFAULT_REPO_URL = "git@github.com:seraph0017/Fy-api.git"

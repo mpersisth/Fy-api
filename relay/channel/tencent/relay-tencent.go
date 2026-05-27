@@ -163,7 +163,7 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 
 func parseTencentConfig(config string) (appId int64, secretId string, secretKey string, err error) {
 	parts := strings.Split(config, "|")
-	if len(parts) != 3 {
+	if len(parts) < 3 || len(parts) > 4 {
 		err = errors.New("invalid tencent config")
 		return
 	}
@@ -171,6 +171,14 @@ func parseTencentConfig(config string) (appId int64, secretId string, secretKey 
 	secretId = parts[1]
 	secretKey = parts[2]
 	return
+}
+
+func parseTencentRegion(config string) string {
+	parts := strings.Split(config, "|")
+	if len(parts) >= 4 && parts[3] != "" {
+		return parts[3]
+	}
+	return "ap-guangzhou"
 }
 
 func sha256hex(s string) string {

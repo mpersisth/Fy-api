@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
 func TestNextRelayRetryBackoffDelayExponentialAndMax(t *testing.T) {
@@ -15,7 +16,7 @@ func TestNextRelayRetryBackoffDelayExponentialAndMax(t *testing.T) {
 		max:   3 * time.Second,
 		total: 20 * time.Second,
 	}
-	state := &relayRetryBackoffState{}
+	state := &relaycommon.RetryBackoffState{}
 
 	expected := []time.Duration{time.Second, 2 * time.Second, 3 * time.Second, 3 * time.Second}
 	for _, want := range expected {
@@ -35,7 +36,7 @@ func TestNextRelayRetryBackoffDelayTotalTimeout(t *testing.T) {
 		max:   10 * time.Second,
 		total: 3 * time.Second,
 	}
-	state := &relayRetryBackoffState{}
+	state := &relaycommon.RetryBackoffState{}
 
 	got, ok := nextRelayRetryBackoffDelay(state, cfg)
 	if !ok || got != time.Second {
@@ -58,7 +59,7 @@ func TestNextRelayRetryBackoffDelayAllowsExactTotalTimeout(t *testing.T) {
 		max:   time.Second,
 		total: 1500 * time.Millisecond,
 	}
-	state := &relayRetryBackoffState{}
+	state := &relaycommon.RetryBackoffState{}
 
 	got, ok := nextRelayRetryBackoffDelay(state, cfg)
 	if !ok || got != 500*time.Millisecond {
@@ -81,7 +82,7 @@ func TestNextRelayRetryBackoffDelayUnlimitedTotalTimeout(t *testing.T) {
 		max:   2 * time.Second,
 		total: 0,
 	}
-	state := &relayRetryBackoffState{}
+	state := &relaycommon.RetryBackoffState{}
 
 	expected := []time.Duration{time.Second, 2 * time.Second, 2 * time.Second}
 	for _, want := range expected {
@@ -98,7 +99,7 @@ func TestNextRelayRetryBackoffDelayZeroBase(t *testing.T) {
 		max:   time.Second,
 		total: time.Second,
 	}
-	state := &relayRetryBackoffState{}
+	state := &relaycommon.RetryBackoffState{}
 
 	for i := 0; i < 3; i++ {
 		got, ok := nextRelayRetryBackoffDelay(state, cfg)

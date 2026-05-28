@@ -168,12 +168,13 @@
 - **修改文件**：
   - `common/constants.go`（新增 `RetryBaseIntervalMs` / `RetryMaxIntervalMs` / `RetryTotalTimeoutMs` 默认值）
   - `model/option.go`（注册并加载三个新 option）
-  - `controller/relay.go`（普通 Relay 与 RelayTask retry loop 在 retry 前等待）
+  - `relay/common/relay_info.go`（新增 `RetryBackoff` 请求级状态字段）
+  - `controller/relay.go`（普通 Relay 与 RelayTask retry loop 在 retry 前等待，仅保留 2 处 wait 调用）
   - `web/classic/src/pages/Setting/Operation/SettingsGeneral.jsx`（通用设置暴露三个退避配置项）
 - **背景**：TN-IR-20260512-02 中 kimi 429 限流被无退避密集重试放大，造成错误日志膨胀和请求积压超时
-- **行为**：`RetryTimes=0` 保持不变；`shouldRetry` / `shouldRetryTaskRelay` 继续决定是否重试；退避状态独立于 `RetryParam`，避免 auto-group retry 重置影响累计等待上限
-- **冲突风险**：中（`controller/relay.go` retry loop 是 upstream 高频区域；核心退避逻辑放在新增文件降低冲突面）
-- **Merge 策略**：保留 `// Fy-api overlay:` 标记的 retry wait 调用点；若 upstream 重构 retry loop，将 `waitBeforeNextRelayRetry` / `waitBeforeNextTaskRelayRetry` 迁移到新的“已决定重试、即将开始下一次尝试”位置
+- **行为**：`RetryTimes=0` 保持不变；`shouldRetry` / `shouldRetryTaskRelay` 继续决定是否重试；退避状态挂在 `RelayInfo` 上并做 lazy init，避免 auto-group retry 重置影响累计等待上限，同时减少 `controller/relay.go` 的 overlay 插入面
+- **冲突风险**：低到中（`controller/relay.go` retry loop 是 upstream 高频区域，但已把状态挂到 `RelayInfo`，controller 只剩 2 处 wait 调用；核心退避逻辑放在新增文件降低冲突面）
+- **Merge 策略**：保留 `// Fy-api overlay:` 标记的两个 retry wait 调用点与 `RelayInfo.RetryBackoff` 字段；若 upstream 重构 retry loop，将等待调用迁移到新的“已决定重试、即将开始下一次尝试”位置
 
 ---
 

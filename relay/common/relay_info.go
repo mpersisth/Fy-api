@@ -84,6 +84,11 @@ type TokenCountMeta struct {
 	estimatePromptTokens int
 }
 
+type RetryBackoffState struct {
+	RetriesWaited int
+	TotalWait     time.Duration
+}
+
 type RelayInfo struct {
 	TokenId           int
 	TokenKey          string
@@ -149,6 +154,7 @@ type RelayInfo struct {
 	IsChannelTest                         bool // channel test request
 	RetryIndex                            int
 	LastError                             *types.NewAPIError
+	RetryBackoff                          *RetryBackoffState // Fy-api overlay: request-wide retry backoff state
 	RuntimeHeadersOverride                map[string]interface{}
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string

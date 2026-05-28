@@ -10,15 +10,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
-
-type relayRetryBackoffState struct {
-	retriesWaited int
-	totalWait     time.Duration
-}
 
 type relayRetryBackoffConfig struct {
 	base  time.Duration
@@ -51,15 +47,15 @@ func normalizedRelayRetryBackoffConfig() relayRetryBackoffConfig {
 	}
 }
 
-func nextRelayRetryBackoffDelay(state *relayRetryBackoffState, cfg relayRetryBackoffConfig) (time.Duration, bool) {
+func nextRelayRetryBackoffDelay(state *relaycommon.RetryBackoffState, cfg relayRetryBackoffConfig) (time.Duration, bool) {
 	hasTotalLimit := cfg.total > 0
-	if hasTotalLimit && state.totalWait >= cfg.total {
+	if hasTotalLimit && state.TotalWait >= cfg.total {
 		return 0, false
 	}
 
 	delay := cfg.base
-	if delay > 0 && state.retriesWaited > 0 {
-		for range state.retriesWaited {
+	if delay > 0 && state.RetriesWaited > 0 {
+		for range state.RetriesWaited {
 			if delay >= cfg.max {
 				delay = cfg.max
 				break
@@ -74,11 +70,11 @@ func nextRelayRetryBackoffDelay(state *relayRetryBackoffState, cfg relayRetryBac
 	if cfg.max > 0 && delay > cfg.max {
 		delay = cfg.max
 	}
-	if hasTotalLimit && state.totalWait+delay > cfg.total {
+	if hasTotalLimit && state.TotalWait+delay > cfg.total {
 		return 0, false
 	}
-	state.retriesWaited++
-	state.totalWait += delay
+	state.RetriesWaited++
+	state.TotalWait += delay
 	return delay, true
 }
 
@@ -103,8 +99,11 @@ func waitForRelayRetryBackoff(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-func waitBeforeNextRelayRetry(c *gin.Context, state *relayRetryBackoffState, statusCode int, retryCurrent int, retryLimit int) *types.NewAPIError {
-	delay, ok := nextRelayRetryBackoffDelay(state, normalizedRelayRetryBackoffConfig())
+func waitBeforeNextRelayRetry(c *gin.Context, info *relaycommon.RelayInfo, statusCode int, retryCurrent int, retryLimit int) *types.NewAPIError {
+	if info.RetryBackoff == nil {
+		info.RetryBackoff = &relaycommon.RetryBackoffState{}
+	}
+	delay, ok := nextRelayRetryBackoffDelay(info.RetryBackoff, normalizedRelayRetryBackoffConfig())
 	if !ok {
 		return types.NewErrorWithStatusCode(errors.New("retry backoff total timeout exceeded"), types.ErrorCodeDoRequestFailed, http.StatusRequestTimeout, types.ErrOptionWithSkipRetry())
 	}
@@ -117,8 +116,11 @@ func waitBeforeNextRelayRetry(c *gin.Context, state *relayRetryBackoffState, sta
 	return nil
 }
 
-func waitBeforeNextTaskRelayRetry(c *gin.Context, state *relayRetryBackoffState, statusCode int, retryCurrent int, retryLimit int) *dto.TaskError {
-	delay, ok := nextRelayRetryBackoffDelay(state, normalizedRelayRetryBackoffConfig())
+func waitBeforeNextTaskRelayRetry(c *gin.Context, info *relaycommon.RelayInfo, statusCode int, retryCurrent int, retryLimit int) *dto.TaskError {
+	if info.RetryBackoff == nil {
+		info.RetryBackoff = &relaycommon.RetryBackoffState{}
+	}
+	delay, ok := nextRelayRetryBackoffDelay(info.RetryBackoff, normalizedRelayRetryBackoffConfig())
 	if !ok {
 		return service.TaskErrorWrapperLocal(errors.New("retry backoff total timeout exceeded"), "retry_backoff_total_timeout_exceeded", http.StatusRequestTimeout)
 	}

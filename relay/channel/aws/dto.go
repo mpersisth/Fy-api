@@ -12,6 +12,20 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 )
 
+var bedrockAnthropicBetaCompatMap = map[string]string{
+	"advanced-tool-use-2025-11-20":     "tool-search-tool-2025-10-19",
+	"computer-use-2025-01-24":          "computer-use-2025-01-24",
+	"context-1m-2025-08-07":            "context-1m-2025-08-07",
+	"context-management-2025-06-27":    "context-management-2025-06-27",
+	"dev-full-thinking-2025-05-14":     "dev-full-thinking-2025-05-14",
+	"effort-2025-11-24":                "effort-2025-11-24",
+	"interleaved-thinking-2025-05-14":  "interleaved-thinking-2025-05-14",
+	"output-128k-2025-02-19":           "output-128k-2025-02-19",
+	"token-efficient-tools-2025-02-19": "token-efficient-tools-2025-02-19",
+	"tool-examples-2025-10-29":         "tool-examples-2025-10-29",
+	"tool-search-tool-2025-10-19":      "tool-search-tool-2025-10-19",
+}
+
 type AwsClaudeRequest struct {
 	// AnthropicVersion should be "bedrock-2023-05-31"
 	AnthropicVersion string              `json:"anthropic_version"`
@@ -37,12 +51,15 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 		return nil, err
 	}
 	awsClaudeRequest.AnthropicVersion = "bedrock-2023-05-31"
+	sanitizeAwsClaudeRequestForBedrock(&awsClaudeRequest)
 
-	// check header anthropic-beta
+	// Fy-api overlay: normalize Anthropic beta flags to the subset Bedrock accepts.
+	// Direct Anthropic supports more beta headers than Bedrock. Passing unsupported
+	// values through here makes Bedrock reject the whole request with
+	// "ValidationException: invalid beta flag".
 	anthropicBetaValues := requestHeader.Get("anthropic-beta")
 	if len(anthropicBetaValues) > 0 {
-		var tempArray []string
-		tempArray = strings.Split(anthropicBetaValues, ",")
+		tempArray := normalizeBedrockAnthropicBeta(anthropicBetaValues)
 		if len(tempArray) > 0 {
 			betaJson, err := json.Marshal(tempArray)
 			if err != nil {
@@ -53,6 +70,54 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 	}
 	logger.LogJson(context.Background(), "json", awsClaudeRequest)
 	return &awsClaudeRequest, nil
+}
+
+func sanitizeAwsClaudeRequestForBedrock(request *AwsClaudeRequest) {
+	if request == nil {
+		return
+	}
+	// Fy-api overlay: Bedrock rejects beta flags supplied in the body unless
+	// they are in AWS' smaller supported set. Always rebuild anthropic_beta
+	// from the normalized request header instead of trusting client body input.
+	request.AnthropicBeta = nil
+	sanitizeBedrockClaudeRawFieldsFromStruct(request)
+}
+
+func sanitizeBedrockClaudeRawFieldsFromStruct(request *AwsClaudeRequest) {
+	if request == nil {
+		return
+	}
+	// Fy-api overlay: Anthropic's output_config beta shape is not accepted by
+	// Bedrock Claude Messages today. Drop it at the AWS boundary so upstream
+	// schema changes do not leak through pass-through or native Claude calls.
+	request.OutputConfig = nil
+	filterBedrockToolsFromStruct(request)
+	stripCacheControlScopeFromStruct(request)
+	filterEmptyTextBlocksFromStruct(request)
+}
+
+func normalizeBedrockAnthropicBeta(value string) []string {
+	if value == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, raw := range strings.Split(value, ",") {
+		token := strings.TrimSpace(raw)
+		if token == "" {
+			continue
+		}
+		normalized, ok := bedrockAnthropicBetaCompatMap[token]
+		if !ok || normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
 }
 
 // NovaMessage Nova模型使用messages-v1格式

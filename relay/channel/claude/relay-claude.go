@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -239,6 +241,19 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		}
 	}
 
+	// Fy-api overlay: Bedrock sampling-parameter restrictions apply regardless of
+	// channel type (native AWS or Anthropic-type proxy). Opus 4.7 fully rejects
+	// temperature/top_p/top_k; other models reject temperature+top_p together.
+	if claudeRequest.Thinking == nil {
+		if strings.HasPrefix(claudeRequest.Model, "claude-opus-4-7") {
+			claudeRequest.Temperature = nil
+			claudeRequest.TopP = nil
+			claudeRequest.TopK = nil
+		} else if claudeRequest.Temperature != nil && claudeRequest.TopP != nil {
+			claudeRequest.TopP = nil
+		}
+	}
+
 	if textRequest.Stop != nil {
 		// stop maybe string/array string, convert to array string
 		switch textRequest.Stop.(type) {
@@ -381,7 +396,18 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 						if source == nil {
 							continue
 						}
-						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Claude")
+						// Fy-api overlay: file content blocks can carry a filename while
+						// raw base64 image blocks usually do not. Infer MIME from the
+						// filename first so PDF/text files keep their Claude-specific
+						// handling, then fall back to the base64 image sniffing path.
+						if mediaMessage.Type == dto.ContentTypeFile {
+							if file := mediaMessage.GetFile(); file != nil && file.FileName != "" {
+								if inferred := service.GetMimeTypeByExtension(strings.TrimPrefix(filepath.Ext(file.FileName), ".")); inferred != "" && inferred != "application/octet-stream" {
+									source = types.NewFileSourceFromData(file.FileData, inferred)
+								}
+							}
+						}
+						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting file for Claude")
 						if err != nil {
 							return nil, fmt.Errorf("get file data failed: %s", err.Error())
 						}
@@ -392,8 +418,20 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 						}
 						if strings.HasPrefix(mimeType, "application/pdf") {
 							claudeMediaMessage.Type = "document"
-						} else {
+						} else if strings.HasPrefix(mimeType, "text/") {
+							textData, err := base64.StdEncoding.DecodeString(base64Data)
+							if err != nil {
+								continue
+							}
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: "text",
+								Text: common.GetPointer[string](string(textData)),
+							})
+							continue
+						} else if strings.HasPrefix(mimeType, "image/") {
 							claudeMediaMessage.Type = "image"
+						} else {
+							continue
 						}
 
 						claudeMediaMessage.Source.MediaType = mimeType

@@ -24,6 +24,7 @@ type Adaptor struct {
 	Action    string
 	Version   string
 	Timestamp int64
+	Region    string
 }
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
@@ -43,7 +44,10 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	//TODO implement me
+	// Fy-api overlay: Tencent AIArt uses async jobs; keep the public OpenAI image API synchronous.
+	if isTencentAIArtImageGeneration(info) {
+		return tencentAIArtImageRequestFromOpenAI(request)
+	}
 	return nil, errors.New("not implemented")
 }
 
@@ -63,6 +67,9 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("X-TC-Action", a.Action)
 	req.Set("X-TC-Version", a.Version)
 	req.Set("X-TC-Timestamp", strconv.FormatInt(a.Timestamp, 10))
+	if a.Region != "" {
+		req.Set("X-TC-Region", a.Region)
+	}
 	return nil
 }
 
@@ -74,6 +81,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
 	appId, secretId, secretKey, err := parseTencentConfig(apiKey)
 	a.AppID = appId
+	a.Region = parseTencentRegion(apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -98,10 +106,18 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	// Fy-api overlay: submit and poll Tencent AIArt image jobs behind /v1/images/generations.
+	if isTencentAIArtImageGeneration(info) {
+		return a.doTencentAIArtImageRequest(c, info, requestBody)
+	}
 	return channel.DoApiRequest(a, c, info, requestBody)
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	// Fy-api overlay: convert completed Tencent AIArt job results into OpenAI image response.
+	if isTencentAIArtImageGeneration(info) {
+		return writeTencentAIArtImageResponse(c, resp, info)
+	}
 	if info.IsStream {
 		usage, err = tencentStreamHandler(c, info, resp)
 	} else {

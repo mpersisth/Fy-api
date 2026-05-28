@@ -52,6 +52,9 @@ const (
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
 
+	// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+	ContextKeyUserGroupRatioOverride ContextKey = "user_group_ratio_override"
+
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"

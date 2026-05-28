@@ -17,6 +17,9 @@ func SetRouter(router *gin.Engine, assets ThemeAssets) {
 	SetDashboardRouter(router)
 	SetRelayRouter(router)
 	SetVideoRouter(router)
+	// Fy-api overlay: B-12 TraceNex Partner internal router (HMAC-protected /api/internal/*).
+	SetInternalRouter(router)
+	SetPrometheusRouter(router) // Fy-api overlay: Prometheus metrics endpoint
 	frontendBaseUrl := os.Getenv("FRONTEND_BASE_URL")
 	if common.IsMasterNode && frontendBaseUrl != "" {
 		frontendBaseUrl = ""

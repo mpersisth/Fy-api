@@ -13,7 +13,6 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/thanhpk/randstr"
@@ -98,7 +97,7 @@ func getWaffoPancakeBuyerEmail(user *model.User) string {
 		return user.Email
 	}
 	if user != nil {
-		return fmt.Sprintf("%d@new-api.local", user.Id)
+		return fmt.Sprintf("%d@tracenex.local", user.Id)
 	}
 	return ""
 }
@@ -107,7 +106,7 @@ func getWaffoPancakeReturnURL() string {
 	if strings.TrimSpace(setting.WaffoPancakeReturnURL) != "" {
 		return setting.WaffoPancakeReturnURL
 	}
-	return strings.TrimRight(system_setting.ServerAddress, "/") + "/console/topup?show_history=true"
+	return paymentReturnPath("/console/topup?show_history=true")
 }
 
 func RequestWaffoPancakePay(c *gin.Context) {

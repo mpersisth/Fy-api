@@ -8,6 +8,10 @@ This is **TraceNex**, a downstream fork of [QuantumNous/new-api](https://github.
 
 **Before changing anything, read [`OVERLAY.md`](./OVERLAY.md).** It is the single source of truth for which files are TraceNex customizations vs pure upstream, and what will/won't conflict on the next `upstream/main` merge. Preserving its accuracy is as important as the code changes themselves.
 
+### Sibling project: TraceNexBiz (consumer of `/api/internal/*`)
+
+A separate downstream project `~/Projects/apiGateway/TraceNexBiz/` (channel-distribution SaaS, product brand "TraceNex Partner") consumes Fy-api via the `/api/internal/*` routes added in OVERLAY entries B-12..B-18. The contract is HMAC-SHA256 (headers `X-Auth-KeyId` / `X-Auth-Timestamp` / `X-Auth-Nonce` / `X-Signature`; canonical defined in `middleware/internal_auth.go::BuildCanonical`) plus `Idempotency-Key`. **Any change to `middleware/internal_auth.go::BuildCanonical`, `controller/tnbiz_internal/*.go`, or the `/api/internal/*` routes is a contract change** — the partner-api side has a byte-level parity test (`TraceNexBiz/apps/partner-api/internal/infra/fyapi/client_test.go::TestSign_FyApiParity`) that will catch drift. See `OVERLAY-TNBIZ-HANDOFF.md` for the current state of the integration (HMAC drift to `X-Auth-*` resolved 2026-05-12; two stub handlers — `/user/group` and `/user/erase` — still owed to partner-api).
+
 Upstream remote is configured read-only:
 ```
 origin    git@github.com:seraph0017/Fy-api.git  (your remote)
@@ -75,20 +79,22 @@ bun run i18n:lint
 
 ### Server-side deploy / operations (Fabric)
 
-Use the root `fabfile.py` from the local repo. The conda env is `fy-api-deploy`.
+Use the root `fabfile.py` from the local repo. Python version is pinned via `.python-version` (pyenv), so `fab` works directly in the project directory.
 
 ```bash
-conda run -n fy-api-deploy fab info --target=cn
-conda run -n fy-api-deploy fab status --target=cn
-conda run -n fy-api-deploy fab logs --target=cn --tail=200
-conda run -n fy-api-deploy fab release --target=cn --tag=v0.9.8 --ref=origin/main
+fab info --target=cn
+fab status --target=cn
+fab logs --target=cn --tail=200
+fab release --target=cn --tag=v0.9.8 --ref=origin/main
 
-conda run -n fy-api-deploy fab info --target=sg
-conda run -n fy-api-deploy fab status --target=sg
-conda run -n fy-api-deploy fab logs --target=sg --tail=200
-conda run -n fy-api-deploy fab deploy --target=sg --tag=sg-5d733d85
+fab info --target=sg
+fab status --target=sg
+fab logs --target=sg --tail=200
+fab deploy --target=sg --tag=sg-5d733d85
 
-conda run -n fy-api-deploy fab preflight --target=legacy
+fab preflight --target=legacy
+
+fab release --target=test --tag=1.2.3-tracenex --ref=origin/main
 ```
 
 Known Fabric targets:
@@ -97,6 +103,7 @@ Known Fabric targets:
 |--------|---------|-----|-------|
 | `cn` | Hangzhou production | `root@8.136.146.211:58422` via `~/.ssh/tracenex_XN.pem` | Builds from `/root/Fy-api`, runtime config in `/opt/fy-api/config/fy-api.env` |
 | `sg` | Singapore production | `root@47.236.133.70:58422` via `~/.ssh/AI_tracenex.pem` | Public URL `https://api.aitracenex.com`; ACR namespace `ai_transnext`; active blue/green behind Nginx |
+| `test` | Chengdu test env | `root@8.156.88.148:58422` via default SSH key/agent | Local build + deploy (no ACR); nginx at `/etc/nginx/conf.d/tracenex-test.conf`; domains `*-test.tracenex.cn` |
 | `legacy` | Legacy source server | `root@8.222.175.17` via default SSH key/agent | Contains old `/root/TraceNex` deployment and local MySQL source data |
 
 Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. For SG, current deployed image tag is `sg-5d733d85`.
@@ -326,3 +333,23 @@ See `scripts/channel-benchmark/README.md` for the top-level navigation and per-t
 ### Rule 7: Billing Expression System — Read `pkg/billingexpr/expr.md`
 
 When working on tiered/dynamic billing (expression-based pricing), you MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language (variables, functions, examples), full system architecture (editor → storage → pre-consume → settlement → log display), token normalization rules (`p`/`c` auto-exclusion), quota conversion, and expression versioning. All code changes to the billing expression system must follow the patterns described in that document.
+
+### Rule 8: Versioning, Branches, and Docker Tags
+
+Use the TraceNex release version format `x.x.x-tracenex` for shipped builds and Docker images.
+
+**Version numbering:**
+- Version numbers start at 1, not 0. The first release line starts at `1.1.1-tracenex`
+- The middle number is the weekly release train. Each new week increments it and resets the patch number to 1: week 1 → `1.1.1-tracenex`, week 2 → `1.2.1-tracenex`, week 3 → `1.3.1-tracenex`
+- The last number increments for every release within the same week, including bugfix releases. Example: if week 2 ships three times, the third build is `1.2.3-tracenex`
+- Do not reuse a released version tag. If an image or release has been pushed, the next shipped build must increment the patch number
+
+**Branching rules:**
+- New feature → branch named `feature/xxxx`
+- Bugfix → branch named `bugfix/xxxx`
+- Keep `xxxx` short, lowercase, and descriptive; prefer hyphen-separated names, e.g. `feature/mns-refund-wiring` or `bugfix/idempotency-replay`
+
+**Docker image tagging:**
+- Every Docker image build intended for testing, staging, or production must have an explicit version tag
+- Release images must use the exact TraceNex version tag, e.g. `1.2.3-tracenex`
+- Do not push only `latest`. `latest` may be added as an extra convenience tag, but never as the only tag

@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
@@ -62,4 +63,22 @@ func GetUserGroupRatio(userGroup, group string) float64 {
 		return ratio
 	}
 	return ratio_setting.GetGroupRatio(group)
+}
+
+// GetUserGroupRatioWithOverride is the B-15 (TraceNex Partner) variant:
+// when a partner has stamped a per-user override row in group_ratio_override,
+// it wins over GetGroupGroupRatio / GetGroupRatio. Hot path callers that
+// already carry RelayInfo should prefer ratio_setting.ApplyOverride directly;
+// this helper is for cold-path callers that have userId but no RelayInfo.
+//
+// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+func GetUserGroupRatioWithOverride(userId int, userGroup, group string) float64 {
+	base := GetUserGroupRatio(userGroup, group)
+	if userId <= 0 {
+		return base
+	}
+	if override, ok := model.LookupUserOverride(userId, group); ok {
+		return ratio_setting.ApplyOverride(override, base)
+	}
+	return base
 }

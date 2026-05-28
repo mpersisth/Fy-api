@@ -142,5 +142,5 @@ class BaselineStore:
         baseline.recorded_at_iso = _iso(baseline.created_at_unix)
         baseline.fy_canary_version = __version__
         p = self.path_for(baseline.source_name)
-        p.write_text(json.dumps(baseline.as_dict(), indent=2, ensure_ascii=False))
+        p.write_text(json.dumps(baseline.as_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
         return p

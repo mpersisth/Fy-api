@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-05-09（路径迁移到 `web/classic/`，吸收上游 v1.0 双前端架构）
+> 最后更新：2026-05-18（同步上游 `upstream/main`，保留 TraceNex overlay）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `543cc64ea` (2026-05-08)
+> 上游基线：new-api @ `5dd0d3bcb` (2026-05-18)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
@@ -85,6 +85,7 @@
     - `go.mod` 只依赖 `gopkg.in/yaml.v3`
   - `py/` —— 三件套 Python 工具（共享一个 venv / 一个 JSONL schema）
     - `fy_loadtest/` —— 并发阶梯压测（E2E/TTFT/ITL/TPOT 分位、RPS、goodput）
+    - `fy_image_loadtest/` —— 图片生成持续压测（固定每渠道 worker 数、打 `/v1/images/generations`、支持多渠道同时 pin 到指定 channel id，持续跑到 Ctrl+C）
     - `fy_quality/` —— 质量评分（7 种 grader + 双裁判 rubric + 磁盘缓存）
       - `perturbation.py` —— 确定性扰动（`whitespace` / `trailing_marker` / `synonym`）防训练集污染
       - `datasets/public/quality.jsonl` —— 起手 15 条烟测样本（带扰动示例）
@@ -118,10 +119,23 @@
 - **新增测试**：`relay/common/override_test.go::TestRemoveDisabledFieldsContextManagement`（3 个 sub-test：默认裁剪 / `AllowContextManagement=true` 保留 / channel pass-through 保留），同时把 `TestRemoveDisabledFieldsDefaultFiltering` 的输入扩展为含 `context_management`
 - **背景**：海外 SG 反馈 `claude-sonnet-4-6` 调用上游返回 `context_management: Extra inputs are not permitted`。Anthropic 的 `context_management` 是 beta 功能，必须配合 `anthropic-beta: context-management-2025-...` header 才能用。客户端（含部分 SDK）会只在 body 里塞这个字段、不带 header，被 Anthropic schema 校验直接拒
 - **upstream 现状**：upstream 在 `30cb3b8b`（2025-09-30 "feat: claude context editing"）只在 `dto.ClaudeRequest` 里加了 `ContextManagement` 字段做识别，没有像 `inference_geo / speed / service_tier` 那样接入 `RemoveDisabledFields` 默认过滤体系。这是 upstream 的遗漏；本仓库选择直接 overlay 修复，**不**向 upstream 提 PR
-- **冲突风险**：低（结构体新增一行字段；过滤函数新增一段独立 `if`，带 `// Fy-api overlay:` 注释）
-- **Merge 策略**：若 upstream 后续自行补上同样的过滤（推测会用同名字段 `AllowContextManagement`），merge 时直接 take theirs 即可；若它选了别的字段名，按 upstream 命名重写本 overlay
 
-### B-10 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
+### B-10 [billing] wan2.6 图像/视频模型定价与展示
+- **修改文件**：
+  - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` 视频基础倍率、`wan2.6-t2i` 单图价格）
+  - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v`）
+  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 首尾帧逻辑放到 metadata 反序列化之后；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
+  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算）
+  - `web/classic/src/components/table/model-pricing/modal/components/ModelPricingTable.jsx`（遇到 `wan2.6` 视频模型时改为“视频计费”展示）
+  - `web/classic/src/components/table/model-pricing/modal/components/VideoPricingDisplay.jsx`（新增分辨率/每秒价格表）
+- **定价规则**：
+  - `wan2.6-t2i`：`0.2` 元/张
+  - `wan2.6-i2v` / `wan2.6-r2v`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒
+- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；同时 `r2v` 的首尾帧字段若先写入、后做 metadata 通用反序列化，会被覆盖导致请求错误；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题
+- **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突）
+- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则，并继续确保 `r2v` 首尾帧赋值位于 metadata unmarshal 之后
+
+### B-11 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：
   - `common/json_error_sanitizer.go`（`SanitizeJSONUnmarshalError`：把 stdlib `*json.UnmarshalTypeError` / `*json.SyntaxError` / 字符串型 wrapped 错误转成用户安全格式 `invalid type for field "X": expected <json type>, got <json type>`，去掉 Go 结构体路径）
   - `common/json_error_sanitizer_test.go`（typed errors / syntax / wrapped string fallback / nil-safe / 切片包路径泄漏 / 嵌套 struct 字段）
@@ -134,7 +148,7 @@
 - **冲突风险**：低（顶层 dispatcher 改 1 行；UnmarshalBodyReusable 错误处加 1 行；新增的 sanitizer 是独立文件）
 - **Merge 策略**：若 upstream 修了同一行（用同样的 `NewErrorWithStatusCode`），merge 时 take theirs 即可；sanitizer 独立文件不会冲突
 
-### B-11 [relay] /v1/messages 二级反序列化泄漏 + 图片块 nil-deref panic
+### B-12 [relay] /v1/messages 二级反序列化泄漏 + 图片块 nil-deref panic
 - **新增文件**：
   - `dto/claude_parse_content_test.go`（`ClaudeMessage.ParseContent` 防泄漏：scalar content / 错类型 text 块 / 合法快路径）
 - **修改文件**：
@@ -150,7 +164,7 @@
 - **冲突风险**：中（`Any2Type` 是高频函数，签名不变；image case 加 4 行守卫；`claude_handler.go` 改 2 个 if 分支）
 - **Merge 策略**：upstream 若改 `Any2Type` 签名（不太可能），同步时把 sanitizer 调用迁过去；image nil 守卫若 upstream 自行修了就 take theirs
 
-### B-12 [relay] base64 图片缺失 MIME type 自动识别
+### B-13 [relay] base64 图片缺失 MIME type 自动识别
 - **修改文件**：
   - `dto/openai_request.go`（`MessageImageUrl.MimeType` 增加 `json:"mime_type,omitempty"`，`Message.ParseContent` 保留 `image_url.mime_type/mimeType`）
   - `service/file_service.go`（raw base64 文件在 MIME 为空时通过图片解码 / content sniff / HEIF 检测补齐 MIME）
@@ -161,7 +175,171 @@
 - **冲突风险**：低（小范围解析/文件服务增强）
 - **Merge 策略**：若 upstream 后续支持同类自动 MIME 推断，优先采用 upstream 实现，但保留 OpenAI `image_url.mime_type` 不丢失的测试语义
 
-### B-13 [relay] 网关重试退避策略 v2
+### B-14 [benchmark/image] gpt-image-2 压测工具与图片质量日志修正
+- **新增目录**：`scripts/channel-benchmark/py/fy_image_loadtest/`
+  - `cli.py` / `config.py` / `client.py` / `runner.py` / `report.py`
+  - 命令：`fy-image-loadtest`
+  - 用途：针对 `/v1/images/generations` 的持续压测，支持多渠道 pin、每渠道独立并发、`duration_sec` / `max_requests_per_channel` 结束条件、429 `retry-after` 冷却
+- **新增文件**：`scripts/channel-benchmark/py/image-loadtest.yaml`
+- **本地配置**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore）
+- **修改文件**：
+  - `scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-loadtest` CLI）
+  - `scripts/channel-benchmark/README.md` / `scripts/channel-benchmark/py/README.md`（补图片压测说明）
+  - `relay/image_handler.go`（`// Fy-api overlay:`：图片消费日志保留实际 `quality` 值，不再把 `high/medium/low` 统记成 `standard`）
+- **背景**：
+  1. 现有 `fy-loadtest` 固定打 `/v1/chat/completions`，不适合 `gpt-image-2`
+  2. Azure `gpt-image-2` 链路对 `response_format` 不兼容，工具默认不再发送该字段
+  3. 2026-05-15 CN 线上排查确认：channel `42` 和 `43` 共享同一个 Azure `base_url + key`，并非独立配额桶；本地图片压测配置已按此降并发标注
+- **冲突风险**：低（benchmark 子树独立；`relay/image_handler.go` 仅一小段日志文案逻辑）
+- **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现
+
+### B-15 [benchmark/image] 余额不足自动停机
+- **修改文件**：
+  - `scripts/channel-benchmark/py/fy_image_loadtest/client.py`（识别余额不足类错误）
+  - `scripts/channel-benchmark/py/fy_image_loadtest/runner.py`（任一请求命中后触发全局优雅停机）
+  - `scripts/channel-benchmark/py/tests/test_image_loadtest.py`（新增停机回归测试）
+- **行为**：`fy-image-loadtest` 遇到 `余额不足` / `额度不足` / `insufficient quota` 等错误时，立刻停止继续发新请求，已在飞请求自然收尾后输出最终报告
+- **冲突风险**：低（仅 benchmark 子树）
+
+### B-16 [aws/bedrock] Claude `anthropic-beta` 兼容过滤
+- **修改文件**：
+  - `relay/channel/aws/dto.go`（Bedrock AK/SK 路径把 `anthropic-beta` header 转成 body `anthropic_beta` 前，先按 Bedrock 支持列表映射/过滤；无兼容 token 时不发送该字段；同时丢弃客户端 body 自带的 `anthropic_beta` / `output_config`）
+  - `relay/channel/aws/relay-aws.go`（AWS Claude pass-through body 路径同样删除 `anthropic_beta` / `output_config`，避免绕过 `formatRequest` 的兜底过滤）
+  - `relay/channel/aws/relay_aws_test.go`（覆盖支持 token 保留、`advanced-tool-use-2025-11-20` 映射成 `tool-search-tool-2025-10-19`、不支持 token 被删除、body 自带 beta 删除、pass-through 删除 Bedrock 不兼容字段）
+- **背景**：SG 生产 Bedrock 流式调用报 `ValidationException: invalid beta flag`，后续日志还出现 `output_config.format: Extra inputs are not permitted`。直连 Anthropic 支持的 beta/header/body 扩展集合大于 AWS Bedrock 支持集合，原实现把 `anthropic-beta` 原样拆分写入 Bedrock body 的 `anthropic_beta`，且 pass-through 会把原始 body 的不兼容字段直接发给 Bedrock。
+- **行为**：后端默认按 AWS Bedrock Claude Messages 当前支持的 beta token 做白名单，并保留已有前端 “AWS Bedrock Claude 兼容模板” 的核心映射语义；渠道级 header override 仍先执行，随后 Bedrock adaptor 做最后兜底过滤。客户端 body 自带的 `anthropic_beta` 不被信任，统一由过滤后的 header 重建；`output_config` 暂按 Bedrock 不兼容字段在 AWS 边界删除。
+- **冲突风险**：低（AWS adaptor 局部新增 helper；若 upstream 后续实现 Bedrock beta 白名单或官方支持 `output_config`，合并时对齐官方支持列表即可）
+
+### B-17 [aws/bedrock] 不支持的 tool type 过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_tools_filter.go`（Bedrock 支持的 tool type 白名单 + pass-through / struct 两条路径的过滤函数）
+  - `relay/channel/aws/bedrock_tools_filter_test.go`（覆盖：保留支持类型、删除不支持类型、全部不支持时删除 tools 字段、无 type 字段保留）
+- **修改文件**：
+  - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +1 行调用 `filterBedrockToolsRaw`）
+  - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +1 行调用 `filterBedrockToolsFromStruct`）
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
+- **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
+- **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
+
+### B-18 [aws/bedrock] deprecated temperature 参数过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_temperature_filter.go`（模型黑名单 + struct / pass-through 两条路径的 temperature 剥离函数）
+  - `relay/channel/aws/bedrock_temperature_filter_test.go`（覆盖：黑名单模型剥离、非黑名单模型保留、raw map 路径）
+- **修改文件**：
+  - `relay/channel/aws/relay-aws.go`（`doAwsClientRequest` +1 行 `stripBedrockDeprecatedTemperature`；`buildAwsRequestBody` +1 行 `stripBedrockDeprecatedTemperatureRaw`）
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27）。Bedrock 对部分新模型不再接受 temperature 参数。
+- **行为**：在发送请求到 Bedrock 前，根据模型黑名单剥离 temperature 字段，静默丢弃而非返回 400 给客户端。
+- **冲突风险**：极低（独立新文件 + relay-aws.go 两处各 +1 行；与 B-17 同一区域但不同行）
+
+### B-19 [monitoring] Prometheus metrics overlay
+- **新增文件**：
+  - `middleware/prometheus_overlay.go`（Prometheus histogram/counter 定义 + Gin middleware + TTFT ResponseWriter wrapper）
+  - `router/prometheus_overlay.go`（`/metrics` 端点注册 + middleware 挂载，受 `PROMETHEUS_METRICS=1` 环境变量控制）
+  - `docs/prometheus-monitoring.md`（部署文档：Prometheus + Grafana + AlertManager 接入指南）
+  - `pkg/prommetrics/relay_cache.go`（缓存命中率 + 亲和性命中率 Prometheus 指标定义 + Collector）
+- **修改文件**：`router/main.go`（1 行：`SetPrometheusRouter(router)` 调用）、`middleware/distributor.go`（亲和性 lookup 指标记录）、`service/text_quota.go`（缓存 token 指标记录）、`service/channel_affinity.go`（注册 stats provider）
+- **指标**：`fy_relay_requests_total`, `fy_relay_errors_total`, `fy_relay_duration_seconds`, `fy_relay_ttft_seconds`, `fy_image_duration_seconds`, `fy_relay_retries_total`, `fy_relay_prompt_tokens_total`, `fy_relay_cached_tokens_total`, `fy_relay_cache_creation_tokens_total`, `fy_affinity_lookups_total`, `fy_affinity_active_entries`
+- **冲突风险**：极低（新增文件 + main.go 1 行注册；upstream 不太可能在同一位置加同名函数）
+- **Merge 策略**：若 upstream 未来自己加 Prometheus 支持，评估是否迁移到 upstream 实现
+
+### B-18 [tencent/aiart] GPT 图片生成同步伪装
+- **新增文件**：
+  - `relay/channel/tencent/aiart_image.go`（Tencent AIArt 图片请求转换、TC3 签名、提交/轮询、OpenAI 图片响应转换）
+  - `relay/channel/tencent/aiart_image_test.go`（AIArt host 分支、请求转换、签名 scope、响应转换、提交+查询流程测试）
+- **修改文件**：`relay/channel/tencent/adaptor.go`（`ConvertImageRequest` / `DoRequest` / `DoResponse` 三处薄分支，均带 `// Fy-api overlay:` 注释）
+- **行为**：后台仍使用现有 `腾讯混元 / Tencent` 渠道和 `AppId|SecretId|SecretKey` 密钥格式；当 `RelayModeImagesGenerations` 且渠道 `base_url` host 为 `aiart.tencentcloudapi.com` 时，后端把 OpenAI `/v1/images/generations` 请求转成腾讯 AIArt `SubmitContentToImageGPTJob`，每 5 秒轮询 `DescribeContentToImageGPTJob`，最长同步等待 10 分钟，然后返回 OpenAI 兼容 image response。
+- **配置**：后台不改 UI。渠道类型选 Tencent，Base URL 填 `https://aiart.tencentcloudapi.com`，模型填 `gpt-image-2`，密钥填 `AppId|SecretId|SecretKey`。不要为该渠道启用 pass-through body；图片价格/倍率仍需按模型单独配置。
+- **冲突风险**：低（核心逻辑在新增文件；`adaptor.go` 仅三处小分支）
+- **Merge 策略**：upstream 若改 Tencent 文本 adaptor，保留 AIArt 分支即可；若 upstream 后续原生支持 AIArt 或图片异步任务，可优先迁移到 upstream 实现，但保留 `AppId|SecretId|SecretKey` 后台兼容配置。
+
+> Note: tnbiz integration code comments still reference the historical B-12..B-18 identifiers from the original overlay branch. The list below is renumbered here to avoid colliding with later main-branch overlay entries.
+
+### B-19 [tnbiz] TraceNex Partner 集成内部 API 路由 + HMAC 鉴权
+- **新增文件**：
+  - `router/api-internal-router.go`（`/api/internal/*` 独立路由组，**不**继承 `/api` 全局 `GlobalAPIRateLimit`；改用 per-kid quota 占位）
+  - `middleware/internal_auth.go` + `middleware/internal_auth_test.go`（HMAC-SHA256 timestamp ±5min + nonce SETNX 24h（go-redis/v8 ctx-first） + body sha256 + endpoint allowlist 精确匹配）
+- **修改文件**：`router/main.go`（+1 行 `SetInternalRouter(router)`，紧接 `SetVideoRouter` 之后）
+- **冲突风险**：低（router/main.go 1 行 + 独立路由文件）
+- **Merge 策略**：upstream 若改 `SetRouter` 签名同步对齐，独立 file 零冲突
+- **Feature flag**：`overlay.internal_api_enabled`（OVERLAY_INTERNAL_API），prod 默认 false
+
+### B-20 [tnbiz] 内部 controllers + ChannelLogSetting upsert
+- **新增文件**：
+  - `controller/tnbiz_internal/health.go`（GET /api/internal/health 自检 + envelope helper）
+  - `controller/tnbiz_internal/token.go`（POST /api/internal/token/create — partner 永远不可见 sk-key 明文，仅返回 token_id + masked_key + 5 分钟一次性 delivery_handle）
+  - `controller/tnbiz_internal/user.go`（POST topup / quota/adjust / refund / erase，PUT group，GET quota）
+  - `controller/tnbiz_internal/settings.go`（POST group_ratio_override/upsert + channel_log_settings/upsert）
+  - `controller/tnbiz_internal/context.go`（context helper）
+  - `controller/tnbiz_internal/health_test.go`
+  - `model/channel_log_settings.go`（schema-only，B-13 partner 维度 channel log 配置）
+- **冲突风险**：极低（独立子包 + 新增 model 表）
+- **Feature flag**：与 B-12 共用 `overlay.internal_api_enabled`
+
+### B-21 [tnbiz] OVERLAY feature flag 框架（biz_setting + 5-15s polling）
+- **新增文件**：
+  - `setting/overlay_flag/flag.go`（5 个 atomic-cached flag + ctx-first poller；优先读 `common.OptionMap`，env 兜底）
+  - `setting/overlay_flag/flag_test.go`
+- **修改文件**：`main.go`（`+overlayCtx := context.Background()` + `overlay_flag.StartPoller(overlayCtx)`，紧接 Redis 初始化之后）
+- **冲突风险**：低（main.go 集中 patch + 新建独立子包）
+- **Merge 策略**：5 个 flag key 写入 `OptionMap`，prod 默认全 false / shadow，灰度时按 PR 单独切换
+
+### B-22 [tnbiz] User per-customer GroupRatioOverride（hot path 6 调用站 / 4 文件）
+- **新增文件**：
+  - `model/group_ratio_override.go`（`group_ratio_override` 表 + Upsert + LookupUserOverride DAO）
+  - `setting/ratio_setting/effective_group_ratio.go`（`ApplyOverride(override, fallback) float64` —— hot path 唯一入口，atomic flag check + 1 float compare）
+  - `setting/ratio_setting/effective_group_ratio_test.go`
+  - `relay/common/override_lookup.go`（callback registry 避免 relay/common → model 的潜在循环依赖）
+- **修改文件**（每处加 `// Fy-api overlay: B-15 ...` 注释）：
+  - `relay/common/relay_info.go`（struct 末尾 +`UserGroupRatioOverride float64`；`GenRelayInfo` best-effort 从 context 拷入；context 缺失时回库一次）
+  - `constant/context_key.go`（+`ContextKeyUserGroupRatioOverride`）
+  - `service/quota.go`（行 110 / 115 / 121-124 三处 `GetGroupRatio` / `GetGroupGroupRatio` 后串 `ApplyOverride`）
+  - `relay/helper/price.go`（行 53-62 user-group / normal-group 两个分支都串 `ApplyOverride`）
+  - `service/task_billing.go`（行 276-277 task 路径用 `model.LookupUserOverride(task.UserId, group)` 因为没有 RelayInfo）
+  - `service/group.go`（新增 `GetUserGroupRatioWithOverride(userId, userGroup, group)` 给 cold path 调用方）
+  - `main.go`（+`relaycommon.SetOverrideLookup(model.LookupUserOverride)` 注入 callback）
+- **冲突风险**：HIGH（ratio 系统是上游持续演进区；4 文件都打上 overlay 注释，merge 时 grep `B-15` 即可定位）
+- **Feature flag**：`overlay.group_ratio_override`（prod 默认 false，逐 partner 灰度）
+
+### B-23 [tnbiz] consume_log_outbox + RecordConsumeLog 同事务写 outbox
+- **新增文件**：
+  - `model/consume_log_outbox.go`（落 LOG_DB；status: pending/in_flight/published/failed/dead_letter；`(data_region, status)` + `(status, locked_until)` 双索引；`InsertOutboxInTx` / `LeaseOutboxBatch` / `MarkOutboxPublished` / `MarkOutboxFailed` 含 retry_count++ ≤ 10 → DLQ）
+  - `model/log_outbox.go`（`recordConsumeLogWithOutbox` —— flag off 走原 `LOG_DB.Create(log)` 单语句；flag on 用 `LOG_DB.Transaction` 同时 Create(log)+Create(outbox)，任一失败整批回滚）
+  - `model/log_outbox_integration_test.go`（in-memory sqlite 验证 flag on / flag off 两条路径）
+- **修改文件**：
+  - `model/log.go::RecordConsumeLog`（`LOG_DB.Create(log).Error` → `recordConsumeLogWithOutbox(...)`；函数顶部加注释规约「**仅** LogTypeConsume 走 outbox；行 87 / 112 / 139 / 183 / 292 等 5 个非 consume LOG_DB.Create 调用站一律 NOT outbox-eligible」；LogQuotaData fire-and-forget goroutine 仍在 TX 之后异步触发）
+  - `model/main.go::migrateLOGDB`（+`LOG_DB.AutoMigrate(&ConsumeLogOutbox{})`）
+- **冲突风险**：HIGH（log.go 是上游高活跃区；overlay 集中在 helper 函数，注释打满）
+- **Feature flag**：`overlay.outbox_tx_enabled` + `overlay.outbox_mode`（off / shadow / enabled）
+
+### B-24 [tnbiz] Outbox publisher (Aliyun MNS, shadow + enabled)
+- **新增文件**：
+  - `service/outbox/runner.go`（Publisher interface + NoopPublisher + Runner with batch/lease/interval；shadow 模式下 publisher inject NoopPublisher，仅 simulate；MNS SDK 接入留 Phase 2A）
+  - `service/outbox/runner_test.go`
+- **修改文件**：`main.go`（+`outbox.NewRunner(region, topic, nil).Start(overlayCtx)`，紧接 flag poller / OverrideLookup 注入之后）
+- **冲突风险**：极低（独立子包 + main.go 一段 patch）
+- **Feature flag**：`overlay.outbox_mode`（off / shadow / enabled），region 由 `DATA_REGION` 环境变量注入（cn / sg），强制 region 隔离 invariant
+
+### B-25 [tnbiz] internal_idempotency + internal_api_key (HMAC keystore + idempotency 表)
+- **新增文件**：
+  - `model/internal_api_key.go` + `model/internal_api_key_test.go`（HMAC keystore：key_id / secret_cipher（AES-GCM with `common.CryptoSecret` 派生 KEK）/ region / status / allowed_endpoints JSON / created_at / rotated_at；明文 secret 永不入库）
+  - `model/internal_idempotency.go`（`internal_idempotency` 表，UNIQUE(auth_kid, idempotency_key, endpoint)；`Lookup` / `Save` / `CleanupExpiredIdempotency`；7 天 TTL leader-only cron 兜底）
+  - `middleware/internal_idempotency.go`（middleware：命中 (auth_kid, idem_key, endpoint) 三元组直接 replay 200，body hash 不一致则 409）
+- **修改文件**：`model/main.go`（+`InternalAPIKey{}` / `InternalIdempotencyRecord{}` / `GroupRatioOverride{}` / `ChannelLogSetting{}` 进 AutoMigrate）
+- **冲突风险**：极低（全独立 model + middleware）
+- **Feature flag**：`overlay.hmac_keystore_enabled`（B-12 InternalAuth middleware 双 flag 校验：InternalAPI ON + HMACKeystore ON 才放行；任一 OFF 即 503）
+
+### B-26 [aws/bedrock] cache_control.scope 剥离 + 空 text content block 过滤
+- **新增文件**：
+  - `relay/channel/aws/bedrock_content_filter.go`（cache_control.scope 剥离 + 空 text block 过滤，struct / pass-through 双路径）
+  - `relay/channel/aws/bedrock_content_filter_test.go`（7 个 table-driven 测试覆盖：scope 剥离、保留无 scope 的 cache_control、string content 不 panic、空 text 过滤、非 text 保留、raw map 路径）
+- **修改文件**：
+  - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +2 行调用）
+  - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +2 行调用）
+- **背景**：SG 生产 momo 客户流量（channel #27 AWS Bedrock）5/21 出现 18 次 400 `cache_control.ephemeral.scope: Extra inputs are not permitted` 和 5 次 `text content blocks must be non-empty`。Bedrock schema 校验比 Anthropic 原生 API 更严格：(1) 不接受 `cache_control` 内的 `scope` 字段；(2) 不允许 `type:"text"` 且 `text:""` 的空块。
+- **行为**：请求发往 Bedrock 前，静默移除 system/messages 中所有 `cache_control.scope`，并过滤掉空 text content block。不改变请求语义——`cache_control.type` 保留，非空 text block 保留。
+- **冲突风险**：极低（独立新文件 + 两处各 +2 行，与 B-17 同一函数但不同行）
+
+### B-27 [relay] 网关重试退避策略 v2
 - **新增文件**：
   - `controller/retry_backoff.go`（请求级指数退避、累计等待上限、context 可中断等待）
   - `controller/retry_backoff_test.go`（退避序列、上限、配置归一化、context 取消测试）
@@ -175,6 +353,7 @@
 - **行为**：`RetryTimes=0` 保持不变；`shouldRetry` / `shouldRetryTaskRelay` 继续决定是否重试；退避状态挂在 `RelayInfo` 上并做 lazy init，避免 auto-group retry 重置影响累计等待上限，同时减少 `controller/relay.go` 的 overlay 插入面
 - **冲突风险**：低到中（`controller/relay.go` retry loop 是 upstream 高频区域，但已把状态挂到 `RelayInfo`，controller 只剩 2 处 wait 调用；核心退避逻辑放在新增文件降低冲突面）
 - **Merge 策略**：保留 `// Fy-api overlay:` 标记的两个 retry wait 调用点与 `RelayInfo.RetryBackoff` 字段；若 upstream 重构 retry loop，将等待调用迁移到新的“已决定重试、即将开始下一次尝试”位置
+
 
 ---
 
@@ -241,6 +420,17 @@
 - **目的**：上游 v1.0 后 `theme.frontend` 是一个 admin 后台可改的 option（5/1 之后的 `e0b6eb3a5` 还修了它从 DB 加载的同步问题）。TraceNex 选择路径 A：仅 ship classic，所以做了**双锁**——即使有人手动改 DB option 表也会在启动时被 `syncThemeToCommon` 覆写回 classic
 - **冲突风险**：低（两处都是带 `// Fy-api overlay:` 注释的小改动）
 - **可逆**：删掉这两处 overlay 即可回到上游"两套前端可切换"的行为，配合在 `web/default/` 重做 F-1~F-6 即为路径 B 的最小迁移路径
+
+### F-8 [model-pricing] 管理端模型价格币种自选
+- **修改文件**：
+  - `web/classic/src/pages/Setting/Ratio/hooks/modelPricingCurrency.js`（新增 USD/CNY suffix、输入/展示换算、摘要换算 helpers；state 和后端 option 始终保持 USD）
+  - `web/classic/src/pages/Setting/Ratio/hooks/useModelPricingEditorState.js`（接入币种换算 helpers 到编辑 state）
+  - `web/classic/src/pages/Setting/Ratio/hooks/useModelPricingEditorState.test.js`（新增币种 suffix、汇率 fallback、USD/CNY 换算、摘要显示单元测试）
+  - `web/classic/src/pages/Setting/Ratio/components/ModelPricingEditor.jsx`（计费方式下方新增币种按钮组，并为按量/按次价格输入动态 suffix 和展示值）
+- **背景**：管理员模型价格编辑页原来硬编码 `$/1M tokens` / `$/次`，只能按美元输入；需求 REQ-20260512-01 要求可切换人民币输入，但后端 option 存储仍保持 USD。
+- **行为**：默认 USD；所有计费模式都显示 USD/CNY 按钮；CNY 模式下输入框与左侧价格摘要按 `StatusContext.status.usd_exchange_rate` 展示人民币，输入时转换回 USD 存入编辑 state；表达式/阶梯计费本身仍按表达式原文保存。
+- **冲突风险**：中（该编辑器是 upstream 设置页活跃区域）
+- **Merge 策略**：若 upstream 重构模型价格编辑器，保留“UI 输入币种可选但 option 始终 USD”的存储语义，换算继续复用 `usd_exchange_rate`。
 
 ---
 

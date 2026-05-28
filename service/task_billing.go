@@ -276,6 +276,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	groupRatio := ratio_setting.GetGroupRatio(group)
 	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
 
+	// Fy-api overlay: B-15 TraceNex Partner pricing override (group_ratio).
+	// Task billing 没有 RelayInfo，按 (user_id, group) 直接回库（task 流量 cold path，可接受）。
+	override, hasOverride := model.LookupUserOverride(task.UserId, group)
+	if hasOverride {
+		groupRatio = ratio_setting.ApplyOverride(override, groupRatio)
+		userGroupRatio = ratio_setting.ApplyOverride(override, userGroupRatio)
+	}
+
 	var finalGroupRatio float64
 	if hasUserGroupRatio {
 		finalGroupRatio = userGroupRatio

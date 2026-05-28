@@ -24,6 +24,9 @@ tiktoken_cache
 .cache
 plans
 .claude
+!.claude/
+.claude/*
+!.claude/commands/
 # Fy-api overlay: cursor IDE artifacts and ad-hoc logs
 .cursor/
 *.log
@@ -42,3 +45,7 @@ compose.test.yml
 token_estimator_test.go
 .test
 skills-lock.json
+
+# Fy-api overlay: bug tracking artifacts (screenshots, logs, etc.)
+bugs/*
+!bugs/.gitkeep

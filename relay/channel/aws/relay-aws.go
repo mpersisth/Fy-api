@@ -141,6 +141,7 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 		if err != nil {
 			return nil, types.NewError(errors.Wrap(err, "format aws request fail"), types.ErrorCodeBadRequestBody)
 		}
+		sanitizeBedrockSamplingParams(info.OriginModelName, awsClaudeReq)
 
 		if info.IsStream {
 			awsReq := &bedrockruntime.InvokeModelWithResponseStreamInput{
@@ -185,11 +186,27 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 		if err := common.Unmarshal(body, &data); err != nil {
 			return nil, errors.Wrap(err, "pass-through unmarshal request body fail")
 		}
+		sanitizeBedrockClaudeRawFields(data)
+		sanitizeBedrockSamplingParamsRaw(info.OriginModelName, data)
 		delete(data, "model")
 		delete(data, "stream")
 		return common.Marshal(data)
 	}
 	return common.Marshal(awsClaudeReq)
+}
+
+func sanitizeBedrockClaudeRawFields(data map[string]interface{}) {
+	if data == nil {
+		return
+	}
+	// Fy-api overlay: keep AWS Bedrock Claude compatibility local to the AWS
+	// adaptor. Pass-through should not bypass the same schema guardrails that
+	// formatRequest applies to converted Claude requests.
+	delete(data, "anthropic_beta")
+	delete(data, "output_config")
+	filterBedrockToolsRaw(data)
+	stripCacheControlScopeRaw(data)
+	filterEmptyTextBlocksRaw(data)
 }
 
 func getAwsRegionPrefix(awsRegionId string) string {

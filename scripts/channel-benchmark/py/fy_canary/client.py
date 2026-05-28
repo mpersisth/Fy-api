@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import httpx
+
+
+@dataclass
+class CanaryResponse:
+    """Full API response for stateless probes that need metadata."""
+
+    content: str
+    raw: dict
+    status_code: int
+    error: str | None = None
 
 
 class CanaryClient:
@@ -47,16 +59,17 @@ class CanaryClient:
         model: str,
         prompt: str,
         max_tokens: int = 200,
-        temperature: float = 1.0,
+        temperature: float | None = 1.0,
         seed: int | None = None,
     ) -> str:
         body: dict = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "stream": False,
         }
+        if temperature is not None:
+            body["temperature"] = temperature
         if seed is not None:
             body["seed"] = seed
         try:
@@ -73,3 +86,39 @@ class CanaryClient:
         if not choices:
             return ""
         return (choices[0].get("message") or {}).get("content", "") or ""
+
+    async def complete_raw(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int = 200,
+        temperature: float | None = 1.0,
+        seed: int | None = None,
+    ) -> CanaryResponse:
+        body: dict = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        if seed is not None:
+            body["seed"] = seed
+        try:
+            resp = await self._client.post(self._url, json=body)
+        except httpx.HTTPError as e:
+            return CanaryResponse(content="", raw={}, status_code=0, error=str(e))
+        try:
+            data = resp.json()
+        except ValueError:
+            return CanaryResponse(
+                content="", raw={}, status_code=resp.status_code,
+                error="invalid JSON response",
+            )
+        choices = data.get("choices") or [{}]
+        content = (choices[0].get("message") or {}).get("content", "") or ""
+        return CanaryResponse(
+            content=content, raw=data, status_code=resp.status_code,
+        )

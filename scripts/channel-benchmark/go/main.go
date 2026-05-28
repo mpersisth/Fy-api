@@ -37,6 +37,12 @@ func main() {
 		promListen   = flag.String("prom-listen", "", "If set (e.g. ':9090'), run as a daemon and serve Prometheus metrics on that addr")
 		promInterval = flag.Duration("prom-interval", 5*time.Minute, "How often to re-run the benchmark when --prom-listen is set")
 		noExport     = flag.Bool("no-export", false, "Skip writing JSON/CSV to disk (useful in daemon mode)")
+
+		// Long-thinking preset: overlays a long-reasoning prompt + 30-min
+		// timeout + single rep onto whatever the YAML config says. Used to
+		// regression-test the timeout chain (incident 2026-05-11). See
+		// incidents/2026-05-11-long-reasoning-timeout.md.
+		longThinking = flag.Bool("long-thinking", false, "Run the long-reasoning regression preset (overrides timeout/prompt/reps)")
 	)
 	flag.Parse()
 
@@ -63,6 +69,10 @@ func main() {
 		cfg.Export.Formats = splitCSV(*formats)
 	}
 
+	if *longThinking {
+		applyLongThinkingPreset(cfg)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("config invalid: %v", err)
 	}
@@ -79,6 +89,10 @@ func main() {
 		fmt.Printf("Mode:          daemon (prom listen=%s, interval=%s)\n", *promListen, *promInterval)
 	} else {
 		fmt.Printf("Mode:          one-shot\n")
+	}
+	if *longThinking {
+		fmt.Printf("Preset:        long-thinking (timeout=%ds, max_tokens=%d, reps=%d)\n",
+			cfg.Test.TimeoutSec, cfg.Test.MaxTokens, cfg.Test.RepsPerCase)
 	}
 	if *dryRun {
 		fmt.Println("\n(dry-run: config valid, no requests sent)")

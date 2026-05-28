@@ -18,3 +18,30 @@ htmlcov/
 conformance-results/
 conformance.cn.yaml
 conformance.local.yaml
+quality.local.yaml
+quality-results/
+.cache-quality/
+.cache-quality-*/
+loadtest.local.yaml
+image-loadtest.local.yaml
+image-loadtest-results/
+image-conformance.local.yaml
+image-conformance-results/
+eval.local.yaml
+eval-*.local.yaml
+eval-results/
+canary-baselines/
+canary-results/
+integrity-results/
+
+# Channel-specific config (contain tokens)
+*-ch[0-9]*.yaml
+canary-ch*.yaml
+conformance-ch*.yaml
+integrity-ch*.yaml
+loadtest-ch*.yaml
+quality-ch*.yaml
+
+# Report output
+reports/
+combined-report-*.pdf

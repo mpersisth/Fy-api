@@ -97,7 +97,7 @@ func getWaffoPancakeBuyerEmail(user *model.User) string {
 		return user.Email
 	}
 	if user != nil {
-		return fmt.Sprintf("%d@new-api.local", user.Id)
+		return fmt.Sprintf("%d@tracenex.local", user.Id)
 	}
 	return ""
 }

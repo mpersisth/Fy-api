@@ -102,18 +102,8 @@ func isTencentAIArtImageGeneration(info *relaycommon.RelayInfo) bool {
 
 func tencentAIArtImageRequestFromOpenAI(request dto.ImageRequest) (*tencentAIArtImageRequest, error) {
 	imageReq := &tencentAIArtImageRequest{
-		Model:      request.Model,
-		Prompt:     request.Prompt,
-		Resolution: strings.ReplaceAll(request.Size, "x", ":"),
-		Quality:    request.Quality,
-		RspImgType: "url",
-		N:          1,
-	}
-	if request.ResponseFormat == "b64_json" {
-		imageReq.RspImgType = "base64"
-	}
-	if request.N != nil && *request.N > 0 {
-		imageReq.N = int(*request.N)
+		Model:  request.Model,
+		Prompt: request.Prompt,
 	}
 	if len(request.ExtraFields) > 0 {
 		if err := common.Unmarshal(request.ExtraFields, imageReq); err != nil {

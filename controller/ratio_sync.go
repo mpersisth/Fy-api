@@ -215,7 +215,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 		}
 		return dialer.DialContext(ctx, network, addr)
 	}
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: transport, Timeout: 60 * time.Second}
 
 	for _, chn := range upstreams {
 		wg.Add(1)

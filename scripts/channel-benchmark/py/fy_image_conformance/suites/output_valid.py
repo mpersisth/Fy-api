@@ -1,9 +1,12 @@
-"""Layer 2: Output validation — verify returned images are correct."""
+"""Layer 2: Output validation — verify returned images are correct.
+
+Includes: format detection, dimension parsing, size consistency, and dedup detection.
+"""
 
 from __future__ import annotations
 
 import base64
-import io
+import hashlib
 import struct
 from dataclasses import dataclass, field
 
@@ -37,6 +40,7 @@ async def run(cfg: Config, client: ImageClient) -> list[ChannelOutputResult]:
     for ch in cfg.gateway.channels:
         cr = ChannelOutputResult(channel=ch)
 
+        # Basic generation + validation
         body = {"model": cfg.model.name, "prompt": cfg.model.default_prompt, "n": 1}
         r = await client.generate(body, pin_channel=ch.pin_channel_id)
         if not r.success:
@@ -51,8 +55,100 @@ async def run(cfg: Config, client: ImageClient) -> list[ChannelOutputResult]:
         else:
             cr.cases.append(ValidationCase("has_image_data", False, "no url or b64 in response"))
 
+        # Size consistency check
+        requested_size = cfg.model.supported_sizes[0] if cfg.model.supported_sizes else None
+        if requested_size:
+            cr.cases.extend(
+                await _check_size_consistency(client, cfg, ch, requested_size))
+
+        # Dedup check
+        cr.cases.extend(await _check_dedup(client, cfg, ch))
+
         results.append(cr)
     return results
+
+
+async def _check_size_consistency(
+    client: ImageClient,
+    cfg: Config,
+    ch: ChannelTarget,
+    requested_size: str,
+) -> list[ValidationCase]:
+    try:
+        w_req, h_req = (int(x) for x in requested_size.split("x"))
+    except ValueError:
+        return []
+
+    body = {
+        "model": cfg.model.name,
+        "prompt": cfg.model.default_prompt,
+        "n": 1,
+        "size": requested_size,
+    }
+    r = await client.generate(body, pin_channel=ch.pin_channel_id)
+    if not r.success:
+        return [ValidationCase("size_consistency", False, f"generation failed: {r.error[:80]}")]
+
+    image_data = await _get_image_bytes(client, r)
+    if not image_data:
+        return [ValidationCase("size_consistency", False, "could not retrieve image")]
+
+    fmt = _detect_format(image_data)
+    dims = _detect_dimensions(image_data, fmt)
+    if not dims:
+        return [ValidationCase("size_consistency", False, f"could not detect dimensions (format={fmt})")]
+
+    w_actual, h_actual = dims
+    match = (w_actual == w_req and h_actual == h_req)
+    return [ValidationCase(
+        "size_consistency", match,
+        f"requested={w_req}x{h_req} actual={w_actual}x{h_actual}",
+    )]
+
+
+async def _check_dedup(
+    client: ImageClient,
+    cfg: Config,
+    ch: ChannelTarget,
+    n_generations: int = 3,
+) -> list[ValidationCase]:
+    body = {"model": cfg.model.name, "prompt": cfg.model.default_prompt, "n": 1}
+    hashes: list[str] = []
+
+    for _ in range(n_generations):
+        r = await client.generate(dict(body), pin_channel=ch.pin_channel_id)
+        if not r.success:
+            continue
+        image_data = await _get_image_bytes(client, r)
+        if image_data:
+            hashes.append(hashlib.md5(image_data).hexdigest())
+
+    if len(hashes) < 2:
+        return [ValidationCase("dedup_check", True, f"only {len(hashes)} images generated, skipped")]
+
+    unique = len(set(hashes))
+    total = len(hashes)
+    dup_rate = 1.0 - (unique / total)
+    ok = dup_rate < 0.5
+    return [ValidationCase(
+        "dedup_check", ok,
+        f"{unique}/{total} unique images (dup_rate={dup_rate:.0%})",
+    )]
+
+
+async def _get_image_bytes(client: ImageClient, r: ImageResult) -> bytes:
+    if r.image_b64:
+        try:
+            return base64.b64decode(r.image_b64[0])
+        except Exception:
+            return b""
+    if r.image_urls:
+        try:
+            data, _ = await client.download_image(r.image_urls[0])
+            return data
+        except Exception:
+            return b""
+    return b""
 
 
 async def _validate_url(
@@ -121,6 +217,8 @@ def _detect_dimensions(data: bytes, fmt: str) -> tuple[int, int] | None:
         return (w, h)
     if fmt == "jpeg":
         return _jpeg_dimensions(data)
+    if fmt == "webp":
+        return _webp_dimensions(data)
     return None
 
 
@@ -136,4 +234,19 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
             return (w, h)
         length = struct.unpack(">H", data[i + 2 : i + 4])[0]
         i += 2 + length
+    return None
+
+
+def _webp_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 30:
+        return None
+    if data[12:16] == b"VP8 " and len(data) > 29:
+        w = struct.unpack("<H", data[26:28])[0] & 0x3FFF
+        h = struct.unpack("<H", data[28:30])[0] & 0x3FFF
+        return (w, h)
+    if data[12:16] == b"VP8L" and len(data) > 25:
+        bits = struct.unpack("<I", data[21:25])[0]
+        w = (bits & 0x3FFF) + 1
+        h = ((bits >> 14) & 0x3FFF) + 1
+        return (w, h)
     return None

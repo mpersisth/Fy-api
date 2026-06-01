@@ -31,6 +31,15 @@ canary = [
     "numpy>=1.26",
 ]
 
+# Image canary: CLIP embeddings + Pillow for vendor comparison.
+# ~2 GB download; kept in its own extra.
+image-canary = [
+    "torch>=2.0",
+    "transformers>=4.36",
+    "Pillow>=10.0",
+    "numpy>=1.26",
+]
+
 # Optional local tokenization (Fy-api should return `usage`; kept as fallback).
 tiktoken = ["tiktoken>=0.7"]
 
@@ -45,6 +54,8 @@ fy-quality     = "fy_quality.cli:main"
 fy-canary      = "fy_canary.cli:main"
 fy-conformance = "fy_conformance.cli:main"
 fy-image-conformance = "fy_image_conformance.cli:main"
+fy-image-loadtest = "fy_image_loadtest.cli:main"
+fy-image-canary = "fy_image_canary.cli:main"
 fy-eval        = "fy_eval.cli:main"
 fy-score       = "fy_score.cli:main"
 fy-integrity   = "fy_integrity.cli:main"
@@ -55,8 +66,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["fy_loadtest", "fy_quality", "fy_canary", "fy_conformance", "fy_image_conformance", "fy_image_loadtest", "fy_eval", "fy_score", "fy_integrity", "fy_cache_affinity"]
+packages = ["fy_loadtest", "fy_quality", "fy_canary", "fy_conformance", "fy_image_conformance", "fy_image_loadtest", "fy_image_canary", "fy_eval", "fy_score", "fy_integrity", "fy_cache_affinity"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "tests_quality", "tests_canary", "tests_conformance", "tests_integrity", "tests_cache_affinity"]
+testpaths = ["tests", "tests_quality", "tests_canary", "tests_conformance", "tests_integrity", "tests_cache_affinity", "tests_image_canary"]

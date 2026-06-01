@@ -12,10 +12,11 @@ from rich.console import Console
 from . import __version__
 from .loader import (
     load_canary, load_conformance, load_integrity, load_loadtest,
-    load_quality, load_smoke,
+    load_quality, load_smoke, load_image_canary,
+    load_image_conformance, load_image_loadtest,
 )
 from .report import write_json, write_markdown
-from .scorer import ChannelScorecard, build_scorecard, compute_integrity_rates
+from .scorer import ChannelScorecard, build_scorecard, build_image_scorecard, compute_integrity_rates
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--channel-name")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("-V", "--version", action="version", version=f"fy-score {__version__}")
+    p.add_argument("--image-canary", type=Path, nargs="*", help="fy-image-canary result JSON(s)")
+    p.add_argument("--image-canary-dir", type=Path)
+    p.add_argument("--image-conformance", type=Path, nargs="*", help="fy-image-conformance result JSON(s)")
+    p.add_argument("--image-conformance-dir", type=Path)
+    p.add_argument("--image-loadtest", type=Path, nargs="*", help="fy-image-loadtest result JSON(s)")
+    p.add_argument("--image-loadtest-dir", type=Path)
     return p
 # PLACEHOLDER_CLI_CONTINUE
 
@@ -80,7 +87,8 @@ def _apply_yaml_config(args: argparse.Namespace) -> None:
         args.channel_name = cfg["channel_name"]
 
     inputs = cfg.get("inputs", {})
-    for tool in ("smoke", "loadtest", "quality", "canary", "conformance", "integrity"):
+    for tool in ("smoke", "loadtest", "quality", "canary", "conformance", "integrity",
+                  "image_canary", "image_conformance", "image_loadtest"):
         dir_attr = f"{tool}_dir"
         if getattr(args, dir_attr, None) is None and tool in inputs:
             setattr(args, dir_attr, Path(inputs[tool]))
@@ -103,6 +111,18 @@ def main(argv: list[str] | None = None) -> int:
     canary_files = _collect_files(args.canary, args.canary_dir)
     conf_files = _collect_files(args.conformance, args.conformance_dir)
     integ_files = _collect_files(args.integrity, args.integrity_dir)
+    img_canary_files = _collect_files(
+        getattr(args, "image_canary", None),
+        getattr(args, "image_canary_dir", None),
+    )
+    img_conf_files = _collect_files(
+        getattr(args, "image_conformance", None),
+        getattr(args, "image_conformance_dir", None),
+    )
+    img_lt_files = _collect_files(
+        getattr(args, "image_loadtest", None),
+        getattr(args, "image_loadtest_dir", None),
+    )
 # PLACEHOLDER_CLI_MAIN
 
     if args.dry_run:
@@ -112,6 +132,9 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"[bold]Canary:[/bold]      {[str(f) for f in canary_files]}")
         console.print(f"[bold]Conformance:[/bold] {[str(f) for f in conf_files]}")
         console.print(f"[bold]Integrity:[/bold]   {[str(f) for f in integ_files]}")
+        console.print(f"[bold]ImgCanary:[/bold]   {[str(f) for f in img_canary_files]}")
+        console.print(f"[bold]ImgConf:[/bold]     {[str(f) for f in img_conf_files]}")
+        console.print(f"[bold]ImgLoad:[/bold]     {[str(f) for f in img_lt_files]}")
         return 0
 
     inputs: dict[str, dict] = {}
@@ -159,6 +182,46 @@ def main(argv: list[str] | None = None) -> int:
             k = _merge(inputs, m.channel_name, m.channel_id, m.model)
             inputs[k]["integrity_probes"] = m.probes
 
+    for f in img_canary_files:
+        for m in load_image_canary(f):
+            k = _merge(inputs, m.channel_name, m.channel_id, m.model)
+            inputs[k]["canary_probe_pass_rate"] = m.probe_pass_rate
+            inputs[k]["canary_avg_probe_score"] = m.avg_probe_score
+            inputs[k]["_image_channel"] = True
+            inputs[k]["_image_canary_verdict"] = m.combined_verdict
+
+    for f in img_conf_files:
+        for m in load_image_conformance(f):
+            k = _merge(inputs, m.channel_name, m.channel_id, m.model)
+            inputs[k]["_image_channel"] = True
+            inputs[k]["image_api_compat_pass_rate"] = m.api_compat_pass_rate
+            inputs[k]["image_output_valid_pass_rate"] = m.output_valid_pass_rate
+            inputs[k]["image_safety_pass_rate"] = m.safety_pass_rate
+            inputs[k]["image_zh_pass_rate"] = m.zh_pass_rate
+            inputs[k]["image_en_pass_rate"] = m.en_pass_rate
+            inputs[k]["image_phase_a_blocked"] = m.phase_a_blocked
+            if m.p50_ms is not None:
+                inputs[k]["image_p50_ms"] = m.p50_ms
+            if m.p95_ms is not None:
+                inputs[k]["image_p95_ms"] = m.p95_ms
+            if m.rpm is not None:
+                inputs[k]["image_rpm"] = m.rpm
+            if m.success_rate is not None:
+                inputs[k].setdefault("success_rate", m.success_rate)
+
+    for f in img_lt_files:
+        for m in load_image_loadtest(f):
+            k = _merge(inputs, m.channel_name, m.channel_id, m.model)
+            inputs[k]["_image_channel"] = True
+            if m.p50_ms is not None:
+                inputs[k]["image_p50_ms"] = m.p50_ms
+            if m.p95_ms is not None:
+                inputs[k]["image_p95_ms"] = m.p95_ms
+            if m.rpm is not None:
+                inputs[k]["image_rpm"] = m.rpm
+            if m.success_rate is not None:
+                inputs[k].setdefault("success_rate", m.success_rate)
+
     if not inputs:
         console.print("[red]No data found. Provide at least one result file.[/red]")
         return 2
@@ -185,27 +248,53 @@ def main(argv: list[str] | None = None) -> int:
 
     cards: list[ChannelScorecard] = []
     for info in inputs.values():
-        honesty_rate = compliance_rate = None
-        if "integrity_probes" in info:
-            honesty_rate, compliance_rate = compute_integrity_rates(
-                info["integrity_probes"], info.get("model", "")
+        is_image = info.get("_image_channel", False)
+
+        if is_image:
+            verdict = info.get("_image_canary_verdict", "")
+            cap_map = {"PASS": 100.0, "MISMATCH": 0.0, "INCONCLUSIVE": 60.0}
+            authenticity_cap = cap_map.get(verdict, 80.0)
+
+            card = build_image_scorecard(
+                channel_name=info["channel_name"],
+                channel_id=info.get("channel_id"),
+                model=info["model"],
+                success_rate=info.get("success_rate"),
+                p95_ms=info.get("image_p95_ms"),
+                p50_ms=info.get("image_p50_ms"),
+                rpm=info.get("image_rpm"),
+                zh_pass_rate=info.get("image_zh_pass_rate"),
+                en_pass_rate=info.get("image_en_pass_rate"),
+                output_valid_rate=info.get("image_output_valid_pass_rate"),
+                phase_a_blocked=info.get("image_phase_a_blocked", False),
+                canary_pass_rate=info.get("canary_probe_pass_rate"),
+                canary_avg_score=info.get("canary_avg_probe_score"),
+                authenticity_cap=authenticity_cap,
+                safety_pass_rate=info.get("image_safety_pass_rate"),
+                api_compat_pass_rate=info.get("image_api_compat_pass_rate"),
             )
-        card = build_scorecard(
-            channel_name=info["channel_name"],
-            channel_id=info.get("channel_id"),
-            model=info["model"],
-            success_rate=info.get("success_rate"),
-            ttft_p95_ms=info.get("ttft_p95_ms"),
-            e2e_p95_ms=info.get("e2e_p95_ms"),
-            throughput_toks=info.get("throughput_toks"),
-            quality_pass_rate=info.get("quality_pass_rate"),
-            quality_avg_score=info.get("quality_avg_score"),
-            canary_probe_pass_rate=info.get("canary_probe_pass_rate"),
-            canary_avg_probe_score=info.get("canary_avg_probe_score"),
-            integrity_honesty_rate=honesty_rate,
-            integrity_compliance_rate=compliance_rate,
-            conformance_pass_rate=info.get("conformance_pass_rate"),
-        )
+        else:
+            honesty_rate = compliance_rate = None
+            if "integrity_probes" in info:
+                honesty_rate, compliance_rate = compute_integrity_rates(
+                    info["integrity_probes"], info.get("model", "")
+                )
+            card = build_scorecard(
+                channel_name=info["channel_name"],
+                channel_id=info.get("channel_id"),
+                model=info["model"],
+                success_rate=info.get("success_rate"),
+                ttft_p95_ms=info.get("ttft_p95_ms"),
+                e2e_p95_ms=info.get("e2e_p95_ms"),
+                throughput_toks=info.get("throughput_toks"),
+                quality_pass_rate=info.get("quality_pass_rate"),
+                quality_avg_score=info.get("quality_avg_score"),
+                canary_probe_pass_rate=info.get("canary_probe_pass_rate"),
+                canary_avg_probe_score=info.get("canary_avg_probe_score"),
+                integrity_honesty_rate=honesty_rate,
+                integrity_compliance_rate=compliance_rate,
+                conformance_pass_rate=info.get("conformance_pass_rate"),
+            )
         cards.append(card)
 
     write_json(cards, args.output)

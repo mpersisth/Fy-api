@@ -1,0 +1,34 @@
+# Cache Affinity Benchmark 配置示例
+# 复制为 cache-affinity.local.yaml 并填入实际值
+
+base_url: "${FY_BASE_URL:-http://localhost:3000}"
+token: "${FY_USER_TOKEN}"
+model: "deepseek-chat"
+
+conversation:
+  seed_topic: "Go 并发模型的演进"
+  max_turns: 30
+  max_prompt_tokens: 60000
+  temperature: 0.7
+  max_tokens: 2048
+  stream: true
+
+repetitions: 3
+
+groups:
+  - name: "single_channel"
+    pin_channel_id: 6
+
+  - name: "affinity_header"
+    headers:
+      X-Session-Id: "auto"
+
+  - name: "affinity_token"
+    # 依赖网关按 token 路由，无额外配置
+
+  - name: "no_affinity"
+    # 确保不匹配任何 affinity rule
+
+export:
+  formats: ["json", "markdown", "png"]
+  output_dir: "results/cache-affinity"

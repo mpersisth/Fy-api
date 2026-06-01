@@ -77,6 +77,45 @@ func TestSanitizeBedrockSamplingParams(t *testing.T) {
 			t.Error("expected TopP stripped for sonnet when both present")
 		}
 	})
+
+	t.Run("clamps temperature above 1.0", func(t *testing.T) {
+		temp := 1.5
+		req := &AwsClaudeRequest{Temperature: &temp}
+		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
+		if req.Temperature == nil || *req.Temperature != 1.0 {
+			t.Errorf("expected Temperature clamped to 1.0, got %v", req.Temperature)
+		}
+	})
+
+	t.Run("preserves temperature at 1.0", func(t *testing.T) {
+		temp := 1.0
+		req := &AwsClaudeRequest{Temperature: &temp}
+		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
+		if req.Temperature == nil || *req.Temperature != 1.0 {
+			t.Errorf("expected Temperature 1.0 preserved, got %v", req.Temperature)
+		}
+	})
+
+	t.Run("preserves temperature below 1.0", func(t *testing.T) {
+		temp := 0.3
+		req := &AwsClaudeRequest{Temperature: &temp}
+		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
+		if req.Temperature == nil || *req.Temperature != 0.3 {
+			t.Errorf("expected Temperature 0.3 preserved, got %v", req.Temperature)
+		}
+	})
+
+	t.Run("clamps temperature 2.0 from OpenAI-compat client", func(t *testing.T) {
+		temp := 2.0
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		sanitizeBedrockSamplingParams("claude-sonnet-4-5", req)
+		if req.Temperature == nil || *req.Temperature != 1.0 {
+			t.Errorf("expected Temperature clamped to 1.0, got %v", req.Temperature)
+		}
+		if req.TopP != 0 {
+			t.Error("expected TopP stripped")
+		}
+	})
 }
 
 func TestSanitizeBedrockSamplingParamsRaw(t *testing.T) {
@@ -107,6 +146,22 @@ func TestSanitizeBedrockSamplingParamsRaw(t *testing.T) {
 		sanitizeBedrockSamplingParamsRaw("claude-opus-4-6", data)
 		if _, ok := data["temperature"]; !ok {
 			t.Error("expected temperature preserved when alone")
+		}
+	})
+
+	t.Run("clamps temperature above 1.0", func(t *testing.T) {
+		data := map[string]any{"temperature": 1.8}
+		sanitizeBedrockSamplingParamsRaw("claude-sonnet-4-5", data)
+		if v, ok := data["temperature"]; !ok || v != 1.0 {
+			t.Errorf("expected temperature clamped to 1.0, got %v", data["temperature"])
+		}
+	})
+
+	t.Run("preserves temperature at 0.5", func(t *testing.T) {
+		data := map[string]any{"temperature": 0.5}
+		sanitizeBedrockSamplingParamsRaw("claude-sonnet-4-5", data)
+		if v, ok := data["temperature"]; !ok || v != 0.5 {
+			t.Errorf("expected temperature 0.5 preserved, got %v", data["temperature"])
 		}
 	})
 }

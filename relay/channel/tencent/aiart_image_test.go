@@ -66,14 +66,8 @@ func TestTencentAIArtImageRequestConversion(t *testing.T) {
 	if got.Prompt != request.Prompt {
 		t.Fatalf("Prompt = %q, want %q", got.Prompt, request.Prompt)
 	}
-	if got.Resolution != "1024:1024" {
-		t.Fatalf("Resolution = %q, want 1024:1024", got.Resolution)
-	}
-	if got.Quality != "high" {
-		t.Fatalf("Quality = %q, want high", got.Quality)
-	}
-	if got.N != 1 {
-		t.Fatalf("N = %d, want 1", got.N)
+	if got.Resolution != "" {
+		t.Fatalf("Resolution = %q, want empty (GPT image API does not accept Resolution)", got.Resolution)
 	}
 	if got.NegativePrompt != "low quality" {
 		t.Fatalf("NegativePrompt = %q, want low quality", got.NegativePrompt)
@@ -114,8 +108,8 @@ func TestAdaptorConvertImageRequestUsesAIArtForAIArtHost(t *testing.T) {
 	if !ok {
 		t.Fatalf("ConvertImageRequest returned %T, want *tencentAIArtImageRequest", got)
 	}
-	if aiartReq.Resolution != "1536:1024" {
-		t.Fatalf("Resolution = %q, want 1536:1024", aiartReq.Resolution)
+	if aiartReq.Resolution != "" {
+		t.Fatalf("Resolution = %q, want empty (GPT image API does not accept Resolution)", aiartReq.Resolution)
 	}
 }
 

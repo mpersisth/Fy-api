@@ -102,18 +102,8 @@ func isTencentAIArtImageGeneration(info *relaycommon.RelayInfo) bool {
 
 func tencentAIArtImageRequestFromOpenAI(request dto.ImageRequest) (*tencentAIArtImageRequest, error) {
 	imageReq := &tencentAIArtImageRequest{
-		Model:      request.Model,
-		Prompt:     request.Prompt,
-		Resolution: strings.ReplaceAll(request.Size, "x", ":"),
-		Quality:    request.Quality,
-		RspImgType: "url",
-		N:          1,
-	}
-	if request.ResponseFormat == "b64_json" {
-		imageReq.RspImgType = "base64"
-	}
-	if request.N != nil && *request.N > 0 {
-		imageReq.N = int(*request.N)
+		Model:  request.Model,
+		Prompt: request.Prompt,
 	}
 	if len(request.ExtraFields) > 0 {
 		if err := common.Unmarshal(request.ExtraFields, imageReq); err != nil {
@@ -198,10 +188,12 @@ func (a *Adaptor) doTencentAIArtImageRequest(c *gin.Context, info *relaycommon.R
 	if err != nil {
 		return nil, fmt.Errorf("read Tencent AIArt request body failed: %w", err)
 	}
-	_, secretID, secretKey, err := parseTencentConfig(tencentAIArtAPIKey(c, info))
+	apiKey := tencentAIArtAPIKey(c, info)
+	_, secretID, secretKey, err := parseTencentConfig(apiKey)
 	if err != nil {
 		return nil, err
 	}
+	a.Region = parseTencentRegion(apiKey)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), tencentAIArtPollTimeout)
 	defer cancel()
@@ -258,6 +250,9 @@ func (a *Adaptor) tencentAIArtPost(ctx context.Context, c *gin.Context, info *re
 	req.Header.Set("X-TC-Action", action)
 	req.Header.Set("X-TC-Version", tencentAIArtVersion)
 	req.Header.Set("X-TC-Timestamp", strconv.FormatInt(timestamp, 10))
+	if a.Region != "" {
+		req.Header.Set("X-TC-Region", a.Region)
+	}
 	req.Header.Set("Authorization", buildTencentTC3Authorization(tencentTC3SignInput{
 		SecretID:  secretID,
 		SecretKey: secretKey,

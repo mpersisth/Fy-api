@@ -28,10 +28,10 @@ func isTemperatureDeprecatedForBedrock(modelName string) bool {
 	return false
 }
 
-// sanitizeBedrockSamplingParams applies both restrictions:
-// 1. Strip temperature for models where it's deprecated
-// 2. Strip top_p when both temperature and top_p are present
-// TODO(review): 临时参数兼容处理，Bedrock 侧策略可能变化，需定期 review 是否仍需要。
+// sanitizeBedrockSamplingParams applies Bedrock sampling-parameter restrictions:
+// 1. Strip temperature for models where it's fully deprecated
+// 2. Clamp temperature to [0, 1] (Bedrock range) for all other models
+// 3. Strip top_p when both temperature and top_p are present
 func sanitizeBedrockSamplingParams(modelName string, request *AwsClaudeRequest) {
 	if request == nil {
 		return
@@ -40,14 +40,19 @@ func sanitizeBedrockSamplingParams(modelName string, request *AwsClaudeRequest) 
 		request.Temperature = nil
 		return
 	}
-	if request.Temperature != nil && request.TopP != 0 {
-		request.TopP = 0
+	if request.Temperature != nil {
+		if *request.Temperature > 1.0 {
+			clamped := 1.0
+			request.Temperature = &clamped
+		}
+		if request.TopP != 0 {
+			request.TopP = 0
+		}
 	}
 }
 
 // sanitizeBedrockSamplingParamsRaw applies the same logic for pass-through.
-// TODO(review): 同上，临时参数兼容处理，需定期 review。
-func sanitizeBedrockSamplingParamsRaw(modelName string, data map[string]interface{}) {
+func sanitizeBedrockSamplingParamsRaw(modelName string, data map[string]any) {
 	if data == nil {
 		return
 	}
@@ -55,9 +60,25 @@ func sanitizeBedrockSamplingParamsRaw(modelName string, data map[string]interfac
 		delete(data, "temperature")
 		return
 	}
-	_, hasTemp := data["temperature"]
-	_, hasTopP := data["top_p"]
-	if hasTemp && hasTopP {
+	if temp, hasTemp := data["temperature"]; hasTemp {
+		if tempFloat, ok := toFloat64(temp); ok && tempFloat > 1.0 {
+			data["temperature"] = 1.0
+		}
 		delete(data, "top_p")
+	}
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	default:
+		return 0, false
 	}
 }

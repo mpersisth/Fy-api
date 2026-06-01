@@ -24,6 +24,7 @@ type Adaptor struct {
 	Action    string
 	Version   string
 	Timestamp int64
+	Region    string
 }
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
@@ -66,6 +67,9 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("X-TC-Action", a.Action)
 	req.Set("X-TC-Version", a.Version)
 	req.Set("X-TC-Timestamp", strconv.FormatInt(a.Timestamp, 10))
+	if a.Region != "" {
+		req.Set("X-TC-Region", a.Region)
+	}
 	return nil
 }
 
@@ -77,6 +81,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
 	appId, secretId, secretKey, err := parseTencentConfig(apiKey)
 	a.AppID = appId
+	a.Region = parseTencentRegion(apiKey)
 	if err != nil {
 		return nil, err
 	}

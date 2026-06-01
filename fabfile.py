@@ -100,6 +100,22 @@ TARGETS = {
         "mem": "6g",
         "cpus": "2",
     },
+    "sg-test": {
+        "host": "8.222.175.17",
+        "port": 22,
+        "user": "root",
+        "key": "",
+        "app_dir": "/opt/fy-api",
+        "src_dir": "/root/Fy-api",
+        "build_dir": "/tmp/fy-api-build",
+        "registry": "",
+        "namespace": "",
+        "repo": "fy-api",
+        "repo_url": "https://github.com/seraph0017/Fy-api.git",
+        "nginx_conf": "/etc/nginx/conf.d/fy-api.conf",
+        "mem": "6g",
+        "cpus": "4",
+    },
 }
 
 DEFAULT_REPO_URL = "git@github.com:seraph0017/Fy-api.git"
@@ -388,16 +404,17 @@ def deploy(ctx, target="cn", tag=""):
         "ref": "git ref to checkout; defaults to the same value as tag",
         "skip_build": "skip build step",
         "skip_push": "skip ACR push step",
+        "pull": "pass --pull to podman build (default True)",
     }
 )
-def release(ctx, target="cn", tag="", ref="", skip_build=False, skip_push=False):
+def release(ctx, target="cn", tag="", ref="", skip_build=False, skip_push=False, pull=True):
     """Full release: checkout, build, push to ACR, blue-green deploy, health check."""
     tag = _validate_arg("tag", tag)
     ref = ref or tag
     cfg = _config(target)
     has_registry = bool(cfg.get("registry") and cfg.get("namespace"))
     if not skip_build:
-        build(ctx, target=target, tag=tag, ref=ref)
+        build(ctx, target=target, tag=tag, ref=ref, pull=pull)
     if not skip_push and has_registry:
         push_image(ctx, target=target, tag=tag)
     deploy(ctx, target=target, tag=tag)

@@ -1,0 +1,30 @@
+# fy-distribution test configuration
+# Copy to config.yaml and fill in your values
+
+env:
+  base_url: "https://api-test.tracenex.cn"
+  root_token: "sk-your-root-admin-token"  # root 权限，用于管理渠道/配置/日志
+  # 测试用的上游 API key（渠道创建时使用）
+  upstream_api_key: "sk-your-upstream-openai-key"
+
+test:
+  model: "gpt-4o-mini"
+  group: "default"
+  # 每个测试发送的请求数（权重分布测试建议 >= 200）
+  weight_requests: 300
+  # 优先级测试每个场景的请求数
+  priority_requests: 30
+  # 亲和性测试每个场景的请求数
+  affinity_requests: 50
+  # 查询日志前的等待时间（秒）
+  log_wait_seconds: 3
+  # 请求间隔（秒），避免触发限流
+  request_interval: 0.1
+  # 并发数
+  concurrency: 5
+
+channels:
+  # 上游渠道类型 (1=OpenAI, 14=Anthropic, 24=Gemini, ...)
+  type: 1
+  # 渠道 tag 前缀（用于批量管理和隔离）
+  tag_prefix: "dist-test"

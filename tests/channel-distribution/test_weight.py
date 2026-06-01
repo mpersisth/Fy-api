@@ -3,10 +3,10 @@
 import time
 from dataclasses import dataclass
 
-from .lib.client import FyApiClient
-from .lib.harness import ChannelConfig, TestContext, TestHarness
-from .lib.log_query import DistributionResult, query_distribution
-from .lib.stats import chi_squared_test
+from lib.client import FyApiClient
+from lib.harness import ChannelConfig, TestHarness
+from lib.log_query import DistributionResult, query_distribution_by_token
+from lib.stats import chi_squared_test
 
 
 @dataclass
@@ -48,29 +48,36 @@ def run_weight_test(
 ) -> WeightTestResult:
     """Test weight distribution with 3 channels at same priority."""
     channels = [
-        ChannelConfig(name="weight-A", priority=100, weight=50),
-        ChannelConfig(name="weight-B", priority=100, weight=30),
-        ChannelConfig(name="weight-C", priority=100, weight=20),
+        ChannelConfig(name="weight-A", priority=1000, weight=50),
+        ChannelConfig(name="weight-B", priority=1000, weight=30),
+        ChannelConfig(name="weight-C", priority=1000, weight=20),
     ]
 
     ctx = harness.setup_channels(channels)
     print(f"  Created channels: {ctx.channel_names}")
+    print(f"  Token: {ctx.token_name} (id={ctx.token_id})")
     print(f"  Sending {num_requests} requests...")
 
-    request_ids = []
+    start_ts = int(time.time())
+    errors = 0
     for i in range(num_requests):
         result = client.chat_completion(
             token=ctx.token_key,
             model=harness.model,
             messages=[{"role": "user", "content": "say ok"}],
         )
-        request_ids.append(result.request_id)
         if result.error:
-            print(f"  [WARN] request {i}: {result.error[:80]}")
+            errors += 1
+            if errors <= 3:
+                print(f"  [WARN] request {i}: {result.error[:80]}")
         if interval > 0 and i < num_requests - 1:
             time.sleep(interval)
+        if (i + 1) % 50 == 0:
+            print(f"  ... {i + 1}/{num_requests} sent")
 
-    dist = query_distribution(client, request_ids, wait_seconds=log_wait)
+    dist = query_distribution_by_token(
+        client, ctx.token_name, start_timestamp=start_ts, wait_seconds=log_wait
+    )
     expected = {ch.channel_id: ch.weight for ch in channels}
     chi2, p_value, passed = chi_squared_test(dist.by_channel, expected)
 

@@ -16,9 +16,12 @@ class RequestResult:
 
 
 class FyApiClient:
-    def __init__(self, base_url: str, root_token: str, timeout: float = 30.0):
+    def __init__(
+        self, base_url: str, root_token: str, user_id: int = 1, timeout: float = 30.0
+    ):
         self.base_url = base_url.rstrip("/")
         self.root_token = root_token
+        self.user_id = user_id
         self.timeout = timeout
 
     def _headers(self, token: str | None = None) -> dict:
@@ -26,7 +29,9 @@ class FyApiClient:
         return {"Authorization": f"Bearer {t}", "Content-Type": "application/json"}
 
     def _admin_headers(self) -> dict:
-        return self._headers(self.root_token)
+        h = self._headers(self.root_token)
+        h["New-Api-User"] = str(self.user_id)
+        return h
 
     # --- Admin APIs ---
 
@@ -68,6 +73,15 @@ class FyApiClient:
         )
         return resp.json()
 
+    def search_tokens(self, keyword: str = "", page: int = 0, page_size: int = 50) -> dict:
+        resp = httpx.get(
+            f"{self.base_url}/api/token/search",
+            params={"keyword": keyword, "p": page, "page_size": page_size},
+            headers=self._admin_headers(),
+            timeout=self.timeout,
+        )
+        return resp.json()
+
     def get_token_key(self, token_id: int) -> str:
         resp = httpx.post(
             f"{self.base_url}/api/token/{token_id}/key",
@@ -75,11 +89,19 @@ class FyApiClient:
             timeout=self.timeout,
         )
         data = resp.json()
-        return data.get("data", "")
+        return data.get("data", {}).get("key", "")
 
     def delete_token(self, token_id: int) -> dict:
         resp = httpx.delete(
             f"{self.base_url}/api/token/{token_id}",
+            headers=self._admin_headers(),
+            timeout=self.timeout,
+        )
+        return resp.json()
+
+    def get_options(self) -> dict:
+        resp = httpx.get(
+            f"{self.base_url}/api/option/",
             headers=self._admin_headers(),
             timeout=self.timeout,
         )
@@ -94,9 +116,15 @@ class FyApiClient:
         )
         return resp.json()
 
-    def clear_affinity_cache(self) -> dict:
+    def clear_affinity_cache(self, rule_name: str = "") -> dict:
+        params = {}
+        if rule_name:
+            params["rule_name"] = rule_name
+        else:
+            params["all"] = "true"
         resp = httpx.delete(
             f"{self.base_url}/api/option/channel_affinity_cache",
+            params=params,
             headers=self._admin_headers(),
             timeout=self.timeout,
         )
@@ -110,9 +138,18 @@ class FyApiClient:
         )
         return resp.json()
 
+    def search_channels(self, keyword: str = "", page: int = 0, page_size: int = 50) -> dict:
+        resp = httpx.get(
+            f"{self.base_url}/api/channel/search",
+            params={"keyword": keyword, "p": page, "page_size": page_size},
+            headers=self._admin_headers(),
+            timeout=self.timeout,
+        )
+        return resp.json()
+
     def search_logs(self, params: dict) -> dict:
         resp = httpx.get(
-            f"{self.base_url}/api/log/search",
+            f"{self.base_url}/api/log/",
             params=params,
             headers=self._admin_headers(),
             timeout=self.timeout,

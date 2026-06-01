@@ -16,22 +16,28 @@ Suites:
 """
 
 import argparse
+import os
 import sys
 import time
 
+# Allow running both as `python -m tests.channel_distribution` and `python run_tests.py`
+_pkg_dir = os.path.dirname(os.path.abspath(__file__))
+if _pkg_dir not in sys.path:
+    sys.path.insert(0, _pkg_dir)
+
 import yaml
 
-from .lib.client import FyApiClient
-from .lib.harness import TestHarness
-from .recommendations import format_recommendations, generate_recommendations
-from .test_affinity import (
+from lib.client import FyApiClient
+from lib.harness import TestHarness
+from recommendations import format_recommendations, generate_recommendations
+from test_affinity import (
     run_affinity_failure_test,
     run_affinity_hit_rate_test,
     run_affinity_sticky_test,
     run_affinity_ttl_test,
 )
-from .test_priority import run_priority_fallback_test
-from .test_weight import run_weight_test
+from test_priority import run_priority_fallback_test
+from test_weight import run_weight_test
 
 
 def load_config(path: str) -> dict:
@@ -56,6 +62,7 @@ def main():
     client = FyApiClient(
         base_url=config["env"]["base_url"],
         root_token=config["env"]["root_token"],
+        user_id=config["env"].get("user_id", 1),
     )
     harness = TestHarness(client, config)
     test_cfg = config["test"]

@@ -32,6 +32,45 @@ class DistributionResult:
         return "\n".join(lines)
 
 
+def query_distribution_by_token(
+    client: FyApiClient,
+    token_name: str,
+    start_timestamp: int = 0,
+    wait_seconds: float = 3.0,
+) -> DistributionResult:
+    """Query logs by token name and aggregate channel distribution."""
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
+
+    result = DistributionResult()
+    page = 0
+    page_size = 100
+    while True:
+        params = {"token_name": token_name, "p": page, "page_size": page_size}
+        if start_timestamp > 0:
+            params["start_timestamp"] = start_timestamp
+        resp = client.search_logs(params)
+        data = resp.get("data", {})
+        items = data.get("items", []) if isinstance(data, dict) else []
+        if not items:
+            break
+        for log in items:
+            ch_id = log.get("channel", 0)
+            rid = log.get("request_id", "")
+            if rid:
+                result.request_ids.append(rid)
+            if ch_id > 0:
+                result.by_channel[ch_id] += 1
+                result.total += 1
+            else:
+                result.errors += 1
+        total = data.get("total", 0)
+        if (page + 1) * page_size >= total:
+            break
+        page += 1
+    return result
+
+
 def query_distribution(
     client: FyApiClient,
     request_ids: list[str],
@@ -42,23 +81,20 @@ def query_distribution(
         time.sleep(wait_seconds)
 
     result = DistributionResult(request_ids=request_ids)
-    batch_size = 50
-    for i in range(0, len(request_ids), batch_size):
-        batch = request_ids[i : i + batch_size]
-        for rid in batch:
-            if not rid:
-                result.errors += 1
-                continue
-            resp = client.search_logs({"request_id": rid, "p": 0, "page_size": 1})
-            data = resp.get("data", {})
-            logs = data.get("data", []) if isinstance(data, dict) else []
-            if logs:
-                ch_id = logs[0].get("channel", 0)
-                if ch_id > 0:
-                    result.by_channel[ch_id] += 1
-                    result.total += 1
-                else:
-                    result.errors += 1
+    for rid in request_ids:
+        if not rid:
+            result.errors += 1
+            continue
+        resp = client.search_logs({"request_id": rid, "p": 0, "page_size": 1})
+        data = resp.get("data", {})
+        logs = data.get("items", []) if isinstance(data, dict) else []
+        if logs:
+            ch_id = logs[0].get("channel", 0)
+            if ch_id > 0:
+                result.by_channel[ch_id] += 1
+                result.total += 1
             else:
                 result.errors += 1
+        else:
+            result.errors += 1
     return result

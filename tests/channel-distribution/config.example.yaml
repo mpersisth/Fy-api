@@ -3,9 +3,10 @@
 
 env:
   base_url: "https://api-test.tracenex.cn"
-  root_token: "sk-your-root-admin-token"  # root 权限，用于管理渠道/配置/日志
+  root_token: "your-access-token"  # root 用户的 access_token（非 sk- relay token）
+  user_id: 1  # root 用户 ID，用于 New-Api-User header
   # 测试用的上游 API key（渠道创建时使用）
-  upstream_api_key: "sk-your-upstream-openai-key"
+  upstream_api_key: "sk-your-upstream-api-key"
 
 test:
   model: "gpt-4o-mini"

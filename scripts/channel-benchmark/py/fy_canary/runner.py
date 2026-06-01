@@ -21,6 +21,10 @@ from . import alignment, drift, mmd
 from .baseline import BaselineStore, ChannelBaseline, ProbeBaseline
 from .client import CanaryClient
 from .config import CanaryConfig
+from .metadata import evaluate_metadata
+from .tokenizer import evaluate_tokenizer
+
+_STATELESS_METHODS = {"metadata", "tokenizer"}
 
 
 @dataclass
@@ -116,6 +120,8 @@ class CanaryRunner:
         self, row: PromptRow, client: CanaryClient, emb: EmbeddingClient | None,
     ) -> ProbeBaseline:
         method = row.method or "alignment"
+        if method in _STATELESS_METHODS:
+            return ProbeBaseline(prompt_id=row.id, method=method, samples=[], centroid=None)
         n = self._n_samples_for(row, method)
         samples = await self._sample_n(client, row, n)
         centroid_vec: list[float] | None = None
@@ -134,12 +140,20 @@ class CanaryRunner:
     # --------- audit mode -----------------------------------------------------
     async def audit(self) -> CanaryReport:
         """Compare current source against stored baseline."""
-        baseline = self.store.load(self.cfg.source.name)
-        if baseline is None:
-            raise FileNotFoundError(
-                f"no baseline found at {self.store.path_for(self.cfg.source.name)} — "
-                f"run `fy-canary baseline -c ...` first."
-            )
+        all_stateless = all(
+            (row.method or "alignment") in _STATELESS_METHODS
+            for row in self.dataset
+        )
+
+        if all_stateless:
+            baseline = None
+        else:
+            baseline = self.store.load(self.cfg.source.name)
+            if baseline is None:
+                raise FileNotFoundError(
+                    f"no baseline found at {self.store.path_for(self.cfg.source.name)} — "
+                    f"run `fy-canary baseline -c ...` first."
+                )
 
         emb = self._maybe_emb_client()
         outcomes: list[ProbeOutcome] = []
@@ -230,10 +244,20 @@ class CanaryRunner:
 
     async def _audit_one(
         self, row: PromptRow,
-        baseline: ChannelBaseline,
+        baseline: ChannelBaseline | None,
         client: CanaryClient,
         emb: EmbeddingClient | None,
     ) -> ProbeOutcome | None:
+        method = row.method or "alignment"
+
+        # Stateless probes — no baseline needed
+        if method == "metadata":
+            return await self._audit_metadata(row, client)
+        if method == "tokenizer":
+            return await self._audit_tokenizer(row, client)
+
+        # Stateful probes require baseline
+        assert baseline is not None
         b = baseline.probes.get(row.id)
         if b is None:
             return ProbeOutcome(
@@ -248,15 +272,20 @@ class CanaryRunner:
                 return ProbeOutcome(row.id, method, False, 0.0, "baseline has no samples")
             sample = await self._sample_n(client, row, 1)
             current = sample[0] if sample else ""
-            v = alignment.evaluate_alignment(
-                prompt_id=row.id,
-                baseline_sample=b.samples[0],
-                current_sample=current,
-                threshold=0.70,
-            )
+            thresh = row.raw.get("threshold", 0.70)
+            best_v = None
+            for bs in b.samples:
+                v = alignment.evaluate_alignment(
+                    prompt_id=row.id,
+                    baseline_sample=bs,
+                    current_sample=current,
+                    threshold=thresh,
+                )
+                if best_v is None or v.similarity > best_v.similarity:
+                    best_v = v
             return ProbeOutcome(
-                row.id, method, v.passed, v.similarity,
-                f"edit-sim={v.similarity:.3f} threshold={v.threshold:.2f}",
+                row.id, method, best_v.passed, best_v.similarity,
+                f"edit-sim={best_v.similarity:.3f} threshold={best_v.threshold:.2f} (best of {len(b.samples)})",
             )
 
         if method == "drift":
@@ -274,12 +303,13 @@ class CanaryRunner:
             if not vecs:
                 return ProbeOutcome(row.id, method, False, 0.0, "failed to embed current samples")
             current_centroid = drift.centroid(vecs)
+            drift_thresh = row.raw.get("threshold", 0.93)
             v = drift.evaluate_drift(
                 prompt_id=row.id,
                 baseline_centroid=b.centroid,
                 current_centroid=current_centroid,
                 n_samples=len(vecs),
-                threshold=0.93,
+                threshold=drift_thresh,
             )
             return ProbeOutcome(
                 row.id, method, v.passed, v.similarity,
@@ -313,11 +343,36 @@ class CanaryRunner:
 
         return ProbeOutcome(row.id, method, False, 0.0, f"unknown method: {method!r}")
 
+    # --------- stateless probe helpers -----------------------------------------
+    async def _audit_metadata(self, row: PromptRow, client: CanaryClient) -> ProbeOutcome:
+        max_t = row.max_tokens or 200
+        resp = await client.complete_raw(
+            model=self.cfg.source.model, prompt=row.prompt,
+            max_tokens=max_t, temperature=row.temperature or 0.0,
+        )
+        v = evaluate_metadata(
+            prompt_id=row.id, resp=resp,
+            expected_model=self.cfg.source.model, max_tokens=max_t,
+        )
+        return ProbeOutcome(row.id, "metadata", v.passed, 1.0 if v.passed else 0.0, v.detail)
+
+    async def _audit_tokenizer(self, row: PromptRow, client: CanaryClient) -> ProbeOutcome:
+        resp = await client.complete_raw(
+            model=self.cfg.source.model, prompt=row.prompt,
+            max_tokens=row.max_tokens or 16, temperature=row.temperature or 0.0,
+        )
+        v = evaluate_tokenizer(
+            prompt_id=row.id, resp=resp,
+            expected_model=self.cfg.source.model, prompt_text=row.prompt,
+            row_expected_range=row.raw.get("expected_prompt_tokens"),
+        )
+        return ProbeOutcome(row.id, "tokenizer", v.passed, v.deviation, v.detail)
+
     # --------- shared helpers -------------------------------------------------
     async def _sample_n(self, client: CanaryClient, row: PromptRow, n: int) -> list[str]:
         """Concurrently fetch N completions for one prompt."""
         max_tokens = row.max_tokens if row.max_tokens is not None else 200
-        temperature = row.temperature if row.temperature is not None else 1.0
+        temperature = row.temperature if row.temperature else None
         tasks = [
             client.complete(
                 model=self.cfg.source.model,

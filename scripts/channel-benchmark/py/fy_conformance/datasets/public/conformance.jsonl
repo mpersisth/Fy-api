@@ -14,6 +14,7 @@
 #                                with a few claude-only sub-cases for thinking/cache_control
 #   - auth                     : Authorization header
 #   - malformed                : malformed request bodies
+#   - client_compat_bedrock    : real-world client param combos that must work on Bedrock
 #
 # applies_to_backends omitted = applies to all. Otherwise the run is
 # scoped: only cases whose list contains target.backend will run.
@@ -245,3 +246,42 @@
 {"id": "msgapi-claude-thinking-enabled", "description": "thinking={type:enabled,budget_tokens:1024} (Claude extended thinking)", "applies_to_backends": ["claude"], "body_replace": {"max_tokens": 4096, "messages": [{"role": "user", "content": "ping"}], "thinking": {"type": "enabled", "budget_tokens": 1024}}, "expect_status_class": "2xx_or_4xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"], "category": "anthropic_messages", "endpoint": "/v1/messages", "method": "POST"}
 {"id": "msgapi-claude-thinking-disabled", "description": "thinking={type:disabled}", "applies_to_backends": ["claude"], "body_replace": {"max_tokens": 16, "messages": [{"role": "user", "content": "ping"}], "thinking": {"type": "disabled"}}, "expect_status_class": "2xx_or_4xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"], "category": "anthropic_messages", "endpoint": "/v1/messages", "method": "POST"}
 {"id": "msgapi-claude-thinking-bad-type", "description": "thinking={type:42}", "applies_to_backends": ["claude"], "body_replace": {"max_tokens": 16, "messages": [{"role": "user", "content": "ping"}], "thinking": {"type": 42}}, "expect_status_class": "4xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"], "category": "anthropic_messages", "endpoint": "/v1/messages", "method": "POST"}
+
+# ─── client_compat_bedrock ───────────────────────────────────────────────────
+# Real-world client parameter combinations that must pass through to Bedrock
+# without triggering 4xx/5xx. Each case mirrors what a specific client actually
+# sends. Source: client source code + production traffic patterns.
+#
+# These catch relay-layer parameter stripping/conflict bugs (e.g. temperature
+# deprecated on newer Bedrock models, temperature+top_p mutual exclusion,
+# unsupported tool types).
+
+# Claude Code CLI (stream + tools + temperature=1 + max_tokens=16384)
+{"id": "compat-bedrock-cc-cli-tools-stream", "category": "client_compat_bedrock", "description": "Claude Code CLI: stream + tools + temperature=1", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "max_tokens": 16384, "temperature": 1, "tools": [{"type": "function", "function": {"name": "Read", "description": "Read a file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}}]}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# Claude Code CLI without tools (simple completion)
+{"id": "compat-bedrock-cc-cli-no-tools", "category": "client_compat_bedrock", "description": "Claude Code CLI: stream + temperature=1, no tools", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "max_tokens": 16384, "temperature": 1}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# Codex (OpenAI CLI): stream + tools + temperature=0
+{"id": "compat-bedrock-codex-tools-temp0", "category": "client_compat_bedrock", "description": "Codex: stream + tools + temperature=0", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "temperature": 0, "max_tokens": 4096, "tools": [{"type": "function", "function": {"name": "shell", "description": "Run a shell command", "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}}}]}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# Cherry Studio default: temperature=0.7 + top_p=1 (conflict on some Bedrock models)
+{"id": "compat-bedrock-cherry-studio-default", "category": "client_compat_bedrock", "description": "Cherry Studio: temperature=0.7 + top_p=1 (potential conflict)", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "temperature": 0.7, "top_p": 1, "max_tokens": 4096}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# Cursor/Continue: tools + stream (similar to CC CLI but with response_format)
+{"id": "compat-bedrock-cursor-tools-response-format", "category": "client_compat_bedrock", "description": "Cursor: tools + response_format json_object", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "max_tokens": 4096, "temperature": 0, "tools": [{"type": "function", "function": {"name": "edit_file", "description": "Edit a file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}}], "response_format": {"type": "json_object"}}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# temperature=0 without top_p (common in coding assistants)
+{"id": "compat-bedrock-temp0-no-top-p", "category": "client_compat_bedrock", "description": "Coding assistant: temperature=0 only, no top_p", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "temperature": 0, "max_tokens": 8192}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# top_p only without temperature (some clients omit temperature entirely)
+{"id": "compat-bedrock-top-p-only", "category": "client_compat_bedrock", "description": "top_p=0.9 without temperature (client omits temperature)", "applies_to_backends": ["bedrock"], "remove_field": "temperature", "extra_body": {"stream": true, "top_p": 0.9, "max_tokens": 4096}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# Non-streaming with tools (some batch/agent workflows)
+{"id": "compat-bedrock-non-stream-tools", "category": "client_compat_bedrock", "description": "Non-streaming + tools (batch agent workflow)", "applies_to_backends": ["bedrock"], "extra_body": {"stream": false, "max_tokens": 4096, "temperature": 1, "tools": [{"type": "function", "function": {"name": "search", "description": "Search the web", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}}]}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# temperature=1 + top_p=0.95 (ChatGPT-style defaults some clients copy)
+{"id": "compat-bedrock-chatgpt-defaults", "category": "client_compat_bedrock", "description": "ChatGPT-style defaults: temperature=1 + top_p=0.95", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "temperature": 1, "top_p": 0.95, "max_tokens": 4096}, "expect_status_class": "2xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}
+
+# temperature=2 (max for OpenAI-compat; must not crash even if Bedrock rejects)
+{"id": "compat-bedrock-temp-high", "category": "client_compat_bedrock", "description": "High temperature=2 (OpenAI max; relay should clamp or pass)", "applies_to_backends": ["bedrock"], "extra_body": {"stream": true, "temperature": 2, "max_tokens": 256}, "expect_status_class": "2xx_or_4xx", "must_not_contain": ["Go struct field", "GeneralOpenAIRequest", "ClaudeRequest", "json: cannot unmarshal"]}

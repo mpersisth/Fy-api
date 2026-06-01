@@ -241,6 +241,19 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		}
 	}
 
+	// Fy-api overlay: Bedrock sampling-parameter restrictions apply regardless of
+	// channel type (native AWS or Anthropic-type proxy). Opus 4.7 fully rejects
+	// temperature/top_p/top_k; other models reject temperature+top_p together.
+	if claudeRequest.Thinking == nil {
+		if strings.HasPrefix(claudeRequest.Model, "claude-opus-4-7") {
+			claudeRequest.Temperature = nil
+			claudeRequest.TopP = nil
+			claudeRequest.TopK = nil
+		} else if claudeRequest.Temperature != nil && claudeRequest.TopP != nil {
+			claudeRequest.TopP = nil
+		}
+	}
+
 	if textRequest.Stop != nil {
 		// stop maybe string/array string, convert to array string
 		switch textRequest.Stop.(type) {

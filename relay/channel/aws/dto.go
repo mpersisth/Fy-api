@@ -92,6 +92,8 @@ func sanitizeBedrockClaudeRawFieldsFromStruct(request *AwsClaudeRequest) {
 	// schema changes do not leak through pass-through or native Claude calls.
 	request.OutputConfig = nil
 	filterBedrockToolsFromStruct(request)
+	stripCacheControlScopeFromStruct(request)
+	filterEmptyTextBlocksFromStruct(request)
 }
 
 func normalizeBedrockAnthropicBeta(value string) []string {

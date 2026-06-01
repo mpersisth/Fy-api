@@ -39,7 +39,7 @@ def write_reports(r: QualityReport, formats: list[str], out_dir: str | Path) -> 
 
 def _json(r: QualityReport, out: Path, ts: str) -> Path:
     p = out / f"quality_{ts}.json"
-    p.write_text(json.dumps(report_to_dict(r), indent=2, ensure_ascii=False))
+    p.write_text(json.dumps(report_to_dict(r), indent=2, ensure_ascii=False), encoding="utf-8")
     return p
 
 
@@ -133,7 +133,7 @@ def _md(r: QualityReport, out: Path, ts: str) -> Path:
                 detail = detail[:117] + "..."
             lines.append(f"| {pr.channel} | `{pr.prompt_id}` | {pr.grader} | {detail} |")
 
-    p.write_text("\n".join(lines) + "\n")
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p
 
 

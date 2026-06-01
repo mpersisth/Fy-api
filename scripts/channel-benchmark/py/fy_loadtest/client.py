@@ -50,6 +50,7 @@ class ChatResult:
 
     # Content / counting
     content_chars: int = 0
+    content_text: str = ""
     chunks: int = 0
     finish_reason: str = ""
     usage: Usage = field(default_factory=Usage)
@@ -97,11 +98,18 @@ class ChatClient:
         *,
         request_timeout: float = 120.0,
         pin_channel_id: int | None = None,
+        extra_headers: dict[str, str] | None = None,
     ):
         self._url = base_url.rstrip("/") + "/v1/chat/completions"
         # Channel-pin is implemented by appending "-{id}" to the user token.
         # Fy-api admin-only feature; see middleware/auth.go ~line 431.
         effective_token = token if pin_channel_id is None else f"{token}-{pin_channel_id}"
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {effective_token}",
+            "Content-Type": "application/json",
+        }
+        if extra_headers:
+            headers.update(extra_headers)
         # Generous connect timeout, tight read timeout controlled by caller.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
@@ -110,10 +118,7 @@ class ChatClient:
                 write=30.0,
                 pool=10.0,
             ),
-            headers={
-                "Authorization": f"Bearer {effective_token}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             http2=False,  # Fy-api advertises HTTP/1.1 for SSE; avoid h2/SSE quirks
         )
 
@@ -130,18 +135,28 @@ class ChatClient:
         self,
         *,
         model: str,
-        prompt: str,
+        prompt: str = "",
         max_tokens: int,
-        temperature: float,
+        temperature: float | None,
         stream: bool,
+        messages: list[dict] | None = None,
     ) -> ChatResult:
-        body: dict[str, object] = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": stream,
-        }
+        if messages is not None:
+            body: dict[str, object] = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
+        else:
+            body = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
+        if temperature is not None:
+            body["temperature"] = temperature
         if stream:
             # Ask Fy-api to include usage in the final pre-[DONE] chunk. Some
             # upstreams drop usage from streams without this flag.
@@ -177,6 +192,7 @@ class ChatClient:
         if choices:
             msg = (choices[0].get("message") or {}).get("content", "")
             result.content_chars = len(msg)
+            result.content_text = msg
             result.finish_reason = choices[0].get("finish_reason", "") or ""
         _extract_usage(payload.get("usage"), result.usage)
         result.success = True
@@ -197,6 +213,7 @@ class ChatClient:
                 return
 
             last_content_at = 0.0
+            content_parts: list[str] = []
             async for raw_line in resp.aiter_lines():
                 if not raw_line:
                     continue
@@ -225,11 +242,13 @@ class ChatClient:
                         last_content_at = now
                         result.chunks += 1
                         result.content_chars += len(content)
+                        content_parts.append(content)
                     fr = ch.get("finish_reason")
                     if fr and not result.finish_reason:
                         result.finish_reason = str(fr)
 
         result.e2e_s = time.monotonic() - t0
+        result.content_text = "".join(content_parts)
         # Successful iff we got some content OR usage (some providers legitimately
         # emit empty content for safety filters but still report tokens).
         if result.content_chars > 0 or result.usage.completion_tokens > 0:

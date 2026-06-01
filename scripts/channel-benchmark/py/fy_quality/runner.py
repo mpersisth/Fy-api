@@ -183,7 +183,7 @@ class QualityRunner:
                 "prompt_tokens": prompt_tokens,
                 "elapsed_s": elapsed_s,
                 "error": error,
-            }, ensure_ascii=False))
+            }, ensure_ascii=False), encoding="utf-8")
 
         if error:
             grade = GradeResult(False, 0.0, f"request failed: {error}")
@@ -218,13 +218,14 @@ async def _generate(
         messages.append({"role": "system", "content": row.system})
     messages.append({"role": "user", "content": user_prompt})
 
-    body = {
+    body: dict = {
         "model": ch.model,
         "messages": messages,
         "max_tokens": row.max_tokens if row.max_tokens is not None else 256,
-        "temperature": row.temperature if row.temperature is not None else 0.0,
         "stream": False,
     }
+    if row.temperature:
+        body["temperature"] = row.temperature
     url = ch.base_url.rstrip("/") + "/v1/chat/completions"
     try:
         resp = await http.post(url, json=body)

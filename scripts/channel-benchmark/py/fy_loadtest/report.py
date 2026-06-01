@@ -72,13 +72,16 @@ def _write_json(mc: MultiChannelResult, out: Path, ts: str) -> Path:
 
 _CSV_HEADER = [
     "channel", "concurrency", "total", "ok", "failed", "success_rate_pct",
-    "wall_time_s", "rps", "aggregate_tok_per_s",
+    "wall_time_s", "rps", "rpm", "aggregate_tok_per_s",
+    "input_tpm", "output_tpm", "total_tpm",
     "e2e_p50_ms", "e2e_p95_ms", "e2e_p99_ms",
     "ttft_p50_ms", "ttft_p95_ms", "ttft_p99_ms",
     "itl_p50_ms", "itl_p95_ms",
     "tpot_p50_ms", "tpot_p95_ms",
     "per_req_tok_per_s_avg", "per_req_tok_per_s_p50",
     "avg_prompt_tokens", "avg_completion_tokens", "avg_cached_tokens",
+    "errors_429", "errors_5xx", "errors_timeout",
+    "error_rate_429_pct", "error_rate_5xx_pct", "error_rate_timeout_pct",
     "goodput_req_per_s", "top_error",
 ]
 
@@ -96,7 +99,9 @@ def _write_csv(mc: MultiChannelResult, out: Path, ts: str) -> Path:
                     label,
                     lv.concurrency, lv.total, lv.ok, lv.failed, f"{lv.success_rate_pct:.1f}",
                     f"{lv.wall_time_s:.2f}", f"{lv.throughput_req_per_s:.2f}",
+                    f"{lv.rpm:.1f}",
                     f"{lv.aggregate_tok_per_s:.1f}",
+                    f"{lv.input_tpm:.1f}", f"{lv.output_tpm:.1f}", f"{lv.total_tpm:.1f}",
                     _fmt(lv.e2e.p50_ms), _fmt(lv.e2e.p95_ms), _fmt(lv.e2e.p99_ms),
                     _fmt(lv.ttft.p50_ms), _fmt(lv.ttft.p95_ms), _fmt(lv.ttft.p99_ms),
                     _fmt(lv.itl.p50_ms), _fmt(lv.itl.p95_ms),
@@ -106,6 +111,10 @@ def _write_csv(mc: MultiChannelResult, out: Path, ts: str) -> Path:
                     f"{lv.avg_prompt_tokens:.1f}",
                     f"{lv.avg_completion_tokens:.1f}",
                     f"{lv.avg_cached_tokens:.1f}",
+                    lv.errors_429, lv.errors_5xx, lv.errors_timeout,
+                    f"{lv.error_rate_429_pct:.1f}",
+                    f"{lv.error_rate_5xx_pct:.1f}",
+                    f"{lv.error_rate_timeout_pct:.1f}",
                     _fmt_opt(lv.goodput_req_per_s),
                     _top_error(lv),
                 ])
@@ -127,17 +136,19 @@ def _write_md(mc: MultiChannelResult, out: Path, ts: str) -> Path:
         if r.pin_channel_id is not None:
             lines.append(f"- Channel ID: `{r.pin_channel_id}`")
         lines.append("")
-        lines.append("| Concurrency | OK/Total | Succ% | E2E p50/p95 (ms) | TTFT p50/p95 (ms) | ITL p50/p95 (ms) | RPS | Tok/s | Goodput |")
-        lines.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        lines.append("| Concurrency | OK/Total | Succ% | RPM | In TPM | Out TPM | E2E p50/p95 (ms) | TTFT p50/p95 (ms) | TPOT p50 (ms) | 429 | 5xx | Timeout |")
+        lines.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for lv in r.levels:
             lines.append(
-                "| {c} | {ok}/{tot} | {sr:.1f}% | {e50:.0f}/{e95:.0f} | {t50}/{t95} | {i50}/{i95} | {rps:.2f} | {ts:.1f} | {gp} |".format(
+                "| {c} | {ok}/{tot} | {sr:.1f}% | {rpm:.0f} | {itpm:.0f} | {otpm:.0f} | {e50:.0f}/{e95:.0f} | {t50}/{t95} | {tpot} | {e429} | {e5xx} | {eto} |".format(
                     c=lv.concurrency, ok=lv.ok, tot=lv.total, sr=lv.success_rate_pct,
+                    rpm=lv.rpm, itpm=lv.input_tpm, otpm=lv.output_tpm,
                     e50=lv.e2e.p50_ms, e95=lv.e2e.p95_ms,
                     t50=_fmt(lv.ttft.p50_ms) or "-", t95=_fmt(lv.ttft.p95_ms) or "-",
-                    i50=_fmt(lv.itl.p50_ms) or "-", i95=_fmt(lv.itl.p95_ms) or "-",
-                    rps=lv.throughput_req_per_s, ts=lv.aggregate_tok_per_s,
-                    gp=_fmt_opt(lv.goodput_req_per_s) or "-",
+                    tpot=_fmt(lv.tpot.p50_ms) or "-",
+                    e429=f"{lv.errors_429}({lv.error_rate_429_pct:.1f}%)" if lv.errors_429 else "0",
+                    e5xx=f"{lv.errors_5xx}({lv.error_rate_5xx_pct:.1f}%)" if lv.errors_5xx else "0",
+                    eto=f"{lv.errors_timeout}({lv.error_rate_timeout_pct:.1f}%)" if lv.errors_timeout else "0",
                 )
             )
         has_errors = any(lv.error_breakdown for lv in r.levels)
@@ -208,6 +219,12 @@ def _build_conclusion(mc: MultiChannelResult) -> list[str]:
         lines.append(f"  峰值吞吐: {max_rps:.2f} req/s（并发={max_rps_c}）")
         if r.bottleneck_concurrency is not None:
             lines.append(f"  瓶颈并发: {r.bottleneck_concurrency}（auto-ramp 探测）")
+        if low_c_lv.per_request_tok_per_s.samples > 0:
+            tps_avg = low_c_lv.per_request_tok_per_s.avg
+            tps_p50 = low_c_lv.per_request_tok_per_s.p50
+            lines.append(f"  生成速度: avg {tps_avg:.1f} tok/s, p50 {tps_p50:.1f} tok/s (C={low_c_lv.concurrency})")
+            if tps_p50 > 0 and tps_p50 < 50:
+                lines.append(f"  ⚠ 生成速度偏低（p50 < 50 tok/s），建议排查渠道链路延迟")
         if low_c_lv.ttft.p95_ms > 0:
             lines.append(f"  TTFT p95: {low_c_lv.ttft.p95_ms:.0f}ms (C={low_c_lv.concurrency}) → {high_c_lv.ttft.p95_ms:.0f}ms (C={high_c_lv.concurrency})")
         lines.append(f"  E2E p95: {low_c_lv.e2e.p95_ms:.0f}ms (C={low_c_lv.concurrency}) → {high_c_lv.e2e.p95_ms:.0f}ms (C={high_c_lv.concurrency})")
@@ -226,6 +243,15 @@ def _build_conclusion(mc: MultiChannelResult) -> list[str]:
         best_ttft_val = min((lv.ttft.p95_ms for lv in best_ttft.levels if lv.ttft.p95_ms > 0), default=0)
         if best_ttft_val > 0:
             lines.append(f"  TTFT p95 最低: {_ch_label(best_ttft)} ({best_ttft_val:.0f}ms，低并发)")
+
+        tps_by_channel = [
+            (r, min(r.levels, key=lambda lv: lv.concurrency).per_request_tok_per_s.p50)
+            for r in mc.results
+            if r.levels and min(r.levels, key=lambda lv: lv.concurrency).per_request_tok_per_s.samples > 0
+        ]
+        if tps_by_channel:
+            best_tps = max(tps_by_channel, key=lambda x: x[1])
+            lines.append(f"  生成速度最快: {_ch_label(best_tps[0])} (p50 {best_tps[1]:.1f} tok/s，低并发)")
 
         high_c_levels = [max(r.levels, key=lambda lv: lv.concurrency) for r in mc.results if r.levels]
         if high_c_levels:
@@ -368,13 +394,14 @@ def _write_pdf(mc: MultiChannelResult, out: Path, ts: str) -> Path:
         label = _ch_label(r)
         story.append(Paragraph(f"渠道: {label}" if multi else "各并发级别性能指标", heading_style))
 
-        table_data = [['并发数', '成功率', 'RPS', 'E2E p95\n(ms)', 'TTFT p95\n(ms)', 'ITL p95\n(ms)', 'Tok/s']]
+        table_data = [['并发数', '成功率', 'RPM', 'E2E p95\n(ms)', 'TTFT p95\n(ms)', 'TPOT p50\n(ms)', '429/5xx/TO']]
         for lv in r.levels:
+            err_cell = f"{lv.errors_429}/{lv.errors_5xx}/{lv.errors_timeout}"
             table_data.append([
                 str(lv.concurrency), f"{lv.success_rate_pct:.1f}%",
-                f"{lv.throughput_req_per_s:.2f}",
+                f"{lv.rpm:.0f}",
                 _fmt(lv.e2e.p95_ms) or "-", _fmt(lv.ttft.p95_ms) or "-",
-                _fmt(lv.itl.p95_ms) or "-", f"{lv.aggregate_tok_per_s:.1f}",
+                _fmt(lv.tpot.p50_ms) or "-", err_cell,
             ])
 
         table = Table(table_data, colWidths=[0.9*inch, 0.9*inch, 0.8*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.8*inch])
@@ -501,11 +528,19 @@ def _write_pdf(mc: MultiChannelResult, out: Path, ts: str) -> Path:
                 ['成功', f"{lv.ok} ({lv.success_rate_pct:.1f}%)"],
                 ['失败', str(lv.failed)],
                 ['实际耗时', f"{lv.wall_time_s:.2f}s"],
+                ['RPM', f"{lv.rpm:.1f}"],
                 ['吞吐量', f"{lv.throughput_req_per_s:.2f} req/s"],
+                ['Input TPM', f"{lv.input_tpm:.0f}"],
+                ['Output TPM', f"{lv.output_tpm:.0f}"],
+                ['Total TPM', f"{lv.total_tpm:.0f}"],
                 ['Token 吞吐量', f"{lv.aggregate_tok_per_s:.1f} tok/s"],
                 ['E2E p50/p95/p99', f"{_fmt(lv.e2e.p50_ms)}/{_fmt(lv.e2e.p95_ms)}/{_fmt(lv.e2e.p99_ms)} ms"],
                 ['TTFT p50/p95/p99', f"{_fmt(lv.ttft.p50_ms)}/{_fmt(lv.ttft.p95_ms)}/{_fmt(lv.ttft.p99_ms)} ms"],
+                ['TPOT p50/p95', f"{_fmt(lv.tpot.p50_ms)}/{_fmt(lv.tpot.p95_ms)} ms"],
                 ['ITL p50/p95', f"{_fmt(lv.itl.p50_ms)}/{_fmt(lv.itl.p95_ms)} ms"],
+                ['429 错误', f"{lv.errors_429} ({lv.error_rate_429_pct:.1f}%)"],
+                ['5xx 错误', f"{lv.errors_5xx} ({lv.error_rate_5xx_pct:.1f}%)"],
+                ['超时', f"{lv.errors_timeout} ({lv.error_rate_timeout_pct:.1f}%)"],
                 ['平均 Prompt Tokens', f"{lv.avg_prompt_tokens:.1f}"],
                 ['平均 Completion Tokens', f"{lv.avg_completion_tokens:.1f}"],
                 ['平均缓存 Tokens', f"{lv.avg_cached_tokens:.1f}"],

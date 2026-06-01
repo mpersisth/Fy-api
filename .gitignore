@@ -24,6 +24,10 @@ tiktoken_cache
 .cache
 plans
 .claude
+!.claude/
+.claude/*
+!.claude/commands/
+!.claude/skills/
 # Fy-api overlay: cursor IDE artifacts and ad-hoc logs
 .cursor/
 *.log

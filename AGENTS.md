@@ -9,7 +9,11 @@ This repository is **TraceNex**, the user-facing product brand, implemented in t
 - The Go module path intentionally remains `github.com/QuantumNous/new-api`; do not rename it.
 - Upstream gateway behavior comes from `QuantumNous/new-api`; TraceNex-specific changes should stay small and merge-friendly.
 - Before changing anything, read `OVERLAY.md`. It is the source of truth for TraceNex-specific changes and merge-conflict expectations.
-- In the parent workspace, only `Fy-api/` is normally edited. `new-api/` and `old_code/` are read-only references.
+- In the parent workspace, both `Fy-api/` and `TraceNexBiz/` are actively edited. `new-api/` and `old_code/` are read-only references.
+
+### Sibling project: TraceNexBiz (consumer of `/api/internal/*`)
+
+A separate downstream project `~/Projects/apiGateway/TraceNexBiz/` (channel-distribution SaaS, product brand "TraceNex Partner") consumes Fy-api via the `/api/internal/*` routes added in OVERLAY entries B-12..B-18. Contract: HMAC-SHA256 (`X-Auth-KeyId` / `X-Auth-Timestamp` / `X-Auth-Nonce` / `X-Signature`; canonical in `middleware/internal_auth.go::BuildCanonical`) plus `Idempotency-Key`. Any change to that middleware, `controller/tnbiz_internal/*.go`, or the `/api/internal/*` routes is a contract change — `TraceNexBiz/apps/partner-api/internal/infra/fyapi/client_test.go::TestSign_FyApiParity` is the byte-level parity guard. See `OVERLAY-TNBIZ-HANDOFF.md` for current integration state.
 
 ### Frontend theme: classic-only
 

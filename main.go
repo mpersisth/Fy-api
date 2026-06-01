@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -21,9 +22,12 @@ import (
 	"github.com/QuantumNous/new-api/oauth"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/outbox"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
+	"github.com/QuantumNous/new-api/setting/overlay_flag"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -165,8 +169,8 @@ func main() {
 		common.SysLog(fmt.Sprintf("panic detected: %v", err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Panic detected, error: %v. Please submit a issue here: https://github.com/Calcium-Ion/new-api", err),
-				"type":    "new_api_panic",
+				"message": fmt.Sprintf("Panic detected, error: %v. Please submit an issue here: https://github.com/seraph0017/Fy-api", err),
+				"type":    "tracenex_panic",
 			},
 		})
 	}))
@@ -307,6 +311,16 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
+
+	// Fy-api overlay: B-14/B-15/B-16 TraceNex Partner integration bootstrap.
+	// 顺序：①flag poller 启动 → ②override lookup 注入 RelayInfo → ③outbox publisher 启动。
+	overlayCtx := context.Background()
+	overlay_flag.StartPoller(overlayCtx)
+	relaycommon.SetOverrideLookup(model.LookupUserOverride)
+	outbox.NewRunner(common.GetEnvOrDefaultString("DATA_REGION", "cn"),
+		common.GetEnvOrDefaultString("OVERLAY_OUTBOX_TOPIC", "tnbiz-consume-log"),
+		nil, // shadow / off 模式下用 NoopPublisher；MNS 接入留给 Phase 2A
+	).Start(overlayCtx)
 
 	perfmetrics.Init()
 

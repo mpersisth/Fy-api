@@ -1,0 +1,12 @@
+# Environment configuration for gross profit report
+# SSH commands to connect to each server + where to find the DB DSN
+
+environments:
+  cn:
+    ssh: "ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211"
+    dsn_env_file: "/opt/fy-api/config/fy-api.env"
+    dsn_var: "SQL_DSN"
+  sg:
+    ssh: "ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70"
+    dsn_env_file: "/opt/fy-api/config/fy-api.env"
+    dsn_var: "SQL_DSN"

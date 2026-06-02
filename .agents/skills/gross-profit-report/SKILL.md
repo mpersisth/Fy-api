@@ -1,0 +1,92 @@
+---
+name: gross-profit-report
+description: Use when the user asks for TraceNex/Fy-api daily spend, consumption, cost, revenue, gross profit, gross margin, channel/user/model breakdowns, or yesterday/today CN/SG production billing reports with screenshot-friendly output.
+---
+
+# Gross Profit Report
+
+## Purpose
+
+Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG across date ranges, especially "yesterday and today", with channel + user + model in one table.
+
+## Agent Support
+
+- **Claude Code**: use `Bash`, `Read`, `Edit`, and `git` commands. If the user asks for console output, paste the important report into the chat because users may not see tool stdout.
+- **Codex**: use `exec_command`, `apply_patch`, and `git` commands. Do not assume the user sees command output; relay the report in the final/chat response.
+
+## Workflow
+
+1. **Confirm report scope**
+   - Resolve relative dates such as "yesterday" and "today" using the user's/server timezone. For TraceNex ops this is normally Asia/Shanghai.
+   - Confirm the requested environments when explicit; otherwise daily production reports usually cover `cn` and `sg`.
+   - Use the combined detail grain unless the user asks otherwise: `日期 / 环境 / 渠道 / 用户 / 模型`.
+
+2. **Read repository context**
+   - Read `OVERLAY.md` before changes.
+   - Check `git status --short --branch` and preserve unrelated local changes.
+
+3. **Optional: handle report script/PR prerequisites**
+   - Only do PR work when the user explicitly asks to merge a report PR, mentions a PR number, or the required script is missing.
+   - Inspect a requested PR with `gh pr view <number> --json title,baseRefName,headRefName,files,commits,url`.
+   - Check whether the merge commit is already in `HEAD` with `git log --oneline --decorate --max-count=30 --all`.
+   - If merging is required, fetch/merge into the requested branch without overwriting unrelated dirty files.
+
+4. **Run the primary report script**
+   - Default command for yesterday and today:
+     ```bash
+     python3 scripts/ops/gross_profit_report.py \
+       --start <yesterday> --end <today> \
+       --output /tmp/gross_profit_report_<yesterday>_<today>
+     ```
+   - If the user asks for a different date range, use inclusive local dates and make the exact dates visible in the response.
+
+5. **Fallback when local DB connection fails**
+   - If PyMySQL direct connection to RDS fails, query from each production host over SSH and aggregate locally.
+   - Use `/opt/fy-api/config/fy-api.env` to read `SQL_DSN` on the remote host. Never print DSN credentials.
+   - Query `logs` joined to `channels`, filtered to `logs.type = 2`, `quota > 0`, and the requested date range.
+   - Use the same accounting basis:
+     - `收入 = logs.quota / 500000`
+     - `成本 = logs.quota / group_ratio / 500000`
+     - `毛利 = 收入 - 成本`
+     - `毛利率 = 毛利 / 收入 * 100`
+   - If `channel_costs.yaml` exists, apply its cost factors; otherwise state that no channel cost factor was applied.
+
+6. **Output format**
+   - Use Chinese headers.
+   - Put the three required dimensions in one table:
+     `日期 / 环境 / 渠道 / 用户 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 收入 / 成本 / 毛利 / 毛利率`
+   - Prefer a Markdown table for screenshot readability. Truncate long channel/model labels if needed, but preserve channel ID.
+   - Include summary tables only if useful: by day/env, by channel, by user, by model.
+   - Do not rely on tool stdout being visible. Paste the final table in the assistant response.
+
+## Useful Query Shape
+
+```sql
+SELECT DATE(FROM_UNIXTIME(l.created_at)) AS day,
+       l.user_id,
+       COALESCE(NULLIF(l.username,''), CONCAT('user-', l.user_id)) AS username,
+       l.channel_id,
+       COALESCE(NULLIF(c.name,''), CONCAT('ch-', l.channel_id)) AS channel_name,
+       l.model_name,
+       COUNT(*) AS requests,
+       SUM(l.prompt_tokens) AS prompt_tokens,
+       SUM(l.completion_tokens) AS completion_tokens,
+       SUM(l.quota) AS quota,
+       SUM(l.quota / IFNULL(NULLIF(CAST(JSON_UNQUOTE(JSON_EXTRACT(l.other, '$.group_ratio')) AS DECIMAL(20,8)), 0), 1)) AS cost_quota
+FROM logs l
+LEFT JOIN channels c ON c.id = l.channel_id
+WHERE l.type = 2
+  AND l.created_at >= UNIX_TIMESTAMP('<start local datetime>')
+  AND l.created_at <= UNIX_TIMESTAMP('<end local datetime>')
+  AND l.quota > 0
+GROUP BY day,l.user_id,username,l.channel_id,channel_name,l.model_name
+ORDER BY day, quota DESC;
+```
+
+## Common Pitfalls
+
+- PR already merged: report the merge commit instead of re-merging.
+- Tool stdout invisibility: paste the report into the response.
+- Local RDS access failure: use SSH remote MySQL fallback.
+- Misaligned screenshot tables: use Markdown tables or shortened labels, not raw fixed-width CJK text.
+- Timezone drift: avoid UTC-only interpretation for "yesterday/today" unless the user explicitly asks for UTC.

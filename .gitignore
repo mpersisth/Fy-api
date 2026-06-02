@@ -50,3 +50,6 @@ skills-lock.json
 # Fy-api overlay: bug tracking artifacts (screenshots, logs, etc.)
 bugs/*
 !bugs/.gitkeep
+
+# Fy-api overlay: test config with credentials
+tests/channel-distribution/config.yaml

@@ -80,23 +80,11 @@ func (images *tencentAIArtImages) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 || string(data) == "null" {
 		return nil
 	}
-	var list []string
-	if err := common.Unmarshal(data, &list); err == nil {
-		*images = append((*images)[:0], list...)
-		return nil
-	}
-	var single string
-	if err := common.Unmarshal(data, &single); err == nil {
-		if single != "" {
-			*images = append((*images)[:0], single)
-		}
-		return nil
-	}
-	var object map[string]any
-	if err := common.Unmarshal(data, &object); err != nil {
+	var value any
+	if err := common.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	collected := collectTencentAIArtImageValues(object)
+	collected := collectTencentAIArtImageValues(value)
 	*images = append((*images)[:0], collected...)
 	return nil
 }

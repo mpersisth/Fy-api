@@ -55,7 +55,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	} else {
 		convertedRequest, err := adaptor.ConvertImageRequest(c, info, *request)
 		if err != nil {
-			return types.NewError(err, types.ErrorCodeConvertRequestFailed)
+			return imageConvertError(err)
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 
@@ -154,4 +154,15 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
 	return nil
+}
+
+func imageConvertError(err error) *types.NewAPIError {
+	if strings.Contains(err.Error(), "moderation_blocked") {
+		return types.WithOpenAIError(types.OpenAIError{
+			Message: err.Error(),
+			Type:    "image_generation_user_error",
+			Code:    "moderation_blocked",
+		}, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+	return types.NewError(err, types.ErrorCodeConvertRequestFailed)
 }

@@ -246,6 +246,37 @@ func TestTencentAIArtImageResponseAcceptsObjectResultImages(t *testing.T) {
 	}
 }
 
+func TestTencentAIArtImageResponseAcceptsObjectArrayResultImages(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesGenerations,
+		Request: &dto.ImageRequest{
+			ResponseFormat: "url",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"Response":{"JobStatusCode":"5","ResultImages":[{"Url":"https://example.com/array-object.png"}],"RequestId":"req-1"}}`)),
+	}
+
+	usage, err := writeTencentAIArtImageResponse(c, resp, info)
+	if err != nil {
+		t.Fatalf("writeTencentAIArtImageResponse returned error: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if !strings.Contains(recorder.Body.String(), `"url":"https://example.com/array-object.png"`) {
+		t.Fatalf("response body = %s, want object array ResultImages URL", recorder.Body.String())
+	}
+}
+
 func TestTencentAIArtImageResponsePropagatesStringCodeError(t *testing.T) {
 	t.Parallel()
 

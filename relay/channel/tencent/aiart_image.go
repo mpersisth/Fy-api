@@ -362,10 +362,10 @@ func writeTencentAIArtImageResponse(c *gin.Context, resp *http.Response, info *r
 		return nil, types.NewOpenAIError(errors.New("Tencent AIArt image response contains no images"), types.ErrorCodeEmptyResponse, http.StatusBadGateway)
 	}
 
-	wantsBase64 := false
+	wantsBase64 := true
 	if info != nil {
 		if imageReq, ok := info.Request.(*dto.ImageRequest); ok {
-			wantsBase64 = imageReq.ResponseFormat == "b64_json"
+			wantsBase64 = imageReq.ResponseFormat != "url"
 		}
 	}
 

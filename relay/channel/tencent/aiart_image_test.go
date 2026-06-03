@@ -372,6 +372,69 @@ func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T)
 	}
 }
 
+func TestTencentAIArtImageResponseDefaultsToBase64(t *testing.T) {
+	t.Parallel()
+
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+			0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+			0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
+			0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+			0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d,
+			0xb0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+			0x44, 0xae, 0x42, 0x60, 0x82,
+		})
+	}))
+	defer imageServer.Close()
+
+	service.InitHttpClient()
+	oldMaxFileDownloadMB := constant.MaxFileDownloadMB
+	constant.MaxFileDownloadMB = 1
+	fetchSetting := system_setting.GetFetchSetting()
+	oldAllowPrivateIP := fetchSetting.AllowPrivateIp
+	oldAllowedPorts := append([]string(nil), fetchSetting.AllowedPorts...)
+	fetchSetting.AllowPrivateIp = true
+	fetchSetting.AllowedPorts = []string{"1-65535"}
+	t.Cleanup(func() {
+		constant.MaxFileDownloadMB = oldMaxFileDownloadMB
+		fetchSetting.AllowPrivateIp = oldAllowPrivateIP
+		fetchSetting.AllowedPorts = oldAllowedPorts
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesGenerations,
+		Request:   &dto.ImageRequest{},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"Response":{"JobStatusCode":"5","ResultImage":["` + imageServer.URL + `"],"RequestId":"req-1"}}`)),
+	}
+
+	usage, err := writeTencentAIArtImageResponse(c, resp, info)
+	if err != nil {
+		t.Fatalf("writeTencentAIArtImageResponse returned error: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"b64_json":"iVBORw0KGgo`) {
+		t.Fatalf("response body = %s, want default downloaded base64 PNG", body)
+	}
+	if strings.Contains(body, imageServer.URL) {
+		t.Fatalf("response body = %s, should not include original image URL by default", body)
+	}
+}
+
 func TestTencentChatHandlerAcceptsStringZeroErrorCode(t *testing.T) {
 	t.Parallel()
 

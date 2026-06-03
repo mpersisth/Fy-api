@@ -66,12 +66,39 @@ type tencentAIArtDescribeResponse struct {
 type tencentAIArtJobResponse struct {
 	JobStatusCode string             `json:"JobStatusCode,omitempty"`
 	Status        string             `json:"Status,omitempty"`
-	ResultImage   []string           `json:"ResultImage,omitempty"`
-	ResultImages  []string           `json:"ResultImages,omitempty"`
-	ImageUrls     []string           `json:"ImageUrls,omitempty"`
-	Images        []string           `json:"Images,omitempty"`
+	ResultImage   tencentAIArtImages `json:"ResultImage,omitempty"`
+	ResultImages  tencentAIArtImages `json:"ResultImages,omitempty"`
+	ImageUrls     tencentAIArtImages `json:"ImageUrls,omitempty"`
+	Images        tencentAIArtImages `json:"Images,omitempty"`
 	RequestID     string             `json:"RequestId,omitempty"`
 	Error         *tencentAIArtError `json:"Error,omitempty"`
+}
+
+type tencentAIArtImages []string
+
+func (images *tencentAIArtImages) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	var list []string
+	if err := common.Unmarshal(data, &list); err == nil {
+		*images = append((*images)[:0], list...)
+		return nil
+	}
+	var single string
+	if err := common.Unmarshal(data, &single); err == nil {
+		if single != "" {
+			*images = append((*images)[:0], single)
+		}
+		return nil
+	}
+	var object map[string]any
+	if err := common.Unmarshal(data, &object); err != nil {
+		return err
+	}
+	collected := collectTencentAIArtImageValues(object)
+	*images = append((*images)[:0], collected...)
+	return nil
 }
 
 type tencentAIArtError struct {
@@ -101,6 +128,9 @@ func isTencentAIArtImageGeneration(info *relaycommon.RelayInfo) bool {
 }
 
 func tencentAIArtImageRequestFromOpenAI(request dto.ImageRequest) (*tencentAIArtImageRequest, error) {
+	if blocked, category := tencentAIArtPromptBlocked(request.Prompt); blocked {
+		return nil, fmt.Errorf("moderation_blocked: Tencent AIArt prompt violates %s policy", category)
+	}
 	imageReq := &tencentAIArtImageRequest{
 		Model:  request.Model,
 		Prompt: request.Prompt,
@@ -396,6 +426,55 @@ func collectTencentAIArtImages(response tencentAIArtJobResponse) []string {
 	images = append(images, response.ImageUrls...)
 	images = append(images, response.Images...)
 	return images
+}
+
+func collectTencentAIArtImageValues(value any) []string {
+	images := make([]string, 0)
+	switch typed := value.(type) {
+	case string:
+		if typed != "" {
+			images = append(images, typed)
+		}
+	case []any:
+		for _, item := range typed {
+			images = append(images, collectTencentAIArtImageValues(item)...)
+		}
+	case map[string]any:
+		preferredKeys := []string{
+			"Url", "URL", "url",
+			"ImageUrl", "ImageURL", "image_url", "imageUrl",
+			"ResultImage", "ResultImages",
+			"B64Json", "b64_json", "Base64", "base64",
+		}
+		for _, key := range preferredKeys {
+			if child, ok := typed[key]; ok {
+				images = append(images, collectTencentAIArtImageValues(child)...)
+			}
+		}
+		if len(images) == 0 {
+			for _, child := range typed {
+				images = append(images, collectTencentAIArtImageValues(child)...)
+			}
+		}
+	}
+	return images
+}
+
+func tencentAIArtPromptBlocked(prompt string) (bool, string) {
+	checkText := strings.ToLower(prompt)
+	sexualWords := []string{"色情", "裸体", "裸露", "sexual", "nude", "nudity", "porn"}
+	for _, word := range sexualWords {
+		if strings.Contains(checkText, word) {
+			return true, "sexual"
+		}
+	}
+	violenceWords := []string{"血腥", "暴力", "violence", "violent", "gore", "bloody"}
+	for _, word := range violenceWords {
+		if strings.Contains(checkText, word) {
+			return true, "violence"
+		}
+	}
+	return false, ""
 }
 
 func tencentAIArtAPIKey(c *gin.Context, info *relaycommon.RelayInfo) string {

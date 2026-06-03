@@ -1,5 +1,13 @@
 package tencent
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+)
+
 type TencentMessage struct {
 	Role    string `json:"Role"`
 	Content string `json:"Content"`
@@ -44,8 +52,68 @@ type TencentChatRequest struct {
 }
 
 type TencentError struct {
-	Code    int    `json:"Code"`
-	Message string `json:"Message"`
+	Code    tencentErrorCode `json:"Code"`
+	Message string           `json:"Message"`
+}
+
+type tencentErrorCode string
+
+func (c *tencentErrorCode) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*c = ""
+		return nil
+	}
+	var str string
+	if err := common.Unmarshal(data, &str); err == nil {
+		*c = tencentErrorCode(str)
+		return nil
+	}
+	var number jsonNumber
+	if err := common.Unmarshal(data, &number); err == nil {
+		*c = tencentErrorCode(number.String())
+		return nil
+	}
+	return fmt.Errorf("invalid Tencent error Code: %s", string(data))
+}
+
+func (c tencentErrorCode) IsZero() bool {
+	value := strings.TrimSpace(string(c))
+	if value == "" || value == "0" {
+		return true
+	}
+	if n, err := strconv.ParseFloat(value, 64); err == nil {
+		return n == 0
+	}
+	return false
+}
+
+func (c tencentErrorCode) OpenAIValue() any {
+	value := strings.TrimSpace(string(c))
+	if value == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(value); err == nil {
+		return n
+	}
+	return value
+}
+
+type jsonNumber string
+
+func (n *jsonNumber) UnmarshalJSON(data []byte) error {
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return fmt.Errorf("empty number")
+	}
+	if _, err := strconv.ParseFloat(text, 64); err != nil {
+		return err
+	}
+	*n = jsonNumber(text)
+	return nil
+}
+
+func (n jsonNumber) String() string {
+	return string(n)
 }
 
 type TencentUsage struct {

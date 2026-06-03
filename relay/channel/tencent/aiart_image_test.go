@@ -84,6 +84,49 @@ func TestTencentAIArtImageRequestConversion(t *testing.T) {
 	}
 }
 
+func TestTencentAIArtImageRequestRejectsViolencePrompt(t *testing.T) {
+	t.Parallel()
+
+	request := dto.ImageRequest{
+		Model:  "gpt-image-2",
+		Prompt: "血腥暴力色情",
+	}
+
+	_, err := tencentAIArtImageRequestFromOpenAI(request)
+	if err == nil {
+		t.Fatalf("expected prompt moderation error")
+	}
+	if !strings.Contains(err.Error(), "moderation_blocked") {
+		t.Fatalf("error = %q, want moderation_blocked", err.Error())
+	}
+}
+
+func TestTencentAIArtImageRequestPreservesQuotedPromptJSON(t *testing.T) {
+	t.Parallel()
+
+	request := dto.ImageRequest{
+		Model:  "gpt-image-2",
+		Prompt: `a beautiful landscape with "mountains" and 'rivers' in the background`,
+	}
+
+	got, err := tencentAIArtImageRequestFromOpenAI(request)
+	if err != nil {
+		t.Fatalf("tencentAIArtImageRequestFromOpenAI returned error: %v", err)
+	}
+	body, err := common.Marshal(got)
+	if err != nil {
+		t.Fatalf("common.Marshal returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := common.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("marshaled body is invalid JSON: %v, body=%s", err, string(body))
+	}
+	if payload["Prompt"] != request.Prompt {
+		t.Fatalf("Prompt = %q, want %q", payload["Prompt"], request.Prompt)
+	}
+}
+
 func TestAdaptorConvertImageRequestUsesAIArtForAIArtHost(t *testing.T) {
 	t.Parallel()
 
@@ -172,6 +215,67 @@ func TestTencentAIArtImageResponseConversion(t *testing.T) {
 	}
 }
 
+func TestTencentAIArtImageResponseAcceptsObjectResultImages(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesGenerations,
+		Request: &dto.ImageRequest{
+			ResponseFormat: "url",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"Response":{"JobStatusCode":"5","ResultImages":{"Url":"https://example.com/object.png"},"RequestId":"req-1"}}`)),
+	}
+
+	usage, err := writeTencentAIArtImageResponse(c, resp, info)
+	if err != nil {
+		t.Fatalf("writeTencentAIArtImageResponse returned error: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if !strings.Contains(recorder.Body.String(), `"url":"https://example.com/object.png"`) {
+		t.Fatalf("response body = %s, want object ResultImages URL", recorder.Body.String())
+	}
+}
+
+func TestTencentAIArtImageResponsePropagatesStringCodeError(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesGenerations,
+		Request:   &dto.ImageRequest{},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"Response":{"Error":{"Code":"InvalidParameterValue.Sensitive","Message":"blocked"},"RequestId":"req-1"}}`)),
+	}
+
+	_, err := writeTencentAIArtImageResponse(c, resp, info)
+	if err == nil {
+		t.Fatalf("expected Tencent AIArt error")
+	}
+	openAIError := err.ToOpenAIError()
+	if openAIError.Code != "InvalidParameterValue.Sensitive" {
+		t.Fatalf("Code = %v, want InvalidParameterValue.Sensitive", openAIError.Code)
+	}
+	if openAIError.Message != "blocked" {
+		t.Fatalf("Message = %q, want blocked", openAIError.Message)
+	}
+}
+
 func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T) {
 	t.Parallel()
 
@@ -234,6 +338,37 @@ func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T)
 	}
 	if strings.Contains(body, imageServer.URL) {
 		t.Fatalf("response body = %s, should not include original image URL when b64_json requested", body)
+	}
+}
+
+func TestTencentChatHandlerAcceptsStringZeroErrorCode(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	info := &relaycommon.RelayInfo{}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(strings.NewReader(`{"Response":{
+			"Choices":[{"Message":{"Role":"assistant","Content":"ok"},"FinishReason":"stop"}],
+			"Usage":{"PromptTokens":1,"CompletionTokens":1,"TotalTokens":2},
+			"Error":{"Code":"0","Message":""},
+			"RequestId":"req-1"
+		}}`)),
+	}
+
+	usage, err := tencentHandler(c, info, resp)
+	if err != nil {
+		t.Fatalf("tencentHandler returned error: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if !strings.Contains(recorder.Body.String(), `"content":"ok"`) {
+		t.Fatalf("response body = %s, want OpenAI chat response", recorder.Body.String())
 	}
 }
 

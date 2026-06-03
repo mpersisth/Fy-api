@@ -64,7 +64,12 @@ class ImageClient:
                 headers=headers,
             )
             elapsed = time.perf_counter() - t0
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
+        except (
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            httpx.RemoteProtocolError,
+            httpx.ReadError,
+        ) as e:
             return ImageResult(
                 success=False,
                 status_code=0,

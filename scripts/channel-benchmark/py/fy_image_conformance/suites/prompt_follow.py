@@ -250,7 +250,16 @@ async def _run_phase(
     pr = PhaseResult(phase=phase_name)
     for case in prompts:
         body = {"model": cfg.model.name, "prompt": case["prompt"], "n": 1}
-        r = await client.generate(body, pin_channel=ch.pin_channel_id)
+        try:
+            r = await client.generate(body, pin_channel=ch.pin_channel_id)
+        except Exception as e:
+            pr.results.append(JudgeResult(
+                case["name"], 0.0, False,
+                f"generation exception: {type(e).__name__}: {str(e)[:100]}",
+                lang=case.get("lang", ""),
+                is_high_variance_prompt=case.get("high_variance", False),
+            ))
+            continue
         if not r.success:
             pr.results.append(JudgeResult(
                 case["name"], 0.0, False,

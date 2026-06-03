@@ -154,8 +154,21 @@ class ImageCanaryRunner:
         if has_hard_fail:
             return VERDICT_MISMATCH, CONFIDENCE_HIGH
 
-        total = len(outcomes)
-        passed = sum(1 for o in outcomes if o.passed)
+        # Count valid probes: exclude capability probes where generation
+        # failed or the judge returned an error (score == 0.0 with failure).
+        # For capability method, score==0.0 is always an error state — real
+        # judge evaluations return >= 0.5 (unparseable fallback) or a true
+        # score.  If no valid probes remain, the verdict is inconclusive
+        # rather than a false-positive MISMATCH.
+        valid_outcomes = [
+            o for o in outcomes
+            if not (o.method == "capability" and not o.passed and o.score == 0.0)
+        ]
+        if not valid_outcomes:
+            return VERDICT_INCONCLUSIVE, CONFIDENCE_LOW
+
+        total = len(valid_outcomes)
+        passed = sum(1 for o in valid_outcomes if o.passed)
         pass_rate = passed / total if total > 0 else 0.0
 
         if pass_rate >= 0.8:

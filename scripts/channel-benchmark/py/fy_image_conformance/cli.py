@@ -187,3 +187,6 @@ def _save_or_print(report: FullReport, cfg: Config, args: argparse.Namespace) ->
     else:
         filepath = save_report(report, cfg.export.output_dir)
         console.print(f"\n[bold green]Report saved:[/bold green] {filepath}")
+        # JSON is saved alongside with same base name
+        json_path = filepath.replace(".md", ".json")
+        console.print(f"[bold green]JSON summary:[/bold green] {json_path}")

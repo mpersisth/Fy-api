@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -325,13 +326,229 @@ def _section_safety_disclaimer() -> list[str]:
     ]
 
 
+def _build_json_payload(report: FullReport) -> list[dict]:
+    """Build per-channel JSON summary dicts for fy_score consumption."""
+    channels = report.config.gateway.channels
+    now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    model = report.config.model.name
+
+    # Index results by channel pin_channel_id for easy lookup
+    compat_by_ch: dict[int, ChannelCompatResult] = {
+        cr.channel.pin_channel_id: cr for cr in report.compat_results
+    }
+    output_by_ch: dict[int, ChannelOutputResult] = {
+        cr.channel.pin_channel_id: cr for cr in report.output_results
+    }
+    prompt_by_ch: dict[int, ChannelPromptResult] = {
+        cr.channel.pin_channel_id: cr for cr in report.prompt_results
+    }
+    perf_by_ch: dict[int, PerfStats] = {
+        ps.channel.pin_channel_id: ps for ps in report.perf_results
+    }
+    safety_by_ch: dict[int, ChannelSafetyResult] = {
+        cr.channel.pin_channel_id: cr for cr in report.safety_results
+    }
+
+    payloads: list[dict] = []
+    for ch in channels:
+        cid = ch.pin_channel_id
+        entry: dict = {
+            "channel_name": ch.name,
+            "channel_id": cid,
+            "model": model,
+            "timestamp": now,
+        }
+
+        # api_compat
+        cr_compat = compat_by_ch.get(cid)
+        if cr_compat:
+            total = len(cr_compat.cases)
+            passed = cr_compat.passed
+            entry["api_compat"] = {
+                "total": total,
+                "passed": passed,
+                "pass_rate": passed / total if total > 0 else 0.0,
+                "details": [
+                    {
+                        "name": c.name,
+                        "passed": c.passed,
+                        "elapsed_sec": round(c.elapsed_sec, 2) if c.elapsed_sec else None,
+                    }
+                    for c in cr_compat.cases
+                ],
+            }
+        else:
+            entry["api_compat"] = {"total": 0, "passed": 0, "pass_rate": 0.0, "details": []}
+
+        # output_valid
+        cr_output = output_by_ch.get(cid)
+        if cr_output:
+            total = len(cr_output.cases)
+            passed = cr_output.passed
+            entry["output_valid"] = {
+                "total": total,
+                "passed": passed,
+                "pass_rate": passed / total if total > 0 else 0.0,
+            }
+        else:
+            entry["output_valid"] = {"total": 0, "passed": 0, "pass_rate": 0.0}
+
+        # prompt_follow
+        cr_prompt = prompt_by_ch.get(cid)
+        if cr_prompt:
+            phase_a_data = _phase_to_dict(cr_prompt.phase_a, cr_prompt.phase_a_blocked)
+            phase_b_data = _phase_to_dict(cr_prompt.phase_b, False) if cr_prompt.phase_b else {
+                "total": 0, "passed": 0, "pass_rate": 0.0,
+            }
+
+            # Effective metrics: only count results where generation succeeded AND
+            # judge returned a real score (score > 0 and reasoning doesn't start with
+            # "generation" or "could not"). This excludes rate-limit failures and judge errors.
+            effective_results = [
+                r for r in cr_prompt.results
+                if r.score > 0.0 or (r.passed and r.score == 0.0)
+                if not r.reasoning.startswith("generation")
+                and not r.reasoning.startswith("could not")
+                and not r.reasoning.startswith("judge error")
+                and not r.reasoning.startswith("judge API error")
+            ]
+            effective_total = len(effective_results)
+            effective_passed = sum(1 for r in effective_results if r.passed)
+
+            # zh/en pass rates based on effective samples only
+            effective_zh = [r for r in effective_results if r.lang == "zh"]
+            effective_en = [r for r in effective_results if r.lang == "en"]
+            zh_pass_rate = (
+                sum(1 for r in effective_zh if r.passed) / len(effective_zh)
+                if effective_zh else None
+            )
+            en_pass_rate = (
+                sum(1 for r in effective_en if r.passed) / len(effective_en)
+                if effective_en else None
+            )
+
+            entry["prompt_follow"] = {
+                "phase_a": phase_a_data,
+                "phase_b": phase_b_data,
+                "phase_a_blocked": cr_prompt.phase_a_blocked,
+                "zh_pass_rate": zh_pass_rate,
+                "en_pass_rate": en_pass_rate,
+                "effective_pass_rate": (
+                    effective_passed / effective_total if effective_total > 0 else 0.0
+                ),
+                "effective_total": effective_total,
+                "effective_passed": effective_passed,
+            }
+        else:
+            entry["prompt_follow"] = {
+                "phase_a": {"total": 0, "passed": 0, "pass_rate": 0.0, "blocked": False},
+                "phase_b": {"total": 0, "passed": 0, "pass_rate": 0.0},
+                "phase_a_blocked": False,
+                "zh_pass_rate": None,
+                "en_pass_rate": None,
+                "effective_pass_rate": 0.0,
+                "effective_total": 0,
+                "effective_passed": 0,
+            }
+
+        # safety
+        cr_safety = safety_by_ch.get(cid)
+        if cr_safety:
+            total = len(cr_safety.cases)
+            passed = cr_safety.passed
+            entry["safety"] = {
+                "total": total,
+                "passed": passed,
+                "pass_rate": passed / total if total > 0 else 0.0,
+                "details": [
+                    {"name": c.name, "passed": c.passed}
+                    for c in cr_safety.cases
+                ],
+            }
+        else:
+            entry["safety"] = {"total": 0, "passed": 0, "pass_rate": 0.0, "details": []}
+
+        # perf
+        ps = perf_by_ch.get(cid)
+        if ps and ps.total_requests > 0:
+            entry["perf"] = {
+                "p50_ms": round(ps.p50_ms, 1),
+                "p95_ms": round(ps.p95_ms, 1),
+                "rpm": round(ps.rpm, 2),
+            }
+        else:
+            entry["perf"] = {"p50_ms": None, "p95_ms": None, "rpm": None}
+
+        # success_rate = api_compat pass_rate (this is what fy-score uses for availability)
+        compat_data = entry["api_compat"]
+        entry["success_rate"] = compat_data["pass_rate"]
+
+        # cost_usd from budget tracker summary (approximate from report)
+        entry["cost_usd"] = None  # populated below if budget info available
+
+        payloads.append(entry)
+
+    return payloads
+
+
+def _phase_to_dict(phase, blocked: bool = False) -> dict:
+    """Convert a PhaseResult to a JSON-serializable dict."""
+    if phase is None:
+        return {"total": 0, "passed": 0, "pass_rate": 0.0, "blocked": blocked}
+    total = len(phase.results)
+    passed = sum(1 for r in phase.results if r.passed)
+    d: dict = {
+        "total": total,
+        "passed": passed,
+        "pass_rate": passed / total if total > 0 else 0.0,
+    }
+    if blocked or phase.phase == "A":
+        d["blocked"] = blocked
+    return d
+
+
 def save_report(report: FullReport, output_dir: str) -> str:
     md = generate_markdown(report)
     path = Path(output_dir)
     path.mkdir(parents=True, exist_ok=True)
     now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     model = report.config.model.name.replace("/", "_")
-    filename = f"conformance-{model}-{now}.md"
-    filepath = path / filename
-    filepath.write_text(md, encoding="utf-8")
-    return str(filepath)
+    filename = f"conformance-{model}-{now}"
+    md_filepath = path / f"{filename}.md"
+    md_filepath.write_text(md, encoding="utf-8")
+
+    # Write JSON summary alongside markdown
+    json_filepath = path / f"{filename}.json"
+    payloads = _build_json_payload(report)
+    # If budget summary contains cost, try to extract total
+    total_cost = _extract_total_cost(report.budget_summary)
+    if total_cost is not None:
+        cost_per_channel = total_cost / len(payloads) if payloads else 0.0
+        for entry in payloads:
+            entry["cost_usd"] = round(cost_per_channel, 4)
+
+    # Wrap in a structure compatible with fy_score loader's load_image_conformance
+    json_data = {
+        "model": report.config.model.name,
+        "channels": payloads,
+    }
+    json_filepath.write_text(
+        json.dumps(json_data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    return str(md_filepath)
+
+
+def _extract_total_cost(budget_summary: str) -> float | None:
+    """Extract total USD cost from budget summary markdown table."""
+    import re
+    if not budget_summary:
+        return None
+    m = re.search(r"\*\*\$([0-9.]+)\*\*", budget_summary)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            pass
+    return None

@@ -48,7 +48,12 @@ description: Use when testing a new channel's connectivity, load capacity, proto
 cd scripts/channel-benchmark/py
 source .venv/bin/activate
 pip install tiktoken  # fy-integrity 注水探针必需，缺少会 SKIP
+pip install "fy-channel-qa[image-canary]"  # CLIP跨渠道对比必需（torch+transformers ~2.7GB），缺少会跳过 5B-2
 ```
+
+> **Windows 注意**: torch 依赖 Microsoft Visual C++ Redistributable。如果 `import torch` 报 DLL 加载失败，
+> 需先安装 https://aka.ms/vs/17/release/vc_redist.x64.exe （需管理员权限）。
+> 安装后重新运行 canary 即可启用 CLIP 跨渠道对比。如无法安装 VC++，5B-2 探针自动跳过，不阻塞其他测试。
 
 ### B. Embedding 模型自动发现
 

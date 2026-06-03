@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -217,6 +218,67 @@ func TestConvertToAliRequest_R2VNoMediaNoInputReference(t *testing.T) {
 	}
 }
 
+func TestConvertToAliRequest_R2VLastFrameURLBackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt:         "transition video",
+		Model:          "wan2.6-r2v",
+		InputReference: "https://example.com/first.png",
+		Metadata: map[string]interface{}{
+			"last_frame_url": "https://example.com/last.png",
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+
+	if got := len(aliReq.Input.Media); got != 2 {
+		t.Fatalf("media len = %d, want 2", got)
+	}
+	if got, want := aliReq.Input.Media[0].URL, "https://example.com/first.png"; got != want {
+		t.Fatalf("media[0].url = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Input.Media[1].URL, "https://example.com/last.png"; got != want {
+		t.Fatalf("media[1].url = %q, want %q", got, want)
+	}
+	if got := aliReq.Input.FirstFrameURL; got != "" {
+		t.Fatalf("first_frame_url = %q, want empty", got)
+	}
+	if got := aliReq.Input.LastFrameURL; got != "" {
+		t.Fatalf("last_frame_url = %q, want empty", got)
+	}
+}
+
+func TestConvertToAliRequest_RatioViaMetadata(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt: "make video",
+		Model:  "wan2.6-r2v",
+		Media: []relaycommon.TaskMediaItem{
+			{Type: "reference_image", URL: "https://example.com/img.jpg"},
+		},
+		Metadata: map[string]interface{}{
+			"parameters": map[string]interface{}{
+				"ratio": "16:9",
+			},
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+	if got, want := aliReq.Parameters.Ratio, "16:9"; got != want {
+		t.Fatalf("ratio = %q, want %q", got, want)
+	}
+}
+
 func TestConvertToAliRequest_NonR2VUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -326,5 +388,45 @@ func TestAdjustBillingOnComplete_UsesActualAliDuration(t *testing.T) {
 	expectedQuota := int(float64(expectedBaseQuota) * 3 * (1 / 0.6))
 	if actualQuota != expectedQuota {
 		t.Fatalf("actualQuota = %d, want %d", actualQuota, expectedQuota)
+	}
+}
+
+func TestConvertToAliRequest_R2VMediaJSONSerialization(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt: "serialize test",
+		Model:  "wan2.6-r2v",
+		Media: []relaycommon.TaskMediaItem{
+			{Type: "reference_image", URL: "https://example.com/img.jpg"},
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+
+	jsonBytes, err := common.Marshal(aliReq)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	jsonStr := string(jsonBytes)
+
+	if !strings.Contains(jsonStr, `"media":[{`) {
+		t.Fatalf("JSON missing media array field, got: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"type":"reference_image"`) {
+		t.Fatalf("JSON missing type field in media, got: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"url":"https://example.com/img.jpg"`) {
+		t.Fatalf("JSON missing url field in media, got: %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"img_url"`) {
+		t.Fatalf("JSON should not contain img_url for r2v, got: %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"first_frame_url"`) {
+		t.Fatalf("JSON should not contain first_frame_url for r2v, got: %s", jsonStr)
 	}
 }

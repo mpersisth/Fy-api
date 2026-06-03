@@ -33,35 +33,35 @@ type AliVideoRequest struct {
 	Parameters *AliVideoParameters `json:"parameters,omitempty"`
 }
 
-// AliMediaItem r2v 参考素材
+// AliMediaItem r2v 参考素材（wan2.6-r2v / wan2.7-r2v input.media 元素）
 type AliMediaItem struct {
-	Type           string `json:"type"`
-	URL            string `json:"url"`
-	ReferenceVoice string `json:"reference_voice,omitempty"`
+	Type           string `json:"type"`                      // "reference_image" | "reference_video"
+	URL            string `json:"url"`                       // 素材 URL
+	ReferenceVoice string `json:"reference_voice,omitempty"` // 参考音色 URL
 }
 
 // AliVideoInput 视频输入参数
 type AliVideoInput struct {
-	Prompt         string         `json:"prompt,omitempty"`
-	ImgURL         string         `json:"img_url,omitempty"`
-	FirstFrameURL  string         `json:"first_frame_url,omitempty"`
-	LastFrameURL   string         `json:"last_frame_url,omitempty"`
-	AudioURL       string         `json:"audio_url,omitempty"`
-	NegativePrompt string         `json:"negative_prompt,omitempty"`
-	Template       string         `json:"template,omitempty"`
-	Media          []AliMediaItem `json:"media,omitempty"`
+	Prompt         string         `json:"prompt,omitempty"`          // 文本提示词
+	ImgURL         string         `json:"img_url,omitempty"`         // 首帧图像URL或Base64（图生视频）
+	FirstFrameURL  string         `json:"first_frame_url,omitempty"` // 首帧图片URL（非r2v首尾帧模型）
+	LastFrameURL   string         `json:"last_frame_url,omitempty"`  // 尾帧图片URL（非r2v首尾帧模型）
+	AudioURL       string         `json:"audio_url,omitempty"`       // 音频URL（wan2.5支持）
+	NegativePrompt string         `json:"negative_prompt,omitempty"` // 反向提示词
+	Template       string         `json:"template,omitempty"`        // 视频特效模板
+	Media          []AliMediaItem `json:"media,omitempty"`           // r2v 参考素材数组
 }
 
 // AliVideoParameters 视频参数
 type AliVideoParameters struct {
-	Resolution   string `json:"resolution,omitempty"`
-	Size         string `json:"size,omitempty"`
-	Duration     int    `json:"duration,omitempty"`
-	PromptExtend bool   `json:"prompt_extend,omitempty"`
-	Watermark    bool   `json:"watermark,omitempty"`
-	Audio        *bool  `json:"audio,omitempty"`
-	Seed         int    `json:"seed,omitempty"`
-	Ratio        string `json:"ratio,omitempty"`
+	Resolution   string `json:"resolution,omitempty"`    // 分辨率: 480P/720P/1080P（图生视频、首尾帧生视频）
+	Size         string `json:"size,omitempty"`          // 尺寸: 如 "832*480"（文生视频）
+	Duration     int    `json:"duration,omitempty"`      // 时长: 3-10秒
+	PromptExtend bool   `json:"prompt_extend,omitempty"` // 是否开启prompt智能改写
+	Watermark    bool   `json:"watermark,omitempty"`     // 是否添加水印
+	Audio        *bool  `json:"audio,omitempty"`         // 是否添加音频（wan2.5）
+	Seed         int    `json:"seed,omitempty"`          // 随机数种子
+	Ratio        string `json:"ratio,omitempty"`         // 画面比例: 16:9/9:16/1:1
 }
 
 // AliVideoResponse 阿里通义万相响应
@@ -404,9 +404,13 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 				}
 			}
 		} else if req.InputReference != "" {
-			aliReq.Input.Media = []AliMediaItem{
-				{Type: "reference_image", URL: req.InputReference},
+			media := []AliMediaItem{{Type: "reference_image", URL: req.InputReference}}
+			if req.Metadata != nil {
+				if lastURL, ok := req.Metadata["last_frame_url"].(string); ok && lastURL != "" {
+					media = append(media, AliMediaItem{Type: "reference_image", URL: lastURL})
+				}
 			}
+			aliReq.Input.Media = media
 		}
 	}
 

@@ -17,8 +17,9 @@ Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG
 ## Workflow
 
 1. **Confirm report scope**
-   - Resolve relative dates such as "yesterday" and "today" using the user's/server timezone. For TraceNex ops this is normally Asia/Shanghai.
-   - For production CN/SG daily reports, convert the inclusive Asia/Shanghai date range to exact Unix timestamps before querying. Example: `2026-06-01 00:00:00+08:00` through `2026-06-02 23:59:59+08:00`. Do not let a UTC default silently shift the day boundary.
+   - The default daily window is **yesterday 17:00 → today 17:00 (Asia/Shanghai)**. This aligns with the operational "billing day" used by the team.
+   - Example: running on 2026-06-04, the default range is `2026-06-03 17:00:00+08:00` through `2026-06-04 16:59:59+08:00`.
+   - Convert the Asia/Shanghai boundaries to exact Unix timestamps before querying. Do not let a UTC default silently shift the window.
    - Confirm the requested environments when explicit; otherwise daily production reports usually cover `cn` and `sg`.
    - Use the combined detail grain unless the user asks otherwise: `日期 / 环境 / 渠道 / 用户 / 模型`.
 
@@ -33,13 +34,13 @@ Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG
    - If merging is required, fetch/merge into the requested branch without overwriting unrelated dirty files.
 
 4. **Run the primary report script**
-   - Default command for yesterday and today:
+   - Default window: yesterday 17:00 → today 17:00 (Asia/Shanghai). Compute start/end timestamps dynamically on the remote host:
      ```bash
-     python3 scripts/ops/gross_profit_report.py \
-       --start <yesterday> --end <today> \
-       --output /tmp/gross_profit_report_<yesterday>_<today>
+     export TZ=Asia/Shanghai
+     START_TS=$(date -d "yesterday 17:00:00" +%s)
+     END_TS=$(date -d "today 16:59:59" +%s)
      ```
-   - If the user asks for a different date range, use inclusive local dates and make the exact dates visible in the response.
+   - If the user asks for a different date range, convert accordingly and make the exact boundaries visible in the response.
 
 5. **Fallback when local DB connection fails**
    - If PyMySQL direct connection to RDS fails, or the script says it cannot read a DSN / found no data because SSH was sandboxed, rerun with the needed SSH approval and query from each production host over SSH.
@@ -94,3 +95,4 @@ ORDER BY day, quota DESC;
 - The checked-in script may use UTC date parsing; for "yesterday/today" ops reports, explicitly use Asia/Shanghai timestamps if you run fallback SQL.
 - Misaligned screenshot tables: use Markdown tables or shortened labels, not raw fixed-width CJK text.
 - Timezone drift: avoid UTC-only interpretation for "yesterday/today" unless the user explicitly asks for UTC.
+- Default window is 17:00–17:00 Shanghai, NOT midnight–midnight. When the user says "昨天" without further detail, use yesterday 17:00 → today 17:00.

@@ -208,7 +208,8 @@ def fetch_logs(conn, start_ts, end_ts, batch_size=5000):
 # ---------------------------------------------------------------------------
 
 def ts_to_date(ts):
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    tz_sh = timezone(timedelta(hours=8))
+    return datetime.fromtimestamp(ts, tz=tz_sh).strftime("%Y-%m-%d")
 
 
 def fmt(d):
@@ -432,16 +433,23 @@ def main():
         generate_config(envs, args.config)
         return
 
-    # Default date: yesterday
-    if not args.start:
-        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
-        args.start = yesterday.strftime("%Y-%m-%d")
-    if not args.end:
-        args.end = args.start
+    # Default window: yesterday 17:00 → today 16:59:59 (Asia/Shanghai)
+    tz_sh = timezone(timedelta(hours=8))
+    now_sh = datetime.now(tz_sh)
 
-    start_dt = datetime.strptime(args.start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    end_dt = datetime.strptime(args.end, "%Y-%m-%d").replace(
-        hour=23, minute=59, second=59, tzinfo=timezone.utc)
+    if not args.start and not args.end:
+        start_dt = (now_sh - timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
+        end_dt = now_sh.replace(hour=16, minute=59, second=59, microsecond=0)
+    else:
+        if not args.start:
+            args.start = (now_sh - timedelta(days=1)).strftime("%Y-%m-%d")
+        if not args.end:
+            args.end = args.start
+        start_dt = datetime.strptime(args.start, "%Y-%m-%d").replace(
+            hour=17, minute=0, second=0, tzinfo=tz_sh)
+        end_dt = datetime.strptime(args.end, "%Y-%m-%d").replace(
+            hour=16, minute=59, second=59, tzinfo=tz_sh) + timedelta(days=1)
+
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
 

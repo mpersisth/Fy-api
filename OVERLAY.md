@@ -218,8 +218,17 @@
   - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +1 行调用 `filterBedrockToolsRaw`）
   - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +1 行调用 `filterBedrockToolsFromStruct`）
 - **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
+
 - **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
 - **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
+
+### B-27 [ops/report] 毛利报表脚本与 agent skill
+- **新增/修改文件**：
+  - `scripts/ops/gross_profit_report.py`（CN/SG 多环境毛利 CSV 报表；本地 RDS 直连失败时自动 SSH 到生产机本地 MySQL 聚合查询；`detail.csv` 按运营表格格式输出：`日期 / 环境 / 用户 / 渠道ID / 渠道 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 折扣倍率 / 收入(USD) / 成本(USD) / 毛利(USD) / 毛利率(%)`）
+  - `scripts/ops/test_gross_profit_report.py`（锁定明细 CSV 表头、列顺序、日志有效折扣倍率、缺失倍率不伪装为 1）
+  - `.agents/skills/gross-profit-report/SKILL.md`（Codex 项目内技能；全局副本需同步到 `~/.codex/skills/gross-profit-report` 和 `~/.claude/skills/gross-profit-report`）
+- **行为**：`折扣倍率` 来自日志 `other.group_ratio` 的聚合有效倍率 `SUM(quota) / SUM(quota / group_ratio)`；缺失/非法倍率在 CSV 中显示 `缺失` 并写入 `warnings.csv`，不能临时写死为 `1`。`channel_costs.yaml` 的 `cost_factor` 只用于成本修正，不作为折扣倍率列展示。日期格式为运营表格使用的 `YYYY/M/D`。
+- **冲突风险**：低（独立运维脚本和 agent 文档，不改 upstream 业务代码）
 
 ### B-18 [aws/bedrock] deprecated temperature 参数过滤
 - **新增文件**：

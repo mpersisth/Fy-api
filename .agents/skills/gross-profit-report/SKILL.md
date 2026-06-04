@@ -13,6 +13,7 @@ Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG
 
 - **Claude Code**: use `Bash`, `Read`, `Edit`, and `git` commands. If the user asks for console output, paste the important report into the chat because users may not see tool stdout.
 - **Codex**: use `exec_command`, `apply_patch`, and `git` commands. Do not assume the user sees command output; relay the report in the final/chat response.
+- **Discovery/install paths**: the repo copy at `.agents/skills/gross-profit-report` is project-local. For global availability, keep synchronized copies at `~/.codex/skills/gross-profit-report` for Codex and `~/.claude/skills/gross-profit-report` for Claude Code.
 
 ## Workflow
 
@@ -49,7 +50,8 @@ Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG
    - Query `logs` joined to `channels`, filtered to `logs.type = 2`, `quota > 0`, and the requested date range.
    - Use the same accounting basis:
      - `收入 = logs.quota / 500000`
-     - `成本 = logs.quota / group_ratio / 500000`
+     - `成本 = logs.quota / group_ratio / 500000`，如果配置了 `channel_costs.yaml`，再乘以渠道/模型成本系数 `cost_factor`
+     - `折扣倍率 = SUM(logs.quota) / SUM(logs.quota / group_ratio)`，这是日志 `other.group_ratio` 的聚合有效倍率
      - `毛利 = 收入 - 成本`
      - `毛利率 = 毛利 / 收入 * 100`
    - If `channel_costs.yaml` exists, apply its cost factors; otherwise state that no channel cost factor was applied.
@@ -58,6 +60,10 @@ Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG
    - Use Chinese headers.
    - Put the three required dimensions in one table:
      `日期 / 环境 / 渠道 / 用户 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 收入 / 成本 / 毛利 / 毛利率`
+   - CSV output from `scripts/ops/gross_profit_report.py` must match the operations table format exactly for `detail.csv`:
+     `日期 / 环境 / 用户 / 渠道ID / 渠道 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 折扣倍率 / 收入(USD) / 成本(USD) / 毛利(USD) / 毛利率(%)`.
+   - `折扣倍率` is the actual effective user/group ratio from log `other.group_ratio`, aggregated as `SUM(quota) / SUM(quota / group_ratio)`. It is not the channel/model `cost_factor` from `channel_costs.yaml`.
+   - Never temporarily hard-code or fallback `折扣倍率` to `1`. If `group_ratio` is missing or invalid, mark the CSV cell as `缺失` and write the issue to `warnings.csv`; do not disguise unknown data as a valid multiplier.
    - Prefer a Markdown table for screenshot readability. Truncate long channel/model labels if needed, but preserve channel ID.
    - Include summary tables only if useful: by day/env, by channel, by user, by model.
    - Do not rely on tool stdout being visible. Paste the final table in the assistant response.
@@ -75,7 +81,13 @@ SELECT DATE(FROM_UNIXTIME(l.created_at)) AS day,
        SUM(l.prompt_tokens) AS prompt_tokens,
        SUM(l.completion_tokens) AS completion_tokens,
        SUM(l.quota) AS quota,
-       SUM(l.quota / IFNULL(NULLIF(CAST(JSON_UNQUOTE(JSON_EXTRACT(CASE WHEN JSON_VALID(l.other) THEN l.other ELSE NULL END, '$.group_ratio')) AS DECIMAL(20,8)), 0), 1)) AS cost_quota
+       SUM(l.quota / IFNULL(NULLIF(CAST(JSON_UNQUOTE(JSON_EXTRACT(CASE WHEN JSON_VALID(l.other) THEN l.other ELSE NULL END, '$.group_ratio')) AS DECIMAL(20,8)), 0), 1)) AS base_cost_quota,
+       SUM(CASE
+             WHEN JSON_VALID(l.other)
+              AND JSON_EXTRACT(l.other, '$.group_ratio') IS NOT NULL
+              AND CAST(JSON_UNQUOTE(JSON_EXTRACT(l.other, '$.group_ratio')) AS DECIMAL(20,8)) > 0
+             THEN 0 ELSE 1
+           END) AS group_ratio_missing
 FROM logs l
 LEFT JOIN channels c ON c.id = l.channel_id
 WHERE l.type = 2
@@ -96,3 +108,4 @@ ORDER BY day, quota DESC;
 - Misaligned screenshot tables: use Markdown tables or shortened labels, not raw fixed-width CJK text.
 - Timezone drift: avoid UTC-only interpretation for "yesterday/today" unless the user explicitly asks for UTC.
 - Default window is 17:00–17:00 Shanghai, NOT midnight–midnight. When the user says "昨天" without further detail, use yesterday 17:00 → today 17:00.
+- Never output a CSV where `折扣倍率` is all `1` unless verified from source logs; check the distribution before finalizing.

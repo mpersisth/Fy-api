@@ -22,6 +22,7 @@ import csv
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import defaultdict
@@ -42,6 +43,18 @@ def _d(v):
     if v is None:
         return Decimal(0)
     return Decimal(str(v))
+
+
+def _parse_group_ratio(value):
+    if value is None:
+        return None
+    try:
+        ratio = Decimal(str(value))
+    except Exception:
+        return None
+    if ratio <= 0:
+        return None
+    return ratio
 
 
 def _require_yaml():
@@ -72,6 +85,38 @@ def read_dsn_via_ssh(ssh_cmd, env_file, dsn_var):
     line = result.stdout.strip()
     match = re.match(rf'^{dsn_var}=(.*)', line)
     return match.group(1) if match else None
+
+
+def remote_mysql_query(ssh_cmd, env_file, dsn_var, sql):
+    remote = f"""
+set -euo pipefail
+ENV_FILE={shlex.quote(env_file)}
+DSN=$(grep -v '^#' "$ENV_FILE" | grep '^{dsn_var}=' | head -1 | sed 's/^{dsn_var}=//')
+python3 - "$DSN" {shlex.quote(sql)} <<'RPY'
+import os, re, subprocess, sys, urllib.parse
+
+dsn = sys.argv[1].strip().strip('"').strip("'")
+sql = sys.argv[2]
+if dsn.startswith("mysql+pymysql://"):
+    u = urllib.parse.urlparse(dsn)
+    user = urllib.parse.unquote(u.username or "")
+    password = urllib.parse.unquote(u.password or "")
+    host = u.hostname or "127.0.0.1"
+    port = str(u.port or 3306)
+    db = (u.path or "/").lstrip("/")
+else:
+    m = re.match(r"([^:]+):(.*)@tcp\\(([^:)]+)(?::(\\d+))?\\)/([^?]+)", dsn)
+    if not m:
+        raise SystemExit("unsupported DSN")
+    user, password, host, port, db = m.group(1), m.group(2), m.group(3), m.group(4) or "3306", m.group(5)
+env = os.environ.copy()
+env["MYSQL_PWD"] = password
+cmd = ["mysql", "--batch", "--raw", "--skip-column-names", "-h", host, "-P", port, "-u", user, db, "-e", sql]
+subprocess.run(cmd, check=True, env=env)
+RPY
+""".strip()
+    cmd = f"{ssh_cmd} {shlex.quote(remote)}"
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180)
 
 
 def parse_dsn(dsn_str):
@@ -186,13 +231,12 @@ def fetch_logs(conn, start_ts, end_ts, batch_size=5000):
         "l.`group`, l.other, c.name AS channel_name "
         "FROM logs l LEFT JOIN channels c ON l.channel_id = c.id "
         "WHERE l.type = %s AND l.created_at >= %s AND l.created_at <= %s "
-        "ORDER BY l.id"
+        "AND l.id > %s ORDER BY l.id LIMIT %s"
     )
     last_id = 0
     while True:
         with conn.cursor() as cur:
-            cur.execute(sql + " AND l.id > %s LIMIT %s",
-                        (LOG_TYPE_CONSUME, start_ts, end_ts, last_id, batch_size))
+            cur.execute(sql, (LOG_TYPE_CONSUME, start_ts, end_ts, last_id, batch_size))
             rows = cur.fetchall()
         if not rows:
             break
@@ -203,17 +247,102 @@ def fetch_logs(conn, start_ts, end_ts, batch_size=5000):
             break
 
 
+def remote_grouped_rows(env_name, env_cfg, start_ts, end_ts, default_factor, cost_channels):
+    sql = f"""
+SELECT
+  DATE(FROM_UNIXTIME(l.created_at)) AS day,
+  l.user_id,
+  COALESCE(NULLIF(l.username,''), CONCAT('user-', l.user_id)) AS username,
+  l.channel_id,
+  COALESCE(NULLIF(c.name,''), CONCAT('ch-', l.channel_id)) AS channel_name,
+  l.model_name,
+  COUNT(*) AS requests,
+  COALESCE(SUM(l.prompt_tokens),0) AS prompt_tokens,
+  COALESCE(SUM(l.completion_tokens),0) AS completion_tokens,
+  COALESCE(SUM(l.quota),0) AS quota,
+  COALESCE(SUM(
+    l.quota / IFNULL(
+      NULLIF(CAST(JSON_UNQUOTE(JSON_EXTRACT(CASE WHEN JSON_VALID(l.other) THEN l.other ELSE NULL END, '$.group_ratio')) AS DECIMAL(20,8)), 0),
+      1
+    )
+  ),0) AS base_cost_quota,
+  COALESCE(SUM(
+    CASE
+      WHEN JSON_VALID(l.other)
+       AND JSON_EXTRACT(l.other, '$.group_ratio') IS NOT NULL
+       AND CAST(JSON_UNQUOTE(JSON_EXTRACT(l.other, '$.group_ratio')) AS DECIMAL(20,8)) > 0
+      THEN 0 ELSE 1
+    END
+  ),0) AS group_ratio_missing
+FROM logs l
+LEFT JOIN channels c ON c.id = l.channel_id
+WHERE l.type = {LOG_TYPE_CONSUME}
+  AND l.created_at >= {int(start_ts)}
+  AND l.created_at <= {int(end_ts)}
+  AND l.quota > 0
+GROUP BY day,l.user_id,username,l.channel_id,channel_name,l.model_name
+ORDER BY day, quota DESC;
+""".strip()
+    result = remote_mysql_query(env_cfg["ssh"], env_cfg["dsn_env_file"], env_cfg["dsn_var"], sql)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "remote mysql query failed")
+
+    rows_out = []
+    warnings = defaultdict(lambda: {"count": 0, "revenue": Decimal(0)})
+    for line in result.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 12:
+            continue
+        (day, user_id, username, channel_id, channel_name, model_name, requests,
+         prompt_tokens, completion_tokens, quota, base_cost_quota, group_ratio_missing) = parts
+        quota_d = _d(quota)
+        base_cost_quota_d = _d(base_cost_quota)
+        missing_count = int(Decimal(group_ratio_missing))
+        cost_factor = get_cost_factor(default_factor, cost_channels, int(channel_id), model_name)
+        revenue_usd = quota_d / QUOTA_PER_UNIT
+        cost_usd = base_cost_quota_d / QUOTA_PER_UNIT * _d(cost_factor)
+        rows_out.append({
+            "env": env_name,
+            "date": day,
+            "user_id": int(user_id),
+            "username": username,
+            "channel_id": int(channel_id),
+            "channel_name": channel_name,
+            "model_name": model_name,
+            "requests": int(requests),
+            "prompt_tokens": int(Decimal(prompt_tokens)),
+            "completion_tokens": int(Decimal(completion_tokens)),
+            "quota": quota_d,
+            "base_cost_quota": base_cost_quota_d,
+            "group_ratio_missing": missing_count > 0,
+            "cost_factor": cost_factor,
+            "revenue_usd": revenue_usd,
+            "cost_usd": cost_usd,
+        })
+        if missing_count > 0:
+            wk = (int(channel_id), channel_name, model_name)
+            warnings[wk]["count"] += missing_count
+            warnings[wk]["revenue"] += revenue_usd
+            warnings[wk]["note"] = "missing or invalid group_ratio; 折扣倍率 marked 缺失"
+    return rows_out, dict(warnings)
+
+
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
 
 def ts_to_date(ts):
     tz_sh = timezone(timedelta(hours=8))
-    return datetime.fromtimestamp(ts, tz=tz_sh).strftime("%Y-%m-%d")
+    dt = datetime.fromtimestamp(ts, tz=tz_sh)
+    return f"{dt.year}/{dt.month}/{dt.day}"
 
 
 def fmt(d):
     return d.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+
+
+def fmt_ratio(d):
+    return str(d.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP).normalize())
 
 
 def process_env(env_name, dsn, start_ts, end_ts, default_factor, cost_channels):
@@ -233,16 +362,18 @@ def process_env(env_name, dsn, start_ts, end_ts, default_factor, cost_channels):
             except (json.JSONDecodeError, TypeError):
                 other = {}
 
-            group_ratio = float(other.get("group_ratio", 1.0) or 1.0)
-            if group_ratio <= 0:
-                group_ratio = 1.0
+            group_ratio = _parse_group_ratio(other.get("group_ratio"))
+            group_ratio_missing = group_ratio is None
+            if group_ratio_missing:
+                group_ratio = Decimal("1")
 
             channel_id = row["channel_id"]
             model_name = row["model_name"]
             cost_factor = get_cost_factor(default_factor, cost_channels, channel_id, model_name)
 
             revenue_usd = _d(quota) / QUOTA_PER_UNIT
-            cost_usd = _d(quota) / _d(group_ratio) / QUOTA_PER_UNIT * _d(cost_factor)
+            base_cost_quota = _d(quota) / group_ratio
+            cost_usd = base_cost_quota / QUOTA_PER_UNIT * _d(cost_factor)
 
             rows_out.append({
                 "env": env_name,
@@ -254,14 +385,25 @@ def process_env(env_name, dsn, start_ts, end_ts, default_factor, cost_channels):
                 "model_name": model_name,
                 "prompt_tokens": row["prompt_tokens"],
                 "completion_tokens": row["completion_tokens"],
+                "quota": _d(quota),
+                "base_cost_quota": base_cost_quota,
+                "group_ratio_missing": group_ratio_missing,
+                "cost_factor": cost_factor,
                 "revenue_usd": revenue_usd,
                 "cost_usd": cost_usd,
             })
+
+            if group_ratio_missing:
+                wk = (channel_id, row["channel_name"] or f"ch-{channel_id}", model_name)
+                warnings[wk]["count"] += 1
+                warnings[wk]["revenue"] += revenue_usd
+                warnings[wk]["note"] = "missing or invalid group_ratio; cost used 1.0 fallback"
 
             if cost_factor == default_factor and default_factor == 1.0:
                 wk = (channel_id, row["channel_name"] or f"ch-{channel_id}", model_name)
                 warnings[wk]["count"] += 1
                 warnings[wk]["revenue"] += revenue_usd
+                warnings[wk]["note"] = "using default_cost_factor — verify or configure"
     finally:
         conn.close()
 
@@ -273,31 +415,46 @@ def generate_report(all_rows, output_dir, warnings_all):
 
     # --- detail.csv ---
     detail_path = os.path.join(output_dir, "detail.csv")
-    with open(detail_path, "w", newline="") as f:
+    with open(detail_path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["env", "date", "user_id", "username", "channel_id", "channel_name",
-                     "model_name", "requests", "prompt_tokens", "completion_tokens",
-                     "revenue_usd", "cost_usd", "profit_usd"])
+        w.writerow(["日期", "环境", "用户", "渠道ID", "渠道", "模型", "请求数",
+                     "输入Tokens", "输出Tokens", "折扣倍率", "收入(USD)", "成本(USD)",
+                     "毛利(USD)", "毛利率(%)"])
 
         # Group by 4 dimensions
         grouped = defaultdict(lambda: {
             "requests": 0, "prompt_tokens": 0, "completion_tokens": 0,
-            "revenue": Decimal(0), "cost": Decimal(0)
+            "revenue": Decimal(0), "cost": Decimal(0), "quota": Decimal(0),
+            "base_cost_quota": Decimal(0), "group_ratio_missing": 0
         })
         for r in all_rows:
             key = (r["env"], r["date"], r["user_id"], r["username"],
                    r["channel_id"], r["channel_name"], r["model_name"])
-            grouped[key]["requests"] += 1
+            grouped[key]["requests"] += int(r.get("requests", 1))
             grouped[key]["prompt_tokens"] += r["prompt_tokens"]
             grouped[key]["completion_tokens"] += r["completion_tokens"]
+            grouped[key]["quota"] += r.get("quota", r["revenue_usd"] * QUOTA_PER_UNIT)
+            grouped[key]["base_cost_quota"] += r.get("base_cost_quota", r["cost_usd"] * QUOTA_PER_UNIT)
+            if r.get("group_ratio_missing"):
+                grouped[key]["group_ratio_missing"] += int(r.get("requests", 1))
             grouped[key]["revenue"] += r["revenue_usd"]
             grouped[key]["cost"] += r["cost_usd"]
 
         for key in sorted(grouped.keys()):
             v = grouped[key]
             rev, cst = fmt(v["revenue"]), fmt(v["cost"])
-            w.writerow([*key, v["requests"], v["prompt_tokens"], v["completion_tokens"],
-                        rev, cst, fmt(rev - cst)])
+            if v["group_ratio_missing"] > 0:
+                discount_ratio = "缺失"
+            elif v["base_cost_quota"] > 0:
+                discount_ratio = fmt_ratio(v["quota"] / v["base_cost_quota"])
+            else:
+                discount_ratio = "缺失"
+            profit = rev - cst
+            margin = (profit / rev * 100) if rev > 0 else Decimal(0)
+            env, date, _user_id, username, channel_id, channel_name, model_name = key
+            w.writerow([fmt_report_date(date), env, username, channel_id, channel_name, model_name,
+                        v["requests"], v["prompt_tokens"], v["completion_tokens"],
+                        discount_ratio, rev, cst, fmt(profit), fmt_pct(margin)])
     print(f"  {detail_path} ({len(grouped)} rows)")
 
     # --- summary CSVs ---
@@ -319,13 +476,14 @@ def generate_report(all_rows, output_dir, warnings_all):
     warn_rows = []
     for (ch_id, ch_name, model), v in sorted(warnings_all.items(), key=lambda x: -x[1]["count"]):
         if v["count"] > 0:
-            warn_rows.append([ch_id, ch_name, model, v["count"], fmt(v["revenue"])])
-    with open(warn_path, "w", newline="") as f:
+            warn_rows.append([ch_id, ch_name, model, v["count"], fmt(v["revenue"]),
+                              v.get("note", "verify report inputs")])
+    with open(warn_path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["channel_id", "channel_name", "model_name", "request_count",
                      "revenue_usd", "note"])
         for wr in warn_rows:
-            w.writerow(wr + ["using default_cost_factor — verify or configure"])
+            w.writerow(wr)
     print(f"  {warn_path} ({len(warn_rows)} rows)")
 
     # --- Terminal summary ---
@@ -336,12 +494,12 @@ def _write_summary(output_dir, filename, all_rows, key_fn, header):
     agg = defaultdict(lambda: {"requests": 0, "revenue": Decimal(0), "cost": Decimal(0)})
     for r in all_rows:
         k = key_fn(r)
-        agg[k]["requests"] += 1
+        agg[k]["requests"] += int(r.get("requests", 1))
         agg[k]["revenue"] += r["revenue_usd"]
         agg[k]["cost"] += r["cost_usd"]
 
     path = os.path.join(output_dir, filename)
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(header + ["requests", "revenue_usd", "cost_usd", "profit_usd", "margin_pct"])
         for k in sorted(agg.keys()):
@@ -352,6 +510,21 @@ def _write_summary(output_dir, filename, all_rows, key_fn, header):
             w.writerow(list(k) + [v["requests"], rev, cst, fmt(profit),
                                    margin.quantize(Decimal("0.01"))])
     print(f"  {path} ({len(agg)} rows)")
+
+
+def fmt_pct(d):
+    return str(d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP).normalize())
+
+
+def fmt_report_date(value):
+    if isinstance(value, str):
+        for fmt_str in ("%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                dt = datetime.strptime(value, fmt_str)
+                return f"{dt.year}/{dt.month}/{dt.day}"
+            except ValueError:
+                pass
+    return value
 
 
 def _print_terminal_summary(all_rows):
@@ -473,7 +646,11 @@ def main():
             print(f"[{env_name}] Failed to read DSN — skipping")
             continue
         print(f"[{env_name}] Querying logs...")
-        rows, warns = process_env(env_name, dsn, start_ts, end_ts, default_factor, cost_channels)
+        try:
+            rows, warns = process_env(env_name, dsn, start_ts, end_ts, default_factor, cost_channels)
+        except Exception as err:
+            print(f"[{env_name}] Direct DB query failed ({err}); retrying via remote mysql...")
+            rows, warns = remote_grouped_rows(env_name, env_cfg, start_ts, end_ts, default_factor, cost_channels)
         all_rows.extend(rows)
         for k, v in warns.items():
             if k in warnings_all:

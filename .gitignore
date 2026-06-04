@@ -46,6 +46,7 @@ compose.test.yml
 token_estimator_test.go
 .test
 skills-lock.json
+.playwright-mcp
 
 # Fy-api overlay: bug tracking artifacts (screenshots, logs, etc.)
 bugs/*

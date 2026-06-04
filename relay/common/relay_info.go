@@ -907,6 +907,7 @@ func hasRemovableDisabledField(jsonData []byte, channelOtherSettings dto.Channel
 		"store",
 		"safety_identifier",
 		"stream_options.include_obfuscation",
+		"context_management", // Fy-api overlay: B-9 context_management filter
 	)
 
 	return (!channelOtherSettings.AllowServiceTier && values[0].Exists()) ||
@@ -914,7 +915,8 @@ func hasRemovableDisabledField(jsonData []byte, channelOtherSettings dto.Channel
 		(!channelOtherSettings.AllowSpeed && values[2].Exists()) ||
 		(channelOtherSettings.DisableStore && values[3].Exists()) ||
 		(!channelOtherSettings.AllowSafetyIdentifier && values[4].Exists()) ||
-		(!channelOtherSettings.AllowIncludeObfuscation && values[5].Exists())
+		(!channelOtherSettings.AllowIncludeObfuscation && values[5].Exists()) ||
+		(!channelOtherSettings.AllowContextManagement && values[6].Exists()) // Fy-api overlay: B-9
 }
 
 // RemoveGeminiDisabledFields removes disabled fields from Gemini request JSON data

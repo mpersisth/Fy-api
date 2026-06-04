@@ -120,7 +120,8 @@ func UnmarshalBodyReusable(c *gin.Context, v any) error {
 			return seekErr
 		}
 		if err := DecodeJson(storage, v); err != nil {
-			return err
+			// Fy-api overlay: B-11 sanitize disk-backed JSON decode errors
+			return SanitizeJSONUnmarshalError(err)
 		}
 		if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {
 			return seekErr

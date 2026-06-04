@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"strings"
 	"time"
@@ -116,7 +115,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
 		// Fy-api overlay: B-15 keep override semantics on auto-group.
 		groupRatio = ratio_setting.ApplyOverride(relayInfo.UserGroupRatioOverride, groupRatio)
-		log.Printf("final group ratio: %f", groupRatio)
+		logger.LogDebug(ctx, "final group ratio: %f", groupRatio)
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
 

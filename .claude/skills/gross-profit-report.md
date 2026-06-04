@@ -62,6 +62,15 @@ Produce a screenshot-friendly TraceNex consumption/gross-profit report for CN/SG
    - Include summary tables only if useful: by day/env, by channel, by user, by model.
    - Do not rely on tool stdout being visible. Paste the final table in the assistant response.
 
+7. **CSV 落盘**
+   - 每次生成报告后，必须将明细数据保存为 CSV 文件到 `/tmp/tracenex-reports/` 目录（不存在则创建）。
+   - 文件命名规则: `gross-profit-YYYYMMDD-YYYYMMDD.csv`（起止日期，不含时分秒）。
+   - CSV 编码: UTF-8 with BOM（`utf-8-sig`），确保 Excel 直接打开不乱码。
+   - CSV 列头（中文）: `日期,环境,用户ID,用户名,渠道ID,渠道名,模型,请求数,输入Tokens,输出Tokens,quota,cost_quota,收入(¥),成本(¥),毛利(¥),毛利率(%)`
+   - 每行是最细粒度的明细（日期 × 环境 × 用户 × 渠道 × 模型），包含 quota 原始值和计算后的收入/成本/毛利/毛利率。
+   - 排序: 先按环境（CN → SG），再按日期升序，再按 quota 降序。
+   - 保存完成后在对话中告知用户文件路径。
+
 ## Useful Query Shape
 
 ```sql

@@ -186,9 +186,13 @@
   - `scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-loadtest` CLI）
   - `scripts/channel-benchmark/README.md` / `scripts/channel-benchmark/py/README.md`（补图片压测说明）
   - `relay/image_handler.go`（`// Fy-api overlay:`：图片消费日志保留实际 `quality` 值，不再把 `high/medium/low` 统记成 `standard`）
+  - `relay/channel/openai/adaptor.go`（`// Fy-api overlay:`：Azure `gpt-image-*` / `chatgpt-image-latest` 图片生成请求丢弃 `response_format`，避免 Azure 上游拒绝不支持的参数）
+- **新增测试**：
+  - `relay/channel/openai/adaptor_image_test.go::TestConvertImageRequestDropsAzureGPTImageResponseFormat`
+  - `relay/channel/openai/adaptor_image_test.go::TestConvertImageRequestKeepsDallEResponseFormat`
 - **背景**：
   1. 现有 `fy-loadtest` 固定打 `/v1/chat/completions`，不适合 `gpt-image-2`
-  2. Azure `gpt-image-2` 链路对 `response_format` 不兼容，工具默认不再发送该字段
+  2. Azure `gpt-image-2` 链路对 `response_format` 不兼容，工具默认不再发送该字段；网关运行时也会在命中 Azure GPT image 模型时删除该字段，旧 DALL-E 模型继续保留
   3. 2026-05-15 CN 线上排查确认：channel `42` 和 `43` 共享同一个 Azure `base_url + key`，并非独立配额桶；本地图片压测配置已按此降并发标注
 - **冲突风险**：低（benchmark 子树独立；`relay/image_handler.go` 仅一小段日志文案逻辑）
 - **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现

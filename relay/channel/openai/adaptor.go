@@ -550,8 +550,29 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		return &requestBody, nil
 
 	default:
+		if shouldDropAzureGPTImageResponseFormat(info) {
+			// Fy-api overlay: Azure GPT image models reject response_format; they always return b64_json.
+			request.ResponseFormat = ""
+		}
 		return request, nil
 	}
+}
+
+func shouldDropAzureGPTImageResponseFormat(info *relaycommon.RelayInfo) bool {
+	if info == nil || info.ChannelMeta == nil {
+		return false
+	}
+	if info.ChannelType != constant.ChannelTypeAzure {
+		return false
+	}
+	if info.RelayMode != relayconstant.RelayModeImagesGenerations {
+		return false
+	}
+	model := info.UpstreamModelName
+	if model == "" {
+		model = info.OriginModelName
+	}
+	return strings.HasPrefix(model, "gpt-image-") || strings.EqualFold(model, "chatgpt-image-latest")
 }
 
 func isJSONRequest(c *gin.Context) bool {

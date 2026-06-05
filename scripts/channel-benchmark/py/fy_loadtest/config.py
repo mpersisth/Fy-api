@@ -74,7 +74,7 @@ class LoadProfile:
     temperature: float | None = None
     stream: bool = True
 
-    concurrency_levels: list[int] = field(default_factory=lambda: [1, 2, 5, 10, 25, 50, 100])
+    concurrency_levels: list[int] = field(default_factory=lambda: [1, 10, 30, 50, 100])
     requests_per_level: int = 50
     warmup_requests: int = 5
 
@@ -164,7 +164,7 @@ class Config:
                 max_tokens=int(ld.get("max_tokens", 64)),
                 temperature=float(ld["temperature"]) if "temperature" in ld else None,
                 stream=bool(ld.get("stream", True)),
-                concurrency_levels=list(ld.get("concurrency_levels", [1, 2, 5, 10, 25, 50, 100])),
+                concurrency_levels=list(ld.get("concurrency_levels", [1, 10, 30, 50, 100])),
                 requests_per_level=int(ld.get("requests_per_level", 50)),
                 warmup_requests=int(ld.get("warmup_requests", 5)),
                 request_timeout_sec=float(ld.get("request_timeout_sec", 120.0)),

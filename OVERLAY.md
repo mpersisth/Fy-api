@@ -124,16 +124,17 @@
 - **修改文件**：
   - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` 视频基础倍率、`wan2.6-t2i` 单图价格）
   - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v`）
-  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 首尾帧逻辑放到 metadata 反序列化之后；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
-  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算）
+  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 从废弃的 `first_frame_url`/`last_frame_url` 迁移到 DashScope `input.media` 数组格式，向后兼容 `input_reference` + `metadata.last_frame_url` 旧传参；新增 `AliMediaItem` 结构体、`AliVideoInput.Media` 字段、`AliVideoParameters.Ratio` 字段；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
+  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算、r2v media 数组转换、media 优先级、last_frame_url 向后兼容、Ratio metadata 透传、JSON 序列化断言）
+  - `relay/common/relay_info.go`（新增 `TaskMediaItem` 结构体和 `TaskSubmitReq.Media` 字段，支持用户通过 media 数组传入多个参考素材）
   - `web/classic/src/components/table/model-pricing/modal/components/ModelPricingTable.jsx`（遇到 `wan2.6` 视频模型时改为“视频计费”展示）
   - `web/classic/src/components/table/model-pricing/modal/components/VideoPricingDisplay.jsx`（新增分辨率/每秒价格表）
 - **定价规则**：
   - `wan2.6-t2i`：`0.2` 元/张
   - `wan2.6-i2v` / `wan2.6-r2v`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒
-- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；同时 `r2v` 的首尾帧字段若先写入、后做 metadata 通用反序列化，会被覆盖导致请求错误；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题
-- **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突）
-- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则，并继续确保 `r2v` 首尾帧赋值位于 metadata unmarshal 之后
+- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；DashScope wan2.6-r2v API 已废弃 `first_frame_url`/`last_frame_url`，改用 `input.media` 数组传递参考素材（支持多图、视频、音色），旧字段会导致请求被拒返回 `task_id is empty`；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题
+- **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突；`relay_info.go` 新增字段不影响上游已有字段）
+- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则；r2v 必须使用 `input.media` 数组格式，不得回退到 `first_frame_url`/`last_frame_url`
 
 ### B-11 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：

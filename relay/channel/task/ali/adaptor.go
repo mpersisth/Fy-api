@@ -33,15 +33,23 @@ type AliVideoRequest struct {
 	Parameters *AliVideoParameters `json:"parameters,omitempty"`
 }
 
+// AliMediaItem r2v 参考素材（wan2.6-r2v / wan2.7-r2v input.media 元素）
+type AliMediaItem struct {
+	Type           string `json:"type"`                      // "reference_image" | "reference_video"
+	URL            string `json:"url"`                       // 素材 URL
+	ReferenceVoice string `json:"reference_voice,omitempty"` // 参考音色 URL
+}
+
 // AliVideoInput 视频输入参数
 type AliVideoInput struct {
-	Prompt         string `json:"prompt,omitempty"`          // 文本提示词
-	ImgURL         string `json:"img_url,omitempty"`         // 首帧图像URL或Base64（图生视频）
-	FirstFrameURL  string `json:"first_frame_url,omitempty"` // 首帧图片URL（首尾帧生视频）
-	LastFrameURL   string `json:"last_frame_url,omitempty"`  // 尾帧图片URL（首尾帧生视频）
-	AudioURL       string `json:"audio_url,omitempty"`       // 音频URL（wan2.5支持）
-	NegativePrompt string `json:"negative_prompt,omitempty"` // 反向提示词
-	Template       string `json:"template,omitempty"`        // 视频特效模板
+	Prompt         string         `json:"prompt,omitempty"`          // 文本提示词
+	ImgURL         string         `json:"img_url,omitempty"`         // 首帧图像URL或Base64（图生视频）
+	FirstFrameURL  string         `json:"first_frame_url,omitempty"` // 首帧图片URL（非r2v首尾帧模型）
+	LastFrameURL   string         `json:"last_frame_url,omitempty"`  // 尾帧图片URL（非r2v首尾帧模型）
+	AudioURL       string         `json:"audio_url,omitempty"`       // 音频URL（wan2.5支持）
+	NegativePrompt string         `json:"negative_prompt,omitempty"` // 反向提示词
+	Template       string         `json:"template,omitempty"`        // 视频特效模板
+	Media          []AliMediaItem `json:"media,omitempty"`           // r2v 参考素材数组
 }
 
 // AliVideoParameters 视频参数
@@ -53,6 +61,7 @@ type AliVideoParameters struct {
 	Watermark    bool   `json:"watermark,omitempty"`     // 是否添加水印
 	Audio        *bool  `json:"audio,omitempty"`         // 是否添加音频（wan2.5）
 	Seed         int    `json:"seed,omitempty"`          // 随机数种子
+	Ratio        string `json:"ratio,omitempty"`         // 画面比例: 16:9/9:16/1:1
 }
 
 // AliVideoResponse 阿里通义万相响应
@@ -379,16 +388,29 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		return nil, err
 	}
 
-	// Fy-api overlay: keep r2v frame fields after metadata unmarshal to avoid overwrite by generic mapping.
-	// r2v 首尾帧处理（放在 metadata unmarshal 之后，防止被通用反序列化覆盖）
+	// Fy-api overlay: r2v uses input.media array (DashScope wan2.6-r2v / wan2.7-r2v API).
 	if strings.Contains(upstreamModel, "r2v") {
-		aliReq.Input.FirstFrameURL = req.InputReference
 		aliReq.Input.ImgURL = ""
+		aliReq.Input.FirstFrameURL = ""
+		aliReq.Input.LastFrameURL = ""
 
-		if req.Metadata != nil {
-			if lastFrameURL, ok := req.Metadata["last_frame_url"].(string); ok && lastFrameURL != "" {
-				aliReq.Input.LastFrameURL = lastFrameURL
+		if len(req.Media) > 0 {
+			aliReq.Input.Media = make([]AliMediaItem, len(req.Media))
+			for i, item := range req.Media {
+				aliReq.Input.Media[i] = AliMediaItem{
+					Type:           item.Type,
+					URL:            item.URL,
+					ReferenceVoice: item.ReferenceVoice,
+				}
 			}
+		} else if req.InputReference != "" {
+			media := []AliMediaItem{{Type: "reference_image", URL: req.InputReference}}
+			if req.Metadata != nil {
+				if lastURL, ok := req.Metadata["last_frame_url"].(string); ok && lastURL != "" {
+					media = append(media, AliMediaItem{Type: "reference_image", URL: lastURL})
+				}
+			}
+			aliReq.Input.Media = media
 		}
 	}
 

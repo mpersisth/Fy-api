@@ -701,6 +701,12 @@ type TaskRelayInfo struct {
 	LockedChannel any
 }
 
+type TaskMediaItem struct {
+	Type           string `json:"type"`
+	URL            string `json:"url"`
+	ReferenceVoice string `json:"reference_voice,omitempty"`
+}
+
 type TaskSubmitReq struct {
 	Prompt         string                 `json:"prompt"`
 	Model          string                 `json:"model,omitempty"`
@@ -711,6 +717,7 @@ type TaskSubmitReq struct {
 	Duration       int                    `json:"duration,omitempty"`
 	Seconds        string                 `json:"seconds,omitempty"`
 	InputReference string                 `json:"input_reference,omitempty"`
+	Media          []TaskMediaItem        `json:"media,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 

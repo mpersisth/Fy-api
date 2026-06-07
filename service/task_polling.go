@@ -396,13 +396,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
 
-	// Fy-api overlay: TraceNex multi-stage video pipeline. Only tasks with
-	// private pipeline state are handled here; all normal video tasks continue
-	// through the upstream-compatible status switch below.
-	if handled, err := AdvanceVideoPipelineIfNeeded(ctx, task, taskResult, responseBody); handled {
-		return err
-	}
-
 	now := time.Now().Unix()
 	if taskResult.Status == "" {
 		//taskResult = relaycommon.FailTaskInfo("upstream returned empty status")

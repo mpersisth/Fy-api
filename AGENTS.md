@@ -97,6 +97,18 @@ git log HEAD..upstream/main --oneline | head
 
 Follow `docs/Weekly-upstream-sync-runbook.md` for the weekly merge flow and the criteria that trigger an on-demand release.
 
+### Pull request workflow
+
+When creating a PR for the user, use a separate git worktree for the PR branch instead of switching the main worktree away from its current branch. This keeps the user's active workspace, IDE state, and untracked files undisturbed.
+
+```bash
+git worktree add ../fy-api-pr-<name> -b <branch-name> develop
+cd ../fy-api-pr-<name>
+# make edits, run tests, commit, push, and create the PR here
+```
+
+After the PR is created, leave the main worktree on its original branch. Do not merge the PR unless the user explicitly asks.
+
 ### Migration context
 
 SG production was migrated from the legacy self-hosted MySQL on 2026-05-07.

@@ -181,6 +181,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	// Fy-api overlay: build optional TraceNex video pipeline plan before
+	// provider conversion. The adaptor only applies the resulting generation
+	// payload; strategy selection stays in service/.
+	plan, err := service.BuildVideoPipelinePlan(c, info, req)
+	if err != nil {
+		return nil, err
+	}
+	if plan != nil {
+		service.StoreVideoPipelinePlan(c, plan)
+	}
 
 	body, err := a.convertToRequestPayload(&req)
 	if err != nil {
@@ -189,6 +199,14 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
 	} else {
+		info.UpstreamModelName = body.Model
+	}
+	if plan != nil {
+		body.Model = plan.Generation.Model
+		body.Resolution = plan.Generation.Resolution
+		if plan.Generation.Ratio != "" {
+			body.Ratio = plan.Generation.Ratio
+		}
 		info.UpstreamModelName = body.Model
 	}
 	data, err := common.Marshal(body)
@@ -352,7 +370,20 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.TaskID = originTask.TaskID
 	openAIVideo.Status = originTask.Status.ToVideoStatus()
 	openAIVideo.SetProgressStr(originTask.Progress)
-	openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
+	if resultURL := originTask.GetResultURL(); resultURL != "" {
+		openAIVideo.SetMetadata("url", resultURL)
+	} else {
+		openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
+	}
+	if p := originTask.PrivateData.SeedanceEnhance; p != nil {
+		openAIVideo.SetMetadata("pipeline", p.Pipeline)
+		openAIVideo.SetMetadata("pipeline_status", p.Status)
+		openAIVideo.SetMetadata("requested_resolution", p.RequestedResolution)
+		openAIVideo.SetMetadata("generation_resolution", p.GenerationResolution)
+		openAIVideo.SetMetadata("enhance_target_resolution", p.EnhanceTargetResolution)
+		openAIVideo.SetMetadata("matched_generation_policy", p.MatchedGenerationPolicy)
+		openAIVideo.SetMetadata("matched_enhance_policy", p.MatchedEnhancePolicy)
+	}
 	openAIVideo.CreatedAt = originTask.CreatedAt
 	openAIVideo.CompletedAt = originTask.UpdatedAt
 	openAIVideo.Model = originTask.Properties.OriginModelName

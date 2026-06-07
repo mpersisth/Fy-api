@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-05-18（同步上游 `upstream/main`，保留 TraceNex overlay）
+> 最后更新：2026-06-07（同步上游 `upstream/main`，保留 TraceNex overlay）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `5dd0d3bcb` (2026-05-18)
+> 上游基线：new-api @ `4ca47ee2` (2026-06-07)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 

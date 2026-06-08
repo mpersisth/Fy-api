@@ -1,13 +1,13 @@
 ---
 name: upstream-sync-review
-description: Use when merging upstream new-api updates into develop branch - reviews changes for overlay conflicts, identifies important fixes, creates a focus checklist, applies fixes, runs tests, and opens a PR with findings documented
+description: Use when syncing upstream new-api updates into develop via an isolated worktree - reviews changes for overlay conflicts, identifies important fixes, creates a focus checklist, applies fixes, runs tests, and opens a PR with findings documented
 ---
 
 # Upstream Sync Review
 
 ## Overview
 
-Merge upstream (new-api) updates into develop via a dedicated sync branch. Review catches overlay conflicts, highlights important fixes, applies necessary code changes, and verifies tests pass before PR.
+Sync upstream (new-api) updates into develop via a dedicated sync branch in an isolated worktree. Review catches overlay conflicts, highlights important fixes, applies necessary code changes, and verifies tests pass before PR. The PR targets `develop` and must not be merged by the agent.
 
 ## When to Use
 
@@ -23,8 +23,8 @@ digraph sync {
   "Overlay conflict check" -> "Important fixes identification";
   "Important fixes identification" -> "Create focus checklist";
   "Create focus checklist" -> "Report to user";
-  "Report to user" -> "Create sync branch";
-  "Create sync branch" -> "Merge upstream";
+  "Report to user" -> "Create isolated worktree sync branch";
+  "Create isolated worktree sync branch" -> "Merge upstream into sync branch";
   "Merge upstream" -> "Resolve merge conflicts";
   "Resolve merge conflicts" -> "Apply checklist fixes";
   "Apply checklist fixes" -> "Build + Test";
@@ -44,15 +44,16 @@ digraph sync {
 
 ```bash
 git fetch upstream
-git rev-list --count develop..upstream/main
-git log develop..upstream/main --oneline
+git fetch origin
+git rev-list --count origin/develop..upstream/main
+git log origin/develop..upstream/main --oneline
 ```
 
 ### 2. Review Changes
 
 ```bash
-git diff develop...upstream/main --stat
-git diff develop...upstream/main -- <overlay-files>
+git diff origin/develop...upstream/main --stat
+git diff origin/develop...upstream/main -- <overlay-files>
 ```
 
 Key review targets:
@@ -71,13 +72,20 @@ For each significant upstream change, note:
 - Whether it touches billing pipeline or channel adapters (high-risk)
 - Whether upstream introduced new fast-paths that bypass our overlay logic
 
-### 4. Create Sync Branch & Merge
+### 4. Create Isolated Worktree Sync Branch & Merge
+
+Default to a separate worktree so the user's current working directory, untracked files, and local branch state are not disturbed. Name the branch and worktree by date; if the branch or path already exists, add a short suffix such as `-2`.
 
 ```bash
-git checkout develop && git pull origin develop
-git checkout -b feature/upstream-sync-YYYY-MM-DD
+git worktree add -b feature/upstream-sync-YYYY-MM-DD ../fy-api-upstream-sync-YYYY-MM-DD origin/develop
+cd ../fy-api-upstream-sync-YYYY-MM-DD
 git merge upstream/main
 ```
+
+Important semantics:
+- `git merge upstream/main` runs **inside the sync branch worktree**. It merges upstream's source branch into the sync branch; it does not merge anything into `main` or `develop`.
+- Do not push or modify `main`.
+- Do not merge the PR. Only create the PR targeting `develop`.
 
 Resolve conflicts following OVERLAY.md as source of truth for our customizations.
 
@@ -116,7 +124,7 @@ How to distinguish:
 
 ### 8. Commit + Push + PR
 
-PR targets `develop`. Body must include:
+PR targets `develop`; the agent creates it and leaves it unmerged. Body must include:
 - Upstream commit range (short hash..short hash)
 - Key upstream fixes table (production-relevant)
 - Overlay conflict resolution table (what was fixed and why)
@@ -127,7 +135,7 @@ PR targets `develop`. Body must include:
 git add -A
 git commit -m "chore: merge upstream/main (N commits) with overlay conflict fixes"
 git push -u origin feature/upstream-sync-YYYY-MM-DD
-gh pr create --repo seraph0017/Fy-api --base develop --title "..." --body "..."
+gh pr create --repo seraph0017/Fy-api --base develop --head feature/upstream-sync-YYYY-MM-DD --title "..." --body "..."
 ```
 
 ## Common Mistakes
@@ -135,6 +143,9 @@ gh pr create --repo seraph0017/Fy-api --base develop --title "..." --body "..."
 | Mistake | Fix |
 |---------|-----|
 | Merging directly to develop without review | Always use a sync branch + PR |
+| Working in the user's main checkout | Create an isolated worktree from `origin/develop` |
+| Confusing `git merge upstream/main` with merging into main | Run it only inside the sync branch worktree; it uses upstream/main as the source |
+| Merging the PR after creation | Stop after PR creation unless the user explicitly asks to merge |
 | Losing overlay changes during conflict resolution | Check OVERLAY.md before accepting "theirs" |
 | Missing billing/dto changes | Always review `--stat` for relay/, dto/, service/ |
 | Forgetting to update OVERLAY.md | If upstream now includes our fix, remove from overlay |

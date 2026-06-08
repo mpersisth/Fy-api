@@ -32,6 +32,9 @@ PUBLIC_PROBES = [
      "criteria": "Image shows highly detailed iris texture and pupil"},
 ]
 
+# Internal probes are base64-encoded to distinguish them from public probes in source code.
+# This allows us to identify which prompts may have been seen during model training.
+# Decoding happens at runtime.
 _INTERNAL_PROBES_B64 = [
     base64.b64encode(json.dumps({
         "name": "long_prompt_coherence",

@@ -100,11 +100,9 @@ async def _probe_speed(
 ) -> ProbeOutcome:
     latencies = []
     for _ in range(3):
-        start = time.monotonic()
         r = await client.generate(dict(body), pin_channel=cfg.gateway.pin_channel_id)
-        elapsed = time.monotonic() - start
-        if r.success:
-            latencies.append(elapsed)
+        if r.success and r.elapsed_sec is not None:
+            latencies.append(r.elapsed_sec)
 
     if not latencies:
         return ProbeOutcome(

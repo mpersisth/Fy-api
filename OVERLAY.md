@@ -93,7 +93,10 @@
     - `fy_canary/` —— 模型替换检测（alignment + drift + MMD 三种探针）
       - `baseline.py` —— v2 schema 带 `recorded_at_iso` / `n_probes` / `total_samples` / `fy_canary_version`；v1 文件向后兼容
       - `cli.py` —— `baseline` / `audit` / `verify-baseline` 三个子命令；`audit` 默认拒绝超过 30 天的 baseline
-    - `tests/` + `tests_quality/` + `tests_canary/` —— 47 个 `httpx.MockTransport` e2e 测试
+    - `fy_image_conformance/` —— 图片协议一致性 + 质量 + 安全（六阶段：探针→冒烟→API兼容→输出验证→Phase A/B 质量→安全）
+    - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
+    - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
+    - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
 - **用途**：
   1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
   2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
@@ -181,7 +184,7 @@
   - 命令：`fy-image-loadtest`
   - 用途：针对 `/v1/images/generations` 的持续压测，支持多渠道 pin、每渠道独立并发、`duration_sec` / `max_requests_per_channel` 结束条件、429 `retry-after` 冷却
 - **新增文件**：`scripts/channel-benchmark/py/image-loadtest.yaml`
-- **本地配置**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore）
+- **本地配置约定**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore，不入库；需要时从 `image-loadtest.yaml` 复制生成）
 - **修改文件**：
   - `scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-loadtest` CLI）
   - `scripts/channel-benchmark/README.md` / `scripts/channel-benchmark/py/README.md`（补图片压测说明）
@@ -200,6 +203,35 @@
   - `scripts/channel-benchmark/py/tests/test_image_loadtest.py`（新增停机回归测试）
 - **行为**：`fy-image-loadtest` 遇到 `余额不足` / `额度不足` / `insufficient quota` 等错误时，立刻停止继续发新请求，已在飞请求自然收尾后输出最终报告
 - **冲突风险**：低（仅 benchmark 子树）
+
+### B-15.1 [benchmark/image] 图片协议一致性 + 质量 + 安全测试套件
+- **新增目录**：`scripts/channel-benchmark/py/fy_image_conformance/`
+  - `cli.py` / `config.py` / `client.py` / `probe.py` / `budget.py` / `report.py`
+  - `suites/api_compat.py` / `output_valid.py` / `prompt_follow.py` / `perf.py` / `safety.py`
+  - 命令：`fy-image-conformance`
+  - 用途：图片渠道六阶段测试（探针 → 冒烟 → API 兼容 → 输出验证 → 内容质量 Phase A/B → 安全抽样），单命令产出结构化 JSON + markdown 报告
+- **新增测试**：`scripts/channel-benchmark/py/tests/test_image_conformance_json.py`、`scripts/channel-benchmark/py/tests/test_phase2_phase3.py`
+- **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-conformance` CLI）
+- **冲突风险**：极低（benchmark 子树独立新增目录）
+
+### B-15.2 [benchmark/image] 图片金丝雀真实性检测（5A/5B）
+- **新增目录**：`scripts/channel-benchmark/py/fy_image_canary/`
+  - `cli.py` / `config.py` / `client.py` / `verdict.py` / `runner.py` / `runner_5a.py` / `calibrate.py` / `report.py`
+  - `comparators/clip.py` / `histogram.py` / `vlm_judge.py`（5A 三维对比器）
+  - `probes/fingerprint.py` / `cross_channel.py` / `capability.py`（5B 探针）
+  - 命令：`fy-image-canary`
+  - 用途：检测图片渠道是否被静默替换为劣质模型。5A = vendor 直连对比（CLIP + 颜色直方图 + VLM），5B = 无 key 指纹/跨渠道/能力边界探针
+- **新增测试**：`scripts/channel-benchmark/py/tests_image_canary/test_verdict_fix.py`、`test_runner.py`、`test_comparators.py`、`test_fingerprint.py`、`test_config.py`
+- **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-canary` CLI + `[image-canary]` extras）
+- **冲突风险**：极低（benchmark 子树独立新增目录）
+
+### B-15.3 [benchmark] 统一评分器（文本 + 图片）
+- **新增目录**：`scripts/channel-benchmark/py/fy_score/`
+  - `cli.py` / `scorer.py` / `loader.py` / `report.py`
+  - 命令：`fy-score`
+  - 用途：汇总 loadtest / quality / canary / conformance / integrity 各工具输出，按五维度（可用性/性能/质量/真实性/合规性）加权评分，产出 scorecard.json + scorecard.md。文本和图片使用不同权重体系
+- **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-score` CLI）
+- **冲突风险**：极低（benchmark 子树独立新增目录）
 
 ### B-16 [aws/bedrock] Claude `anthropic-beta` 兼容过滤
 - **修改文件**：

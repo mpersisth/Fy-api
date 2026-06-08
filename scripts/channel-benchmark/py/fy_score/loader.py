@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -302,12 +303,18 @@ def load_image_loadtest(path: Path) -> list[ImageLoadtestMetrics]:
         ch_name = ch.get("channel_name", ch.get("name", ""))
         ch_id = ch.get("pin_channel_id") or _extract_channel_id(ch_name)
         stats = ch.get("stats", ch)
+        p50 = stats.get("e2e_p50_ms", stats.get("p50_ms"))
+        p95 = stats.get("e2e_p95_ms", stats.get("p95_ms"))
+        if p50 is None:
+            warnings.warn(f"Missing e2e_p50_ms and p50_ms in image loadtest for {ch_name}")
+        if p95 is None:
+            warnings.warn(f"Missing e2e_p95_ms and p95_ms in image loadtest for {ch_name}")
         results.append(ImageLoadtestMetrics(
             channel_name=ch_name,
             channel_id=ch_id,
             model=data.get("model", ch.get("model", "")),
-            p50_ms=stats.get("e2e_p50_ms", stats.get("p50_ms")),
-            p95_ms=stats.get("e2e_p95_ms", stats.get("p95_ms")),
+            p50_ms=p50,
+            p95_ms=p95,
             rpm=stats.get("rpm"),
             success_rate=stats.get("success_rate"),
         ))

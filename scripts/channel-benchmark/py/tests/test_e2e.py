@@ -213,10 +213,12 @@ async def test_ramp_produces_one_aggregate_per_level(tmp_path: Path):
 
     ChatClient.__init__ = patched_init  # type: ignore[method-assign]
     try:
-        result = await Ramp(cfg).run()
+        mc_result = await Ramp(cfg).run()
     finally:
         ChatClient.__init__ = real_init  # type: ignore[method-assign]
 
+    assert len(mc_result.results) == 1
+    result = mc_result.results[0]
     assert len(result.levels) == 2
     for lv in result.levels:
         assert lv.total == 3
@@ -228,7 +230,7 @@ async def test_ramp_produces_one_aggregate_per_level(tmp_path: Path):
         assert lv.goodput_req_per_s is not None
         assert lv.goodput_req_per_s > 0
 
-    files = write_reports(result, ["json", "csv", "markdown"], tmp_path)
+    files = write_reports(mc_result, ["json", "csv", "markdown"], tmp_path)
     assert len(files) == 3
     for f in files:
         assert f.exists() and f.stat().st_size > 0

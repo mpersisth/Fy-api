@@ -264,7 +264,7 @@ def build_image_scorecard(
 ) -> ChannelScorecard:
     card = ChannelScorecard(channel_name=channel_name, channel_id=channel_id, model=model)
 
-    # Availability (gate at 90% for images)
+    # Availability (gate at 90% for images; exactly 90% passes)
     if success_rate is not None:
         if success_rate < IMAGE_AVAILABILITY_GATE:
             card.dimensions["availability"] = DimensionResult(

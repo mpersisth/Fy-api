@@ -147,8 +147,9 @@ class ImageCanaryRunner:
                 has_cross_channel = True
             if not o.passed and o.confidence == "high":
                 has_hard_fail = True
+            # Fingerprint probes for unsupported params/sizes are iron-clad evidence
             if not o.passed and o.method == "fingerprint" and \
-                    "likely NOT" in o.detail:
+                    (o.probe_id.startswith("5b1-param-") or o.probe_id.startswith("5b1-size-")):
                 has_hard_fail = True
 
         if has_hard_fail:

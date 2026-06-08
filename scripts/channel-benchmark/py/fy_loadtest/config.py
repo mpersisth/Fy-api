@@ -188,6 +188,8 @@ class Config:
             raise ValueError("load.concurrency_levels must have at least one entry (or enable auto_ramp)")
         if any(c <= 0 for c in self.load.concurrency_levels):
             raise ValueError(f"load.concurrency_levels must be positive: {self.load.concurrency_levels}")
+        if not self.load.models and self.load.model:
+            self.load.models = [self.load.model]
         if not self.load.models:
             raise ValueError("load.model or load.models must specify at least one model")
         if self.load.requests_per_level <= 0:

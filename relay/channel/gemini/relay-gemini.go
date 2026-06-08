@@ -1627,7 +1627,7 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	if readErr != nil {
 		return nil, types.NewOpenAIError(readErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	_ = resp.Body.Close()
+	service.CloseResponseBodyGracefully(resp)
 
 	var geminiResponse dto.GeminiImageResponse
 	if jsonErr := common.Unmarshal(responseBody, &geminiResponse); jsonErr != nil {

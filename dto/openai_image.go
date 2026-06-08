@@ -149,7 +149,7 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 				qualityRatio = 1.5
 			}
 		}
-	} else if strings.HasPrefix(i.Model, "gpt-image") {
+	} else if strings.HasPrefix(i.Model, "gpt-image") { // Fy-api overlay: gpt-image-* quality-based pricing ratios
 		switch i.Quality {
 		case "low":
 			qualityRatio = 0.25

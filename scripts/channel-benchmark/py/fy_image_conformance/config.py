@@ -82,6 +82,8 @@ class PromptFollowConfig:
     judge_base_url: str | None = None
     judge_token: str | None = None
     sample_count: int = 3
+    judge_repeat: int = 3
+    consistency_threshold: float = 0.1
 
 
 @dataclass
@@ -99,11 +101,20 @@ class ExportConfig:
 
 
 @dataclass
+class BudgetConfig:
+    max_cost_usd: float | None = None
+    warn_cost_usd: float | None = None
+    cost_model: dict[str, float] = field(default_factory=dict)
+    default_cost_per_request: float = 0.04
+
+
+@dataclass
 class Config:
     gateway: Gateway
     model: ModelProfile
     suites: SuiteFlags = field(default_factory=SuiteFlags)
     export: ExportConfig = field(default_factory=ExportConfig)
+    budget: BudgetConfig = field(default_factory=BudgetConfig)
 
     @classmethod
     def load(cls, path: str | Path) -> Config:
@@ -117,6 +128,7 @@ class Config:
         mdl = d.get("model") or {}
         st = d.get("suites") or {}
         exp = d.get("export") or {}
+        bdg = d.get("budget") or {}
 
         if not gw.get("base_url"):
             raise ValueError("gateway.base_url is required")
@@ -166,6 +178,8 @@ class Config:
                     judge_base_url=pf.get("judge_base_url"),
                     judge_token=pf.get("judge_token"),
                     sample_count=int(pf.get("sample_count", 3)),
+                    judge_repeat=int(pf.get("judge_repeat", 3)),
+                    consistency_threshold=float(pf.get("consistency_threshold", 0.1)),
                 ),
                 perf=PerfConfig(
                     enabled=bool(perf.get("enabled", True)),
@@ -180,5 +194,11 @@ class Config:
             ),
             export=ExportConfig(
                 output_dir=str(exp.get("output_dir", "image-conformance-results")),
+            ),
+            budget=BudgetConfig(
+                max_cost_usd=float(bdg["max_cost_usd"]) if bdg.get("max_cost_usd") is not None else None,
+                warn_cost_usd=float(bdg["warn_cost_usd"]) if bdg.get("warn_cost_usd") is not None else None,
+                cost_model=bdg.get("cost_model") or {},
+                default_cost_per_request=float(bdg.get("default_cost_per_request", 0.04)),
             ),
         )

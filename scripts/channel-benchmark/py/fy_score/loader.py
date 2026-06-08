@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -197,4 +198,125 @@ def load_integrity(path: Path) -> list[IntegrityMetrics]:
         model=model,
         probes=probes,
     )]
+
+
+@dataclass
+class ImageCanaryMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    probe_pass_rate: float
+    avg_probe_score: float
+    combined_verdict: str
+
+
+def load_image_canary(path: Path) -> list[ImageCanaryMetrics]:
+    """Parse fy-image-canary JSON."""
+    data = _read_json(path)
+    outcomes = data.get("outcomes", [])
+    if not outcomes:
+        return []
+    passed = sum(1 for o in outcomes if o.get("passed"))
+    total = len(outcomes)
+    scores = [o.get("score", 0.0) for o in outcomes]
+    channel_name = data.get("channel_name", "")
+    return [ImageCanaryMetrics(
+        channel_name=channel_name,
+        channel_id=_extract_channel_id(channel_name),
+        model=data.get("model", ""),
+        probe_pass_rate=passed / total if total > 0 else 0.0,
+        avg_probe_score=sum(scores) / len(scores) if scores else 0.0,
+        combined_verdict=data.get("combined_verdict", ""),
+    )]
+
+
+@dataclass
+class ImageConformanceMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    api_compat_pass_rate: float
+    output_valid_pass_rate: float
+    safety_pass_rate: float
+    zh_pass_rate: float | None
+    en_pass_rate: float | None
+    phase_a_blocked: bool
+    p50_ms: float | None
+    p95_ms: float | None
+    rpm: float | None
+    success_rate: float | None
+
+
+def load_image_conformance(path: Path) -> list[ImageConformanceMetrics]:
+    """Parse fy-image-conformance JSON report."""
+    data = _read_json(path)
+    if not data:
+        return []
+
+    model = data.get("model", "")
+    results = []
+
+    for ch_data in data.get("channels", [data]):
+        ch_name = ch_data.get("channel_name", ch_data.get("channel", ""))
+        ch_id = ch_data.get("channel_id") or _extract_channel_id(ch_name)
+
+        compat = ch_data.get("api_compat", {})
+        output = ch_data.get("output_valid", {})
+        safety = ch_data.get("safety", {})
+        prompt = ch_data.get("prompt_follow", {})
+        perf = ch_data.get("perf", {})
+
+        results.append(ImageConformanceMetrics(
+            channel_name=ch_name,
+            channel_id=ch_id,
+            model=model or ch_data.get("model", ""),
+            api_compat_pass_rate=float(compat.get("pass_rate", 0.0)),
+            output_valid_pass_rate=float(output.get("pass_rate", 0.0)),
+            safety_pass_rate=float(safety.get("pass_rate", 0.0)),
+            zh_pass_rate=prompt.get("zh_pass_rate"),
+            en_pass_rate=prompt.get("en_pass_rate"),
+            phase_a_blocked=bool(prompt.get("phase_a_blocked", False)),
+            p50_ms=perf.get("p50_ms"),
+            p95_ms=perf.get("p95_ms"),
+            rpm=perf.get("rpm"),
+            success_rate=perf.get("success_rate"),
+        ))
+    return results
+
+
+@dataclass
+class ImageLoadtestMetrics:
+    channel_name: str
+    channel_id: int | None
+    model: str
+    p50_ms: float | None
+    p95_ms: float | None
+    rpm: float | None
+    success_rate: float | None
+
+
+def load_image_loadtest(path: Path) -> list[ImageLoadtestMetrics]:
+    """Parse fy-image-loadtest JSON report."""
+    data = _read_json(path)
+    results = []
+    for ch in data.get("channels", []):
+        ch_name = ch.get("channel_name", ch.get("name", ""))
+        ch_id = ch.get("pin_channel_id") or _extract_channel_id(ch_name)
+        stats = ch.get("stats", ch)
+        p50 = stats.get("e2e_p50_ms", stats.get("p50_ms"))
+        p95 = stats.get("e2e_p95_ms", stats.get("p95_ms"))
+        if p50 is None:
+            warnings.warn(f"Missing e2e_p50_ms and p50_ms in image loadtest for {ch_name}")
+        if p95 is None:
+            warnings.warn(f"Missing e2e_p95_ms and p95_ms in image loadtest for {ch_name}")
+        results.append(ImageLoadtestMetrics(
+            channel_name=ch_name,
+            channel_id=ch_id,
+            model=data.get("model", ch.get("model", "")),
+            p50_ms=p50,
+            p95_ms=p95,
+            rpm=stats.get("rpm"),
+            success_rate=stats.get("success_rate"),
+        ))
+    return results
 

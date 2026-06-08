@@ -1,0 +1,60 @@
+# Image model fingerprints for no-key substitution detection.
+# Each model entry contains expected behavioral characteristics.
+# Phase 1: Top 5 models. Extend as needed.
+
+models:
+  dall-e-3:
+    speed_p50_range_sec: [8.0, 25.0]
+    supported_sizes: ["1024x1024", "1024x1792", "1792x1024"]
+    unsupported_params:
+      - output_format
+    unsupported_sizes: ["512x512", "2048x2048"]
+    error_patterns: ["content_policy_violation", "invalid_size"]
+    has_revised_prompt: true
+    has_c2pa: false
+    response_format_variants: ["url", "b64_json"]
+
+  gpt-image-1:
+    speed_p50_range_sec: [5.0, 30.0]
+    supported_sizes: ["1024x1024", "1536x1024", "1024x1536"]
+    unsupported_params:
+      - style
+    unsupported_sizes: ["512x512"]
+    error_patterns: ["invalid"]
+    has_revised_prompt: true
+    has_c2pa: true
+    response_format_variants: ["url", "b64_json"]
+
+  midjourney:
+    speed_p50_range_sec: [10.0, 60.0]
+    supported_sizes: ["1024x1024", "2048x2048"]
+    unsupported_params:
+      - quality
+    unsupported_sizes: ["512x512", "256x256"]
+    error_patterns: []
+    has_revised_prompt: false
+    has_c2pa: false
+    response_format_variants: ["url"]
+
+  flux-1-pro:
+    speed_p50_range_sec: [2.0, 10.0]
+    supported_sizes: ["1024x1024", "768x768", "512x512"]
+    unsupported_params:
+      - quality
+    unsupported_sizes: ["1792x1024"]
+    error_patterns: []
+    has_revised_prompt: false
+    has_c2pa: false
+    response_format_variants: ["url", "b64_json"]
+
+  kolors:
+    speed_p50_range_sec: [3.0, 15.0]
+    supported_sizes: ["1024x1024", "768x768"]
+    unsupported_params:
+      - style
+      - quality
+    unsupported_sizes: ["1792x1024"]
+    error_patterns: []
+    has_revised_prompt: false
+    has_c2pa: false
+    response_format_variants: ["url", "b64_json"]

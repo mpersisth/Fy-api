@@ -37,7 +37,7 @@ load:
 
   # Concurrency sweep. Short runs for smoke; extend for capacity planning.
   # Rule of thumb: each level is ~(requests_per_level × avg_e2e_s / C) seconds.
-  concurrency_levels: [1, 5, 10, 25]
+  concurrency_levels: [1, 10, 30, 50, 100]
   requests_per_level: 30
   warmup_requests: 3
   request_timeout_sec: 120

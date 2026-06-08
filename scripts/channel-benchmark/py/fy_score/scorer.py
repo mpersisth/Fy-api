@@ -17,6 +17,14 @@ WEIGHTS: dict[str, float] = {
     "compliance": 0.15,
 }
 
+IMAGE_WEIGHTS: dict[str, float] = {
+    "availability": 0.20,
+    "performance": 0.30,
+    "quality": 0.20,
+    "authenticity": 0.15,
+    "compliance": 0.15,
+}
+
 GRADE_BANDS: list[tuple[float, str]] = [
     (90, "A"),
     (75, "B"),
@@ -26,6 +34,7 @@ GRADE_BANDS: list[tuple[float, str]] = [
 ]
 
 AVAILABILITY_GATE = 0.95
+IMAGE_AVAILABILITY_GATE = 0.90
 
 # Performance SLO anchors
 TTFT_P95_BEST_MS = 500.0
@@ -41,6 +50,15 @@ PERF_SUB_WEIGHTS = {"ttft_p95": 0.40, "e2e_p95": 0.30, "throughput": 0.30}
 _HONESTY_PROBES = {"token_inflation", "determinism", "cache_integrity"}
 _COMPLIANCE_PROBES = {"stream_repackaging", "tool_use_passthrough", "content_filtering"}
 # PLACEHOLDER_SCORER_CONTINUE
+
+# Image-specific performance SLO anchors (image gen latency is 5-60s, not sub-second like text)
+IMAGE_E2E_P95_BEST_MS = 5000.0
+IMAGE_E2E_P95_WORST_MS = 60000.0
+IMAGE_P50_BEST_MS = 5000.0
+IMAGE_P50_WORST_MS = 20000.0
+IMAGE_RPM_BEST = 10.0
+IMAGE_RPM_WORST = 1.0
+IMAGE_PERF_SUB_WEIGHTS = {"p95": 0.50, "rpm": 0.30, "p50": 0.20}
 
 
 def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -108,6 +126,182 @@ class ChannelScorecard:
         )
         self.grade = grade_for(self.composite_score)
 # PLACEHOLDER_SCORER_FUNCTIONS
+
+
+def score_image_performance(
+    p95_ms: float | None = None,
+    p50_ms: float | None = None,
+    rpm: float | None = None,
+    success_rate: float | None = None,
+) -> DimensionResult:
+    """Image-specific performance scoring per PRD §15."""
+    parts: list[tuple[float, float]] = []
+    details: list[str] = []
+    if p95_ms is not None:
+        s = _linear(p95_ms, IMAGE_E2E_P95_BEST_MS, IMAGE_E2E_P95_WORST_MS, lower_better=True)
+        parts.append((s, IMAGE_PERF_SUB_WEIGHTS["p95"]))
+        details.append(f"p95={p95_ms/1000:.1f}s")
+    if rpm is not None:
+        s = _linear(rpm, IMAGE_RPM_BEST, IMAGE_RPM_WORST, lower_better=False)
+        parts.append((s, IMAGE_PERF_SUB_WEIGHTS["rpm"]))
+        details.append(f"rpm={rpm:.1f}")
+    if p50_ms is not None:
+        s = _linear(p50_ms, IMAGE_P50_BEST_MS, IMAGE_P50_WORST_MS, lower_better=True)
+        parts.append((s, IMAGE_PERF_SUB_WEIGHTS["p50"]))
+        details.append(f"p50={p50_ms/1000:.1f}s")
+    if not parts:
+        return DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["performance"], detail="no image perf data", available=False)
+    total_w = sum(w for _, w in parts)
+    score = _clamp(sum(s * (w / total_w) for s, w in parts))
+    return DimensionResult(score=score, weight=IMAGE_WEIGHTS["performance"], detail=", ".join(details))
+
+
+def score_image_quality(
+    zh_pass_rate: float | None = None,
+    en_pass_rate: float | None = None,
+    output_valid_rate: float | None = None,
+    phase_a_blocked: bool = False,
+) -> DimensionResult:
+    """Image quality scoring per PRD §14.2."""
+    if phase_a_blocked:
+        return DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["quality"],
+            detail="Phase A blocked — quality score = 0",
+        )
+    parts: list[tuple[float, float]] = []
+    details: list[str] = []
+    if zh_pass_rate is not None:
+        parts.append((_clamp(zh_pass_rate * 100.0), 0.40))
+        details.append(f"zh={zh_pass_rate:.0%}")
+    if en_pass_rate is not None:
+        parts.append((_clamp(en_pass_rate * 100.0), 0.30))
+        details.append(f"en={en_pass_rate:.0%}")
+    if output_valid_rate is not None:
+        parts.append((_clamp(output_valid_rate * 100.0), 0.30))
+        details.append(f"output_valid={output_valid_rate:.0%}")
+    if not parts:
+        return DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["quality"], detail="no data", available=False)
+    total_w = sum(w for _, w in parts)
+    score = _clamp(sum(s * (w / total_w) for s, w in parts))
+    return DimensionResult(score=score, weight=IMAGE_WEIGHTS["quality"], detail=", ".join(details))
+
+
+def score_image_authenticity(
+    canary_pass_rate: float | None = None,
+    canary_avg_score: float | None = None,
+    confidence_cap: float = 100.0,
+) -> DimensionResult:
+    """Image authenticity scoring per PRD §14.2.
+
+    confidence_cap: max score based on verification method:
+      100 = Vendor verified or cross-channel verified
+      80  = Fingerprint verified
+      60  = Inconclusive
+      0   = Mismatch
+    """
+    if confidence_cap <= 0:
+        return DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["authenticity"],
+            detail="MISMATCH — authenticity = 0",
+        )
+    if canary_pass_rate is None and canary_avg_score is None:
+        return DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["authenticity"], detail="no canary data", available=False)
+    raw_score = 0.0
+    details = []
+    if canary_pass_rate is not None:
+        raw_score += canary_pass_rate * 50.0
+        details.append(f"pass_rate={canary_pass_rate:.0%}")
+    if canary_avg_score is not None:
+        raw_score += canary_avg_score * 50.0
+        details.append(f"avg_score={canary_avg_score:.2f}")
+    score = _clamp(min(raw_score, confidence_cap))
+    details.append(f"cap={confidence_cap:.0f}")
+    return DimensionResult(score=score, weight=IMAGE_WEIGHTS["authenticity"], detail=", ".join(details))
+
+
+def score_image_compliance(
+    safety_pass_rate: float | None = None,
+    api_compat_pass_rate: float | None = None,
+) -> DimensionResult:
+    """Image compliance scoring per PRD §14.2."""
+    parts: list[tuple[float, float]] = []
+    details: list[str] = []
+    if safety_pass_rate is not None:
+        parts.append((_clamp(safety_pass_rate * 100.0), 0.60))
+        details.append(f"safety={safety_pass_rate:.0%}")
+    if api_compat_pass_rate is not None:
+        parts.append((_clamp(api_compat_pass_rate * 100.0), 0.40))
+        details.append(f"api_compat={api_compat_pass_rate:.0%}")
+    if not parts:
+        return DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["compliance"], detail="no data", available=False)
+    total_w = sum(w for _, w in parts)
+    score = _clamp(sum(s * (w / total_w) for s, w in parts))
+    return DimensionResult(score=score, weight=IMAGE_WEIGHTS["compliance"], detail=", ".join(details))
+
+
+def build_image_scorecard(
+    channel_name: str,
+    channel_id: int | None,
+    model: str,
+    *,
+    success_rate: float | None = None,
+    p95_ms: float | None = None,
+    p50_ms: float | None = None,
+    rpm: float | None = None,
+    zh_pass_rate: float | None = None,
+    en_pass_rate: float | None = None,
+    output_valid_rate: float | None = None,
+    phase_a_blocked: bool = False,
+    canary_pass_rate: float | None = None,
+    canary_avg_score: float | None = None,
+    authenticity_cap: float = 100.0,
+    safety_pass_rate: float | None = None,
+    api_compat_pass_rate: float | None = None,
+) -> ChannelScorecard:
+    card = ChannelScorecard(channel_name=channel_name, channel_id=channel_id, model=model)
+
+    # Availability (gate at 90% for images; exactly 90% passes)
+    if success_rate is not None:
+        if success_rate < IMAGE_AVAILABILITY_GATE:
+            card.dimensions["availability"] = DimensionResult(
+                score=0.0, weight=IMAGE_WEIGHTS["availability"],
+                detail=f"success_rate={success_rate:.1%} (below {IMAGE_AVAILABILITY_GATE:.0%} gate)",
+            )
+            card.gated_out = True
+            card.flags.append(f"availability below {IMAGE_AVAILABILITY_GATE:.0%} gate")
+        else:
+            gate_range = 1.0 - IMAGE_AVAILABILITY_GATE
+            score = _clamp((success_rate - IMAGE_AVAILABILITY_GATE) / gate_range * 100.0)
+            card.dimensions["availability"] = DimensionResult(
+                score=score, weight=IMAGE_WEIGHTS["availability"],
+                detail=f"success_rate={success_rate:.1%}",
+            )
+    else:
+        card.dimensions["availability"] = DimensionResult(
+            score=0.0, weight=IMAGE_WEIGHTS["availability"], detail="no data", available=False)
+
+    # Performance
+    card.dimensions["performance"] = score_image_performance(p95_ms, p50_ms, rpm, success_rate)
+
+    # Quality
+    card.dimensions["quality"] = score_image_quality(
+        zh_pass_rate, en_pass_rate, output_valid_rate, phase_a_blocked)
+
+    # Authenticity
+    card.dimensions["authenticity"] = score_image_authenticity(
+        canary_pass_rate, canary_avg_score, authenticity_cap)
+    if canary_pass_rate == 0.0:
+        card.flags.append("all image canary probes failed — suspected model swap")
+
+    # Compliance
+    card.dimensions["compliance"] = score_image_compliance(safety_pass_rate, api_compat_pass_rate)
+
+    card.compute_composite()
+    return card
 
 
 def score_availability(success_rate: float) -> DimensionResult:

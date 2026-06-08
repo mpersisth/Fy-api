@@ -1,0 +1,55 @@
+# fy-image-canary sample configuration
+gateway:
+  name: "supplier-A"
+  base_url: ${FY_BASE_URL:-http://localhost:3000}
+  user_token: ${FY_USER_TOKEN}
+  pin_channel_id: 30
+  model: "gpt-image-1"
+
+# Additional channels for cross-channel comparison (5B-2).
+# Remove or leave empty to skip cross-channel comparison.
+# additional_channels:
+#   - name: "supplier-B"
+#     base_url: ${FY_BASE_URL:-http://localhost:3000}
+#     user_token: ${FY_USER_TOKEN}
+#     pin_channel_id: 31
+#     model: "gpt-image-1"
+
+# Vendor-direct endpoint for 5A comparison. Remove to skip 5A.
+# vendor:
+#   base_url: "https://api.openai.com"
+#   api_key: ${OPENAI_API_KEY}
+#   model: "gpt-image-1"
+
+judge:
+  model: "gpt-4o"
+  repeat: 3
+  consistency_threshold: 0.1
+
+fingerprint:
+  db_path: "fy_image_canary/fingerprints.yaml"
+
+thresholds:
+  clip_cosine_min: 0.90
+  color_correlation_min: 0.85
+  success_rate_diff_max: 0.10
+  latency_ratio_max: 2.0
+
+budget:
+  max_cost_usd: 5.0
+  cost_per_generation: 0.04
+  cost_per_judge_call: 0.005
+
+test_prompts:
+  - "a red apple on white table, studio lighting"
+  - "a blue car on a street, sunny day"
+  - "a mountain landscape at sunset"
+  - "a geometric pattern, circles and squares"
+  - "一个红色的灯笼挂在门前"
+  - "an abstract painting in blue and gold"
+  - "a close-up photo of a cat's face"
+  - "a white empty room with a single window"
+
+output_dir: "image-canary-results"
+request_timeout_sec: 300
+concurrency: 2

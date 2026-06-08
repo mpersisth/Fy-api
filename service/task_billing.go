@@ -50,6 +50,12 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	// Fy-api overlay: keep task pricing multipliers structured for reports and e2e checks.
+	if len(info.PriceData.OtherRatios) > 0 {
+		for k, v := range info.PriceData.OtherRatios {
+			other[k] = v
+		}
+	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,

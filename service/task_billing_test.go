@@ -11,6 +11,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -609,6 +611,53 @@ func TestNonTerminalUpdate_NoBilling(t *testing.T) {
 	assert.Equal(t, "50%", reloaded.Progress)
 }
 
+func TestLogTaskConsumption_IncludesOtherRatios(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+
+	const userID, channelID, tokenID = 24, 24, 24
+	seedUser(t, userID, 10000)
+	seedChannel(t, channelID)
+
+	c, _ := gin.CreateTestContext(nil)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	c.Set("username", "test_user")
+
+	info := &relaycommon.RelayInfo{
+		UserId: userID,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId: channelID,
+		},
+		TokenId:         tokenID,
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{Action: "generate"},
+		OriginModelName: "wan2.6-i2v",
+		UsingGroup:      "default",
+		PriceData: types.PriceData{
+			ModelPrice: 0.684931506849,
+			Quota:      1712325,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+			OtherRatios: map[string]float64{
+				"seconds":          5,
+				"resolution-1080P": 1 / 0.6,
+			},
+			UsePrice: true,
+		},
+	}
+
+	LogTaskConsumption(c, info)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+
+	var other map[string]interface{}
+	require.NoError(t, common.Unmarshal([]byte(log.Other), &other))
+	assert.Equal(t, true, other["is_task"])
+	assert.InDelta(t, 5.0, other["seconds"], 0.0001)
+	assert.InDelta(t, 1/0.6, other["resolution-1080P"], 0.0001)
+}
+
 // ===========================================================================
 // Mock adaptor for settleTaskBillingOnComplete tests
 // ===========================================================================
@@ -630,12 +679,13 @@ func (m *mockAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.Task
 // PerCallBilling tests — settleTaskBillingOnComplete
 // ===========================================================================
 
-func TestSettle_PerCallBilling_SkipsAdaptorAdjust(t *testing.T) {
+func TestSettle_PerCallBilling_AllowsAdaptorAdjust(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
 
 	const userID, tokenID, channelID = 30, 30, 30
 	const initQuota, preConsumed = 10000, 5000
+	const adaptorQuota = 2000
 	const tokenRemain = 8000
 
 	seedUser(t, userID, initQuota)
@@ -645,16 +695,20 @@ func TestSettle_PerCallBilling_SkipsAdaptorAdjust(t *testing.T) {
 	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
 	task.PrivateData.BillingContext.PerCallBilling = true
 
-	adaptor := &mockAdaptor{adjustReturn: 2000}
+	adaptor := &mockAdaptor{adjustReturn: adaptorQuota}
 	taskResult := &relaycommon.TaskInfo{Status: model.TaskStatusSuccess}
 
 	settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 
-	// Per-call: no adjustment despite adaptor returning 2000
-	assert.Equal(t, initQuota, getUserQuota(t, userID))
-	assert.Equal(t, tokenRemain, getTokenRemainQuota(t, tokenID))
-	assert.Equal(t, preConsumed, task.Quota)
-	assert.Equal(t, int64(0), countLogs(t))
+	// Per-call still allows adaptor-provided actual quota. This covers providers
+	// that pre-charge per submit but settle on completion using upstream usage.
+	assert.Equal(t, initQuota+(preConsumed-adaptorQuota), getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+(preConsumed-adaptorQuota), getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, adaptorQuota, task.Quota)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	assert.Equal(t, model.LogTypeRefund, log.Type)
 }
 
 func TestSettle_PerCallBilling_SkipsTotalTokens(t *testing.T) {

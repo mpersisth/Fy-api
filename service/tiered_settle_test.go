@@ -506,6 +506,60 @@ func TestBuildTieredTokenParams_GPT_WithImage(t *testing.T) {
 	}
 }
 
+func TestBuildTieredTokenParams_GPT_ImageInputNoVarStaysInPrompt(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 500,
+		PromptTokensDetails: dto.InputTokenDetails{
+			ImageTokens: 200,
+			TextTokens:  800,
+		},
+	}
+	expr := `tier("base", p * 2 + c * 8)`
+	got := tieredQuota(expr, usage, false, 1.0)
+	// No img → P=1000 (image stays in P), C=500 → (1000*2 + 500*8) * 0.5 = 3000
+	want := 3000.0
+	if math.Abs(got-want) > 0.01 {
+		t.Fatalf("quota = %f, want %f", got, want)
+	}
+}
+
+func TestBuildTieredTokenParams_GPT_ImageOutput(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 600,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ImageTokens: 100,
+			TextTokens:  500,
+		},
+	}
+	expr := `tier("base", p * 2 + c * 8 + img_o * 120)`
+	got := tieredQuota(expr, usage, false, 1.0)
+	// C=600-100=500, ImgO=100 → (1000*2 + 500*8 + 100*120) * 0.5 = 9000
+	want := 9000.0
+	if math.Abs(got-want) > 0.01 {
+		t.Fatalf("quota = %f, want %f", got, want)
+	}
+}
+
+func TestBuildTieredTokenParams_GPT_ImageOutputNoVarStaysInCompletion(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 600,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ImageTokens: 100,
+			TextTokens:  500,
+		},
+	}
+	expr := `tier("base", p * 2 + c * 8)`
+	got := tieredQuota(expr, usage, false, 1.0)
+	// No img_o → C=600 (image output stays in C), P=1000 → (1000*2 + 600*8) * 0.5 = 3400
+	want := 3400.0
+	if math.Abs(got-want) > 0.01 {
+		t.Fatalf("quota = %f, want %f", got, want)
+	}
+}
+
 func TestBuildTieredTokenParams_Claude_WithCache(t *testing.T) {
 	usage := &dto.Usage{
 		PromptTokens:     800,

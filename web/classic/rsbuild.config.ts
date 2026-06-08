@@ -51,6 +51,9 @@ export default defineConfig(({ envMode }) => {
     },
     html: {
       template: './index.html',
+      // Fy-api overlay: disable auto favicon injection — the template already
+      // defines <link rel="icon" href="/new_logo.png?v=2" /> for TraceNex branding.
+      favicon: false,
     },
     server: {
       host: '0.0.0.0',

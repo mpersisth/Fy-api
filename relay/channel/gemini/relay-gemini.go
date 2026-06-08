@@ -224,7 +224,8 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		info.ChannelType == constant.ChannelTypeVertexAi) &&
 		model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled
 
-	if model_setting.IsGeminiModelSupportImagine(info.UpstreamModelName) {
+	// Fy-api overlay: use prefix matching for Nano Banana image models
+	if isNanoBananaModel(info.UpstreamModelName) || model_setting.IsGeminiModelSupportImagine(info.UpstreamModelName) {
 		geminiRequest.GenerationConfig.ResponseModalities = []string{
 			"TEXT",
 			"IMAGE",
@@ -1669,6 +1670,79 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	usage := &dto.Usage{
 		PromptTokens:     imageTokens * generatedImages, // each generated image has fixed 258 tokens
 		CompletionTokens: 0,                             // image generation does not calculate completion tokens
+		TotalTokens:      imageTokens * generatedImages,
+	}
+
+	return usage, nil
+}
+
+// Fy-api overlay: handle Nano Banana image generation response (gemini-*-image models via chat endpoint)
+func GeminiNanoBananaHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	service.CloseResponseBodyGracefully(resp)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, types.NewOpenAIError(
+			fmt.Errorf("upstream error (status %d): %s", resp.StatusCode, string(responseBody)),
+			types.ErrorCodeBadResponseStatusCode,
+			resp.StatusCode,
+		)
+	}
+
+	var geminiResponse dto.GeminiChatResponse
+	if jsonErr := common.Unmarshal(responseBody, &geminiResponse); jsonErr != nil {
+		return nil, types.NewOpenAIError(jsonErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+
+	if len(geminiResponse.Candidates) == 0 {
+		errMsg := "no content generated"
+		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
+			errMsg = "blocked by Gemini API: " + *geminiResponse.PromptFeedback.BlockReason
+		}
+		return nil, types.NewOpenAIError(errors.New(errMsg), types.ErrorCodeBadResponseBody, http.StatusBadRequest)
+	}
+
+	openAIResponse := dto.ImageResponse{
+		Created: common.GetTimestamp(),
+		Data:    make([]dto.ImageData, 0),
+	}
+
+	var revisedPrompt string
+	for _, part := range geminiResponse.Candidates[0].Content.Parts {
+		if part.InlineData != nil && strings.HasPrefix(part.InlineData.MimeType, "image/") {
+			openAIResponse.Data = append(openAIResponse.Data, dto.ImageData{
+				B64Json: part.InlineData.Data,
+			})
+		} else if part.Text != "" {
+			revisedPrompt = part.Text
+		}
+	}
+
+	if revisedPrompt != "" && len(openAIResponse.Data) > 0 {
+		openAIResponse.Data[0].RevisedPrompt = revisedPrompt
+	}
+
+	if len(openAIResponse.Data) == 0 {
+		return nil, types.NewOpenAIError(errors.New("no images in response"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+
+	jsonResponse, jsonErr := json.Marshal(openAIResponse)
+	if jsonErr != nil {
+		return nil, types.NewError(jsonErr, types.ErrorCodeBadResponseBody)
+	}
+
+	c.Writer.Header().Set("Content-Type", "application/json")
+	c.Writer.WriteHeader(http.StatusOK)
+	_, _ = c.Writer.Write(jsonResponse)
+
+	const imageTokens = 258
+	generatedImages := len(openAIResponse.Data)
+	usage := &dto.Usage{
+		PromptTokens:     imageTokens * generatedImages,
+		CompletionTokens: 0,
 		TotalTokens:      imageTokens * generatedImages,
 	}
 

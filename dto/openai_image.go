@@ -25,7 +25,7 @@ type ImageRequest struct {
 	Moderation        json.RawMessage `json:"moderation,omitempty"`
 	OutputFormat      json.RawMessage `json:"output_format,omitempty"`
 	OutputCompression json.RawMessage `json:"output_compression,omitempty"`
-	PartialImages     json.RawMessage `json:"partial_images,omitempty"`
+	PartialImages     *int            `json:"partial_images,omitempty"`
 	// Stream            bool            `json:"stream,omitempty"`
 	Images        json.RawMessage `json:"images,omitempty"`
 	Mask          json.RawMessage `json:"mask,omitempty"`
@@ -148,6 +148,15 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 			if i.Size == "1024x1792" || i.Size == "1792x1024" {
 				qualityRatio = 1.5
 			}
+		}
+	} else if strings.HasPrefix(i.Model, "gpt-image") {
+		switch i.Quality {
+		case "low":
+			qualityRatio = 0.25
+		case "high":
+			qualityRatio = 4.0
+		default:
+			qualityRatio = 1.0
 		}
 	}
 

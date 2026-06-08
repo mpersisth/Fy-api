@@ -394,6 +394,31 @@
 - **行为**：请求发往 Bedrock 前，静默移除 system/messages 中所有 `cache_control.scope`，并过滤掉空 text content block。不改变请求语义——`cache_control.type` 保留，非空 text block 保留。
 - **冲突风险**：极低（独立新文件 + 两处各 +2 行，与 B-17 同一函数但不同行）
 
+### B-27 [openai/image] GPT-Image-2 兼容增强
+- **修改文件**：
+  - `dto/openai_image.go`（`GetTokenCountMeta()` 新增 `gpt-image` 前缀的 quality 倍率映射；`PartialImages` 从 `json.RawMessage` 改为 `*int`）
+  - `common/model.go`（`ImageGenerationModels` 列表添加 `"gpt-image-2"`）
+  - `setting/ratio_setting/model_ratio.go`（添加 `gpt-image-2` model_ratio / completion_ratio / image_ratio 条目）
+- **背景**：GPT-Image-2 走现有 OpenAI 透传路径，但 `IsImageGenerationModel()` 不识别、计费无 quality 区分。
+- **行为**：`gpt-image-2` 被正确识别为图片模型；`quality=low/medium/high` 分别乘 0.25/1.0/4.0 倍率。
+- **冲突风险**：极低（三处都是纯追加条目）
+
+### B-28 [gemini] Nano Banana 图片生成（gemini-*-image 系列）
+- **修改文件**：
+  - `relay/channel/gemini/adaptor.go`（`ConvertImageRequest` 新增 Nano Banana 入口分支 + `isNanoBananaModel()` + `convertImageRequestToGeminiChat()`；`DoResponse` 路由到 `GeminiNanoBananaHandler`）
+  - `relay/channel/gemini/relay-gemini.go`（`CovertOpenAI2Gemini` 中 `ResponseModalities` 新增 `isNanoBananaModel()` 前缀匹配；新增 `GeminiNanoBananaHandler` 函数）
+- **背景**：Gemini 原生图片生成模型（gemini-3.1-flash-image 等）通过 chat 端点 + `ResponseModalities=["TEXT","IMAGE"]` 工作，与 Imagen 的 `:predict` 路径不同。
+- **行为**：`/v1/images/generations` + Nano Banana 模型 → 转为 Gemini Chat 请求 → 提取 `inlineData` → 返回 OpenAI 兼容 `ImageResponse`。MVP 仅非流式。
+- **冲突风险**：低（`isNanoBananaModel` 新增函数；`CovertOpenAI2Gemini` 在现有条件旁追加 `||`；`DoResponse` 追加一个 `if` 分支）
+
+### B-29 [gemini/imagen] personGeneration 可配置
+- **修改文件**：
+  - `dto/channel_settings.go`（`ChannelOtherSettings` 新增 `PersonGeneration string` 字段）
+  - `relay/channel/gemini/adaptor.go`（`ConvertImageRequest` 中 `PersonGeneration` 从硬编码 `"allow_adult"` 改为从 `info.ChannelOtherSettings.PersonGeneration` 读取，空值 fallback 到 `"allow_adult"`）
+- **背景**：不同渠道可能需要不同的人物生成策略（`allow_adult`/`allow_all`/`dont_allow`）以满足合规要求。
+- **行为**：管理员在渠道 setting JSON 中配置 `"person_generation": "dont_allow"` 即可生效，无需前端改动。
+- **冲突风险**：极低（struct 追加字段 + 一行读取逻辑）
+
 ---
 
 ## 前端定制

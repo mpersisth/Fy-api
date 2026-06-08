@@ -58,6 +58,11 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	// Fy-api overlay: Nano Banana models use chat endpoint with ResponseModalities
+	if isNanoBananaModel(info.UpstreamModelName) {
+		return convertImageRequestToGeminiChat(request)
+	}
+
 	if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return nil, errors.New("not supported model for image generation, only imagen models are supported")
 	}
@@ -84,6 +89,12 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		}
 	}
 
+	// Fy-api overlay: read personGeneration from channel setting, default "allow_adult"
+	personGeneration := info.ChannelOtherSettings.PersonGeneration
+	if personGeneration == "" {
+		personGeneration = "allow_adult"
+	}
+
 	// build gemini imagen request
 	geminiRequest := dto.GeminiImageRequest{
 		Instances: []dto.GeminiImageInstance{
@@ -94,7 +105,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		Parameters: dto.GeminiImageParameters{
 			SampleCount:      int(lo.FromPtrOr(request.N, uint(1))),
 			AspectRatio:      aspectRatio,
-			PersonGeneration: "allow_adult", // default allow adult
+			PersonGeneration: personGeneration,
 		},
 	}
 
@@ -276,6 +287,11 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		return GeminiImageHandler(c, info, resp)
 	}
 
+	// Fy-api overlay: Nano Banana image generation via chat endpoint
+	if isNanoBananaModel(info.UpstreamModelName) && info.RelayMode == constant.RelayModeImagesGenerations {
+		return GeminiNanoBananaHandler(c, info, resp)
+	}
+
 	// check if the model is an embedding model
 	if strings.HasPrefix(info.UpstreamModelName, "text-embedding") ||
 		strings.HasPrefix(info.UpstreamModelName, "embedding") ||
@@ -297,4 +313,26 @@ func (a *Adaptor) GetModelList() []string {
 
 func (a *Adaptor) GetChannelName() string {
 	return ChannelName
+}
+
+// Fy-api overlay: Nano Banana model detection for gemini-*-image variants
+func isNanoBananaModel(model string) bool {
+	return strings.HasPrefix(model, "gemini-") && strings.Contains(model, "image")
+}
+
+func convertImageRequestToGeminiChat(request dto.ImageRequest) (*dto.GeminiChatRequest, error) {
+	geminiRequest := &dto.GeminiChatRequest{
+		Contents: []dto.GeminiChatContent{
+			{
+				Role: "user",
+				Parts: []dto.GeminiPart{
+					{Text: request.Prompt},
+				},
+			},
+		},
+		GenerationConfig: dto.GeminiChatGenerationConfig{
+			ResponseModalities: []string{"TEXT", "IMAGE"},
+		},
+	}
+	return geminiRequest, nil
 }

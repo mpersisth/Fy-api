@@ -717,7 +717,11 @@ type TaskSubmitReq struct {
 	Duration       int                    `json:"duration,omitempty"`
 	Seconds        string                 `json:"seconds,omitempty"`
 	InputReference string                 `json:"input_reference,omitempty"`
+	ReferenceURLs  []string               `json:"reference_urls,omitempty"`
 	Media          []TaskMediaItem        `json:"media,omitempty"`
+	Audio          *bool                  `json:"audio,omitempty"`
+	ShotType       string                 `json:"shot_type,omitempty"`
+	Watermark      *bool                  `json:"watermark,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -814,8 +818,10 @@ func FailTaskInfo(reason string) *TaskInfo {
 // inference_geo: Claude 数据驻留推理区域字段（仅 Claude 支持，默认过滤）
 // speed: Claude 推理速度模式字段（仅 Claude 支持，默认过滤）
 // context_management: Claude 上下文裁剪 beta 字段（仅 Claude 支持，默认过滤；
-//                     该字段需要客户端同时携带 anthropic-beta: context-management-* header，
-//                     仅塞 body 透传会被 Anthropic schema 校验直接拒绝。Fy-api overlay）
+//
+//	该字段需要客户端同时携带 anthropic-beta: context-management-* header，
+//	仅塞 body 透传会被 Anthropic schema 校验直接拒绝。Fy-api overlay）
+//
 // store: 数据存储授权字段，涉及用户隐私（仅 OpenAI、Responses API 支持，默认允许透传，禁用后可能导致 Codex 无法使用）
 // safety_identifier: 安全标识符，用于向 OpenAI 报告违规用户（仅 OpenAI 支持，涉及用户隐私）
 // stream_options.include_obfuscation: 响应流混淆控制字段（仅 OpenAI Responses API 支持）

@@ -220,6 +220,9 @@ func TestConvertToAliRequest_R2VNoMediaNoInputReference(t *testing.T) {
 	if got := aliReq.Input.ImgURL; got != "" {
 		t.Fatalf("img_url = %q, want empty", got)
 	}
+	if got, want := aliReq.Parameters.Size, "1280*720"; got != want {
+		t.Fatalf("size = %q, want %q", got, want)
+	}
 }
 
 func TestConvertToAliRequest_R2VLastFrameURLBackwardCompat(t *testing.T) {

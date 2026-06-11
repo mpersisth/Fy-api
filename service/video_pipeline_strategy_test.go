@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -114,6 +115,31 @@ func TestApplyVideoPipelineSubmitSnapshotFallsBackToRelayInfoPlan(t *testing.T) 
 	assert.Equal(t, "720p", task.PrivateData.SeedanceEnhance.GenerationResolution)
 	assert.Equal(t, "1080p", task.PrivateData.SeedanceEnhance.EnhanceTargetResolution)
 	assert.Equal(t, "generation-1", task.PrivateData.SeedanceEnhance.GenerationTaskID)
+}
+
+func TestApplyVideoPipelineSubmitSnapshotRebuildsPlanFromRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
+	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/v1/videos", nil)
+	c.Set("task_request", relaycommon.TaskSubmitReq{
+		Model:   "doubao-seedance-2-0-260128",
+		Prompt:  "雨夜跑车镜头推进",
+		Seconds: "5",
+		Size:    "1920x1080",
+	})
+	info := &relaycommon.RelayInfo{OriginModelName: "doubao-seedance-2-0-260128", TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+	task := &model.Task{Quota: 123, PrivateData: model.TaskPrivateData{UpstreamTaskID: "generation-2"}}
+
+	ApplyVideoPipelineSubmitSnapshot(c, task, info)
+
+	require.NotNil(t, task.PrivateData.SeedanceEnhance)
+	assert.Equal(t, "720p", task.PrivateData.SeedanceEnhance.GenerationResolution)
+	assert.Equal(t, "1080p", task.PrivateData.SeedanceEnhance.EnhanceTargetResolution)
+	assert.Equal(t, "generation-2", task.PrivateData.SeedanceEnhance.GenerationTaskID)
 }
 
 func TestAnalyzeVideoRequest_ResolutionSizeAllowsMetadataRatio(t *testing.T) {

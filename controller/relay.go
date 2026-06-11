@@ -597,6 +597,8 @@ func RelayTask(c *gin.Context) {
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
+		// Fy-api overlay: attach optional TraceNex video pipeline snapshot.
+		service.ApplyVideoPipelineSubmitSnapshot(c, task, relayInfo)
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
 		}

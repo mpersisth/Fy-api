@@ -197,6 +197,77 @@ func TestConvertToAliRequest_Wan26R2VReferenceURLsTakesPrecedenceOverInputRefere
 	}
 }
 
+func TestConvertToAliRequest_Wan26R2VPreservesMetadataReferenceURLs(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt: "video gen",
+		Model:  "wan2.6-r2v",
+		Metadata: map[string]interface{}{
+			"input": map[string]interface{}{
+				"reference_urls": []string{
+					"https://example.com/role.mp4",
+					"https://example.com/prop.png",
+				},
+			},
+			"parameters": map[string]interface{}{
+				"size":      "1920*1080",
+				"shot_type": "multi",
+			},
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+
+	if got := len(aliReq.Input.ReferenceURLs); got != 2 {
+		t.Fatalf("reference_urls len = %d, want 2", got)
+	}
+	if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/role.mp4"; got != want {
+		t.Fatalf("reference_urls[0] = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Input.ReferenceURLs[1], "https://example.com/prop.png"; got != want {
+		t.Fatalf("reference_urls[1] = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Parameters.Size, "1920*1080"; got != want {
+		t.Fatalf("size = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Parameters.ShotType, "multi"; got != want {
+		t.Fatalf("shot_type = %q, want %q", got, want)
+	}
+}
+
+func TestConvertToAliRequest_Wan26R2VTopLevelReferenceURLsOverrideMetadata(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt:        "video gen",
+		Model:         "wan2.6-r2v",
+		ReferenceURLs: []string{"https://example.com/top-level.mp4"},
+		Metadata: map[string]interface{}{
+			"input": map[string]interface{}{
+				"reference_urls": []string{"https://example.com/metadata.mp4"},
+			},
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+
+	if got := len(aliReq.Input.ReferenceURLs); got != 1 {
+		t.Fatalf("reference_urls len = %d, want 1", got)
+	}
+	if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/top-level.mp4"; got != want {
+		t.Fatalf("reference_urls[0] = %q, want %q", got, want)
+	}
+}
+
 func TestConvertToAliRequest_R2VNoMediaNoInputReference(t *testing.T) {
 	t.Parallel()
 

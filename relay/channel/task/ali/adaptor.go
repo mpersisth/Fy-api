@@ -461,7 +461,9 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		aliReq.Input.LastFrameURL = ""
 
 		if isWan26R2V(upstreamModel) {
-			aliReq.Input.ReferenceURLs = referenceURLsFromTask(req)
+			if referenceURLs := referenceURLsFromTask(req); len(referenceURLs) > 0 {
+				aliReq.Input.ReferenceURLs = referenceURLs
+			}
 		} else if isWan27R2V(upstreamModel) {
 			if len(req.Media) > 0 {
 				aliReq.Input.Media = make([]AliMediaItem, len(req.Media))

@@ -127,8 +127,8 @@
 - **修改文件**：
   - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` / `wan2.6-r2v-flash` 视频基础倍率、`wan2.6-t2i` 单图价格）
   - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v` / `wan2.6-r2v-flash`）
-  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v` / `wan2.6-r2v-flash`；`wan2.6` 默认分辨率改为 `720P`，其中 `wan2.6-r2v*` 默认 `size=1280*720`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`wan2.6-r2v*` 使用 DashScope `input.reference_urls` + `parameters.size/audio/shot_type/watermark`，向后兼容 `input_reference` + `metadata.last_frame_url` 旧传参；`wan2.7-r2v*` 保留 `input.media` 数组；新增 `AliMediaItem` 结构体、`AliVideoInput.ReferenceURLs` / `AliVideoInput.Media` 字段、`AliVideoParameters.Ratio` / `ShotType` 字段；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
-  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算、`wan2.6-r2v*` reference_urls 转换、`wan2.7-r2v*` media 转换、last_frame_url 向后兼容、Ratio metadata 透传、JSON 序列化断言）
+  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v` / `wan2.6-r2v-flash`；`wan2.6` 默认分辨率改为 `720P`，其中 `wan2.6-r2v*` 默认 `size=1280*720`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`wan2.6-r2v*` 使用 DashScope `input.reference_urls` + `parameters.size/audio/shot_type/watermark`，向后兼容 `input_reference` + `metadata.last_frame_url` 旧传参，且在没有顶层统一字段时保留 `metadata.input.reference_urls` 原生透传；`wan2.7-r2v*` 保留 `input.media` 数组；新增 `AliMediaItem` 结构体、`AliVideoInput.ReferenceURLs` / `AliVideoInput.Media` 字段、`AliVideoParameters.Ratio` / `ShotType` 字段；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
+  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算、`wan2.6-r2v*` reference_urls 转换、`wan2.7-r2v*` media 转换、last_frame_url 向后兼容、Ratio metadata 透传、metadata 原生 reference_urls 保留、JSON 序列化断言）
   - `relay/common/relay_info.go`（新增 `TaskMediaItem` 结构体，以及 `TaskSubmitReq.ReferenceURLs` / `Media` / `Audio` / `ShotType` / `Watermark` 字段，支持用户通过 reference_urls 或 media 传入多个参考素材）
   - `service/task_polling.go`（`// Fy-api overlay:`：任务完成态先执行 adaptor 的实际用量结算，再让 per-call 任务跳过 token 重算，避免按次预扣的视频模型跳过 `usage.duration` 差额结算）
   - `service/task_billing.go`（`// Fy-api overlay:`：任务消费日志把 `OtherRatios` 写入 `other` JSON，便于 `seconds` / `resolution-*` 报表和 e2e 断言）
@@ -136,6 +136,7 @@
   - `web/classic/src/components/table/model-pricing/modal/components/VideoPricingDisplay.jsx`（新增分辨率/每秒价格表）
   - `scripts/ops/media_billing_e2e.py`（新增 cn-test/staging 媒体计费 e2e，用公开 API 覆盖图片固定价格、i2v/r2v 视频任务计费与日志结构化字段）
   - `docs/reports/2026-06-06-media-billing-audit.md`（生产只读聚合、根因、测试矩阵和 e2e 运行说明）
+  - `docs/操作手册-视频模型接入.md`（对客户和运营说明 TraceNex 只暴露统一 OpenAI-like 视频任务协议，阿里 `input` / `parameters` 通过顶层便捷字段或 `metadata` 透传）
 - **定价规则**：
   - `wan2.6-t2i`：`0.2` 元/张
   - `wan2.6-i2v` / `wan2.6-r2v` / `wan2.6-r2v-flash`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒

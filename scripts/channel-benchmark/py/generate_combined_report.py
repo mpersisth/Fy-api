@@ -670,7 +670,7 @@ def _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
                 channel_name=channel_name,
                 channel_id=channel_id,
                 model=model,
-                success_rate=(go_row.get("SuccessRatePct", 0.0) / 100.0) if go_row else None,
+                connectivity_rate=(go_row.get("SuccessRatePct", 0.0) / 100.0) if go_row else None,
                 ttft_p95_ms=lt_row.get("ttft_p95_low"),
                 e2e_p95_ms=lt_row.get("e2e_p95_low"),
                 throughput_toks=lt_row.get("levels", [{}])[0].get("per_request_tok_per_s", {}).get("avg") if lt_row.get("levels") else None,

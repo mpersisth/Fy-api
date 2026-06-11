@@ -468,6 +468,51 @@ func TestAdjustBillingOnComplete_UsesActualAliDuration(t *testing.T) {
 	}
 }
 
+func TestConvertToAliRequest_Wan26R2VDefaultsAudioTrue(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt:        "audio default",
+		Model:         "wan2.6-r2v",
+		ReferenceURLs: []string{"https://example.com/ref.mp4"},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+	if aliReq.Parameters.Audio == nil {
+		t.Fatal("audio = nil, want true pointer")
+	}
+	if got := *aliReq.Parameters.Audio; got != true {
+		t.Fatalf("audio = %t, want true", got)
+	}
+}
+
+func TestConvertToAliRequest_Wan26R2VHonorsExplicitAudioFalse(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt:        "audio false",
+		Model:         "wan2.6-r2v",
+		ReferenceURLs: []string{"https://example.com/ref.mp4"},
+		Audio:         common.GetPointer(false),
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+	if aliReq.Parameters.Audio == nil {
+		t.Fatal("audio = nil, want false pointer")
+	}
+	if got := *aliReq.Parameters.Audio; got != false {
+		t.Fatalf("audio = %t, want false", got)
+	}
+}
+
 func TestConvertToAliRequest_Wan26R2VReferenceURLsJSONSerialization(t *testing.T) {
 	t.Parallel()
 

@@ -425,6 +425,8 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 
 	if req.Audio != nil {
 		aliReq.Parameters.Audio = req.Audio
+	} else if isWan26R2V(upstreamModel) {
+		aliReq.Parameters.Audio = common.GetPointer(true)
 	}
 	if req.ShotType != "" {
 		aliReq.Parameters.ShotType = req.ShotType

@@ -693,6 +693,11 @@ type TaskRelayInfo struct {
 	// 供 DoResponse 在返回给客户端时使用（避免暴露上游真实 ID）。
 	PublicTaskID string
 
+	// VideoPipelinePlan carries provider-neutral video pipeline planning data
+	// across task submit stages. Stored as any to avoid an import cycle with
+	// service; callers type-assert to the concrete plan type.
+	VideoPipelinePlan any
+
 	ConsumeQuota bool
 
 	// LockedChannel holds the full channel object when the request is bound to

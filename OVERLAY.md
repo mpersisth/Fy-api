@@ -370,6 +370,7 @@
 - **修改文件**：
   - `model/task.go`（`TaskPrivateData` 新增 `SeedanceEnhance` 私有 pipeline snapshot）
   - `controller/relay.go`（任务插入前写入 pipeline snapshot）
+  - `relay/common/relay_info.go`（`TaskRelayInfo` 暂存内部 pipeline plan，避免跨 submit 阶段只依赖 gin context）
   - `relay/channel/task/doubao/adaptor.go`（提交前调用 strategy helper 改写 generation payload；查询时返回安全 pipeline metadata）
   - `service/task_polling.go`（普通轮询路径前加 `AdvanceVideoPipelineIfNeeded` 薄 hook）
 - **新增测试**：

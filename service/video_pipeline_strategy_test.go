@@ -78,6 +78,44 @@ func TestBuildVideoPipelinePlan_IgnoresRequestForceUnlessAllowed(t *testing.T) {
 	assert.Nil(t, plan)
 }
 
+func TestApplyVideoPipelineSubmitSnapshotFallsBackToRelayInfoPlan(t *testing.T) {
+	plan := &VideoPipelinePlan{
+		StrategyName:            VideoPipelineNameSeedanceEnhance,
+		StrategyVersion:         "v1",
+		UserRequestedModel:      "doubao-seedance-2-0-260128",
+		RequestedResolution:     "1080p",
+		RequestedRatio:          "16:9",
+		MatchedGenerationPolicy: "dynamic-default-seedance-2-720p",
+		MatchedEnhancePolicy:    "enhance-720-to-1080-standard",
+		Generation: VideoGenerationPlan{
+			Provider:   VideoPipelineProviderDoubaoVideo,
+			Model:      "doubao-seedance-2-0-260128",
+			Resolution: "720p",
+		},
+		Enhance: &VideoEnhancePlan{
+			Provider:   VideoPipelineProviderVolcengineMediaKit,
+			Resolution: "1080p",
+		},
+		Fallback: VideoPipelineFallback{EnhanceFailed: VideoPipelineFallbackReturnGeneration},
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 87},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			VideoPipelinePlan: plan,
+		},
+	}
+	task := &model.Task{Quota: 123, PrivateData: model.TaskPrivateData{UpstreamTaskID: "generation-1"}}
+
+	ApplyVideoPipelineSubmitSnapshot(nil, task, info)
+
+	require.NotNil(t, task.PrivateData.SeedanceEnhance)
+	assert.Equal(t, VideoPipelineNameSeedanceEnhance, task.PrivateData.SeedanceEnhance.Pipeline)
+	assert.Equal(t, VideoPipelineStatusGenerationSubmitted, task.PrivateData.SeedanceEnhance.Status)
+	assert.Equal(t, "720p", task.PrivateData.SeedanceEnhance.GenerationResolution)
+	assert.Equal(t, "1080p", task.PrivateData.SeedanceEnhance.EnhanceTargetResolution)
+	assert.Equal(t, "generation-1", task.PrivateData.SeedanceEnhance.GenerationTaskID)
+}
+
 func TestAnalyzeVideoRequest_ResolutionSizeAllowsMetadataRatio(t *testing.T) {
 	analysis, err := AnalyzeVideoRequest(relaycommon.TaskSubmitReq{
 		Model:  "doubao-seedance-2-0-260128",

@@ -70,6 +70,13 @@ func StoreVideoPipelinePlan(c *gin.Context, plan *VideoPipelinePlan) {
 	c.Set(videoPipelineContextKey, plan)
 }
 
+func AttachVideoPipelinePlan(info *relaycommon.RelayInfo, plan *VideoPipelinePlan) {
+	if info == nil || info.TaskRelayInfo == nil || plan == nil {
+		return
+	}
+	info.TaskRelayInfo.VideoPipelinePlan = plan
+}
+
 func GetVideoPipelinePlan(c *gin.Context) (*VideoPipelinePlan, bool) {
 	if c == nil {
 		return nil, false
@@ -132,6 +139,9 @@ func BuildVideoPipelinePlan(c *gin.Context, info *relaycommon.RelayInfo, req rel
 
 func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *relaycommon.RelayInfo) {
 	plan, ok := GetVideoPipelinePlan(c)
+	if !ok && info != nil && info.TaskRelayInfo != nil {
+		plan, ok = info.TaskRelayInfo.VideoPipelinePlan.(*VideoPipelinePlan)
+	}
 	if !ok || task == nil || plan == nil {
 		return
 	}

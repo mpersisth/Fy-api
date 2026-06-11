@@ -190,6 +190,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	if plan != nil {
 		service.StoreVideoPipelinePlan(c, plan)
+		service.AttachVideoPipelinePlan(info, plan)
 	}
 
 	body, err := a.convertToRequestPayload(&req)

@@ -210,6 +210,9 @@ class Config:
     _VALID_FORMATS = {"json", "csv", "markdown", "pdf"}
 
     def validate(self) -> None:
+        import warnings
+        if self.load.ceiling_finder.enabled and self.load.auto_ramp.enabled:
+            warnings.warn("both ceiling_finder and auto_ramp are enabled; ceiling_finder takes priority, auto_ramp will be ignored")
         if not self.load.auto_ramp.enabled and not self.load.ceiling_finder.enabled and not self.load.concurrency_levels:
             raise ValueError("load.concurrency_levels must have at least one entry (or enable auto_ramp/ceiling_finder)")
         if any(c <= 0 for c in self.load.concurrency_levels):

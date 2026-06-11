@@ -33,7 +33,7 @@ GRADE_BANDS: list[tuple[float, str]] = [
     (0, "F"),
 ]
 
-AVAILABILITY_GATE = 0.95
+AVAILABILITY_GATE = 0.80
 IMAGE_AVAILABILITY_GATE = 0.90
 
 # Performance SLO anchors
@@ -304,17 +304,18 @@ def build_image_scorecard(
     return card
 
 
-def score_availability(success_rate: float) -> DimensionResult:
-    if success_rate < AVAILABILITY_GATE:
+def score_availability(connectivity_rate: float) -> DimensionResult:
+    """Score availability based on C=1 (no-concurrency) success rate only."""
+    if connectivity_rate < AVAILABILITY_GATE:
         return DimensionResult(
             score=0.0,
             weight=WEIGHTS["availability"],
-            detail=f"success_rate={success_rate:.1%} (below {AVAILABILITY_GATE:.0%} gate)",
+            detail=f"connectivity={connectivity_rate:.1%} (below {AVAILABILITY_GATE:.0%} gate)",
         )
-    score = _clamp((success_rate - AVAILABILITY_GATE) / (1.0 - AVAILABILITY_GATE) * 100.0)
+    score = _clamp((connectivity_rate - AVAILABILITY_GATE) / (1.0 - AVAILABILITY_GATE) * 100.0)
     return DimensionResult(
         score=score, weight=WEIGHTS["availability"],
-        detail=f"success_rate={success_rate:.1%}",
+        detail=f"connectivity={connectivity_rate:.1%}",
     )
 
 
@@ -432,7 +433,7 @@ def build_scorecard(
     channel_id: int | None,
     model: str,
     *,
-    success_rate: float | None = None,
+    connectivity_rate: float | None = None,
     ttft_p95_ms: float | None = None,
     e2e_p95_ms: float | None = None,
     throughput_toks: float | None = None,
@@ -446,12 +447,12 @@ def build_scorecard(
 ) -> ChannelScorecard:
     card = ChannelScorecard(channel_name=channel_name, channel_id=channel_id, model=model)
 
-    # Availability
-    if success_rate is not None:
-        card.dimensions["availability"] = score_availability(success_rate)
-        if success_rate < AVAILABILITY_GATE:
+    # Availability — based on C=1 success rate only
+    if connectivity_rate is not None:
+        card.dimensions["availability"] = score_availability(connectivity_rate)
+        if connectivity_rate < AVAILABILITY_GATE:
             card.gated_out = True
-            card.flags.append(f"availability below {AVAILABILITY_GATE:.0%} gate")
+            card.flags.append(f"connectivity below {AVAILABILITY_GATE:.0%} gate")
     else:
         card.dimensions["availability"] = DimensionResult(
             score=0.0, weight=WEIGHTS["availability"], detail="no data", available=False

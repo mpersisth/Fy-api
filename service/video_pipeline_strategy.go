@@ -142,6 +142,15 @@ func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *re
 	if !ok && info != nil && info.TaskRelayInfo != nil {
 		plan, ok = info.TaskRelayInfo.VideoPipelinePlan.(*VideoPipelinePlan)
 	}
+	if !ok && c != nil {
+		req, err := relaycommon.GetTaskRequest(c)
+		if err == nil {
+			if rebuilt, rebuildErr := BuildVideoPipelinePlan(c, info, req); rebuildErr == nil && rebuilt != nil {
+				plan = rebuilt
+				ok = true
+			}
+		}
+	}
 	if !ok || task == nil || plan == nil {
 		return
 	}

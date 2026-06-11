@@ -281,8 +281,9 @@ var defaultModelRatio = map[string]float64{
 	"deepseek-ai/DeepSeek-V3-0324":            0.8,
 	"deepseek-ai/DeepSeek-V3.1":               0.8,
 	// Fy-api overlay: base ratio pairs with Ali resolution multipliers to land at fixed wan2.6 per-second RMB pricing.
-	"wan2.6-i2v":                              0.082, // 视频：720P=0.3元/秒, 1080P=0.5元/秒
-	"wan2.6-r2v":                              0.082, // 视频：720P=0.3元/秒, 1080P=0.5元/秒
+	"wan2.6-i2v":       0.082, // 视频：720P=0.3元/秒, 1080P=0.5元/秒
+	"wan2.6-r2v":       0.082, // 视频：720P=0.3元/秒, 1080P=0.5元/秒
+	"wan2.6-r2v-flash": 0.082, // 视频：720P=0.3元/秒, 1080P=0.5元/秒
 }
 
 var defaultModelPrice = map[string]float64{
@@ -318,7 +319,7 @@ var defaultModelPrice = map[string]float64{
 	"veo-3.1-generate-preview":       0.4,
 	"veo-3.1-fast-generate-preview":  0.15,
 	// Fy-api overlay: wan2.6 text-to-image fixed per-image pricing.
-	"wan2.6-t2i":                     0.0274, // 图片：0.2元/张
+	"wan2.6-t2i": 0.0274, // 图片：0.2元/张
 }
 
 var defaultAudioRatio = map[string]float64{

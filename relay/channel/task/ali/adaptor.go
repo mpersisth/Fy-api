@@ -33,7 +33,7 @@ type AliVideoRequest struct {
 	Parameters *AliVideoParameters `json:"parameters,omitempty"`
 }
 
-// AliMediaItem r2v 参考素材（wan2.6-r2v / wan2.7-r2v input.media 元素）
+// AliMediaItem r2v 参考素材（wan2.7-r2v input.media 元素）
 type AliMediaItem struct {
 	Type           string `json:"type"`                      // "reference_image" | "reference_video"
 	URL            string `json:"url"`                       // 素材 URL
@@ -49,19 +49,21 @@ type AliVideoInput struct {
 	AudioURL       string         `json:"audio_url,omitempty"`       // 音频URL（wan2.5支持）
 	NegativePrompt string         `json:"negative_prompt,omitempty"` // 反向提示词
 	Template       string         `json:"template,omitempty"`        // 视频特效模板
-	Media          []AliMediaItem `json:"media,omitempty"`           // r2v 参考素材数组
+	ReferenceURLs  []string       `json:"reference_urls,omitempty"`  // wan2.6-r2v 参考素材 URL 列表
+	Media          []AliMediaItem `json:"media,omitempty"`           // wan2.7-r2v 参考素材数组
 }
 
 // AliVideoParameters 视频参数
 type AliVideoParameters struct {
 	Resolution   string `json:"resolution,omitempty"`    // 分辨率: 480P/720P/1080P（图生视频、首尾帧生视频）
-	Size         string `json:"size,omitempty"`          // 尺寸: 如 "832*480"（文生视频）
+	Size         string `json:"size,omitempty"`          // 尺寸: 如 "832*480"（文生视频、wan2.6-r2v）
 	Duration     int    `json:"duration,omitempty"`      // 时长: 3-10秒
 	PromptExtend bool   `json:"prompt_extend,omitempty"` // 是否开启prompt智能改写
 	Watermark    bool   `json:"watermark,omitempty"`     // 是否添加水印
-	Audio        *bool  `json:"audio,omitempty"`         // 是否添加音频（wan2.5）
+	Audio        *bool  `json:"audio,omitempty"`         // 是否添加音频（wan2.5/wan2.6-r2v）
 	Seed         int    `json:"seed,omitempty"`          // 随机数种子
 	Ratio        string `json:"ratio,omitempty"`         // 画面比例: 16:9/9:16/1:1
+	ShotType     string `json:"shot_type,omitempty"`     // 分镜类型：single/multi
 }
 
 // AliVideoResponse 阿里通义万相响应
@@ -221,6 +223,10 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 			"720P":  1,
 			"1080P": 1 / 0.6,
 		},
+		"wan2.6-r2v-flash": {
+			"720P":  1,
+			"1080P": 1 / 0.6,
+		},
 		"wan2.5-t2v-preview": {
 			"480P":  1,
 			"720P":  2,
@@ -277,7 +283,7 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 }
 
 func validateWan26Resolution(model, resolution string) error {
-	if !strings.HasPrefix(model, "wan2.6") || resolution == "" {
+	if !strings.HasPrefix(model, "wan2.6") || isWan26R2V(model) || resolution == "" {
 		return nil
 	}
 	normalized := strings.ToUpper(resolution)
@@ -289,6 +295,39 @@ func validateWan26Resolution(model, resolution string) error {
 		return fmt.Errorf("不支持的分辨率：%s，支持的分辨率：720P、1080P", resolution)
 	}
 	return nil
+}
+
+func isWan26R2V(model string) bool {
+	return strings.HasPrefix(model, "wan2.6-r2v")
+}
+
+func isWan27R2V(model string) bool {
+	return strings.HasPrefix(model, "wan2.7-r2v")
+}
+
+func referenceURLsFromTask(req relaycommon.TaskSubmitReq) []string {
+	if len(req.ReferenceURLs) > 0 {
+		return append([]string(nil), req.ReferenceURLs...)
+	}
+	if len(req.Media) > 0 {
+		urls := make([]string, 0, len(req.Media))
+		for _, item := range req.Media {
+			if item.URL != "" {
+				urls = append(urls, item.URL)
+			}
+		}
+		return urls
+	}
+	if req.InputReference == "" {
+		return nil
+	}
+	urls := []string{req.InputReference}
+	if req.Metadata != nil {
+		if lastURL, ok := req.Metadata["last_frame_url"].(string); ok && lastURL != "" {
+			urls = append(urls, lastURL)
+		}
+	}
+	return urls
 }
 
 func effectiveTaskModel(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq) string {
@@ -314,11 +353,26 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 
 	// 处理分辨率映射
 	if req.Size != "" {
-		// text to video size must be contained *
-		if strings.Contains(upstreamModel, "t2v") && !strings.Contains(req.Size, "*") {
+		if isWan26R2V(upstreamModel) {
+			if strings.Contains(req.Size, "*") {
+				aliReq.Parameters.Size = req.Size
+			} else {
+				resolution := strings.ToUpper(req.Size)
+				if !strings.HasSuffix(resolution, "P") {
+					resolution = resolution + "P"
+				}
+				switch resolution {
+				case "720P":
+					aliReq.Parameters.Size = "1280*720"
+				case "1080P":
+					aliReq.Parameters.Size = "1920*1080"
+				default:
+					return nil, fmt.Errorf("不支持的分辨率：%s，支持的分辨率：720P、1080P", req.Size)
+				}
+			}
+		} else if strings.Contains(upstreamModel, "t2v") && !strings.Contains(req.Size, "*") {
 			return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920*1080")
-		}
-		if strings.Contains(req.Size, "*") {
+		} else if strings.Contains(req.Size, "*") {
 			aliReq.Parameters.Size = req.Size
 		} else {
 			resolution := strings.ToUpper(req.Size)
@@ -339,7 +393,9 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 				aliReq.Parameters.Size = "1280*720"
 			}
 		} else {
-			if strings.HasPrefix(upstreamModel, "wan2.6") {
+			if isWan26R2V(upstreamModel) {
+				aliReq.Parameters.Size = "1280*720"
+			} else if strings.HasPrefix(upstreamModel, "wan2.6") {
 				aliReq.Parameters.Resolution = "720P"
 			} else if strings.HasPrefix(upstreamModel, "wan2.5") {
 				aliReq.Parameters.Resolution = "1080P"
@@ -367,6 +423,16 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		aliReq.Parameters.Duration = 5 // 默认5秒
 	}
 
+	if req.Audio != nil {
+		aliReq.Parameters.Audio = req.Audio
+	}
+	if req.ShotType != "" {
+		aliReq.Parameters.ShotType = req.ShotType
+	}
+	if req.Watermark != nil {
+		aliReq.Parameters.Watermark = *req.Watermark
+	}
+
 	// 从 metadata 中提取额外参数
 	if req.Metadata != nil {
 		if metadataBytes, err := common.Marshal(req.Metadata); err == nil {
@@ -388,29 +454,35 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		return nil, err
 	}
 
-	// Fy-api overlay: r2v uses input.media array (DashScope wan2.6-r2v / wan2.7-r2v API).
+	// Fy-api overlay: wan2.6-r2v uses reference_urls; wan2.7-r2v uses media.
 	if strings.Contains(upstreamModel, "r2v") {
 		aliReq.Input.ImgURL = ""
 		aliReq.Input.FirstFrameURL = ""
 		aliReq.Input.LastFrameURL = ""
 
-		if len(req.Media) > 0 {
-			aliReq.Input.Media = make([]AliMediaItem, len(req.Media))
-			for i, item := range req.Media {
-				aliReq.Input.Media[i] = AliMediaItem{
-					Type:           item.Type,
-					URL:            item.URL,
-					ReferenceVoice: item.ReferenceVoice,
-				}
+		if isWan26R2V(upstreamModel) {
+			if referenceURLs := referenceURLsFromTask(req); len(referenceURLs) > 0 {
+				aliReq.Input.ReferenceURLs = referenceURLs
 			}
-		} else if req.InputReference != "" {
-			media := []AliMediaItem{{Type: "reference_image", URL: req.InputReference}}
-			if req.Metadata != nil {
-				if lastURL, ok := req.Metadata["last_frame_url"].(string); ok && lastURL != "" {
-					media = append(media, AliMediaItem{Type: "reference_image", URL: lastURL})
+		} else if isWan27R2V(upstreamModel) {
+			if len(req.Media) > 0 {
+				aliReq.Input.Media = make([]AliMediaItem, len(req.Media))
+				for i, item := range req.Media {
+					aliReq.Input.Media[i] = AliMediaItem{
+						Type:           item.Type,
+						URL:            item.URL,
+						ReferenceVoice: item.ReferenceVoice,
+					}
 				}
+			} else if req.InputReference != "" {
+				media := []AliMediaItem{{Type: "reference_image", URL: req.InputReference}}
+				if req.Metadata != nil {
+					if lastURL, ok := req.Metadata["last_frame_url"].(string); ok && lastURL != "" {
+						media = append(media, AliMediaItem{Type: "reference_image", URL: lastURL})
+					}
+				}
+				aliReq.Input.Media = media
 			}
-			aliReq.Input.Media = media
 		}
 	}
 

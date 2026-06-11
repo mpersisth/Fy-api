@@ -72,7 +72,7 @@ func TestConvertToAliRequest_Wan26DefaultsTo720P(t *testing.T) {
 	}
 }
 
-func TestConvertToAliRequest_Wan26R2VFrames(t *testing.T) {
+func TestConvertToAliRequest_Wan26R2VReferenceURLs(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -119,26 +119,29 @@ func TestConvertToAliRequest_Wan26R2VFrames(t *testing.T) {
 			if got := aliReq.Input.FirstFrameURL; got != "" {
 				t.Fatalf("first_frame_url = %q, want empty", got)
 			}
-			if len(aliReq.Input.Media) != 1 {
-				t.Fatalf("media len = %d, want 1", len(aliReq.Input.Media))
+			if got := len(aliReq.Input.Media); got != 0 {
+				t.Fatalf("media len = %d, want 0", got)
 			}
-			if got, want := aliReq.Input.Media[0].Type, "reference_image"; got != want {
-				t.Fatalf("media[0].type = %q, want %q", got, want)
+			if got := len(aliReq.Input.ReferenceURLs); got != 1 {
+				t.Fatalf("reference_urls len = %d, want 1", got)
 			}
-			if got, want := aliReq.Input.Media[0].URL, "https://example.com/first.png"; got != want {
-				t.Fatalf("media[0].url = %q, want %q", got, want)
+			if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/first.png"; got != want {
+				t.Fatalf("reference_urls[0] = %q, want %q", got, want)
+			}
+			if got, want := aliReq.Parameters.Size, "1280*720"; got != want {
+				t.Fatalf("size = %q, want %q", got, want)
 			}
 		})
 	}
 }
 
-func TestConvertToAliRequest_R2VExplicitMediaArray(t *testing.T) {
+func TestConvertToAliRequest_Wan27R2VExplicitMediaArray(t *testing.T) {
 	t.Parallel()
 
 	adaptor := &TaskAdaptor{}
 	req := relaycommon.TaskSubmitReq{
 		Prompt: "multi-ref video",
-		Model:  "wan2.6-r2v",
+		Model:  "wan2.7-r2v",
 		Media: []relaycommon.TaskMediaItem{
 			{Type: "reference_image", URL: "https://example.com/char.jpg"},
 			{Type: "reference_video", URL: "https://example.com/bg.mp4", ReferenceVoice: "https://example.com/voice.mp3"},
@@ -170,7 +173,7 @@ func TestConvertToAliRequest_R2VExplicitMediaArray(t *testing.T) {
 	}
 }
 
-func TestConvertToAliRequest_R2VMediaTakesPrecedenceOverInputReference(t *testing.T) {
+func TestConvertToAliRequest_Wan26R2VReferenceURLsTakesPrecedenceOverInputReference(t *testing.T) {
 	t.Parallel()
 
 	adaptor := &TaskAdaptor{}
@@ -178,8 +181,40 @@ func TestConvertToAliRequest_R2VMediaTakesPrecedenceOverInputReference(t *testin
 		Prompt:         "video gen",
 		Model:          "wan2.6-r2v",
 		InputReference: "https://example.com/should-be-ignored.png",
-		Media: []relaycommon.TaskMediaItem{
-			{Type: "reference_image", URL: "https://example.com/wins.jpg"},
+		ReferenceURLs:  []string{"https://example.com/wins.jpg"},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+
+	if got := len(aliReq.Input.ReferenceURLs); got != 1 {
+		t.Fatalf("reference_urls len = %d, want 1", got)
+	}
+	if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/wins.jpg"; got != want {
+		t.Fatalf("reference_urls[0] = %q, want %q (input_reference should not win)", got, want)
+	}
+}
+
+func TestConvertToAliRequest_Wan26R2VPreservesMetadataReferenceURLs(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt: "video gen",
+		Model:  "wan2.6-r2v",
+		Metadata: map[string]interface{}{
+			"input": map[string]interface{}{
+				"reference_urls": []string{
+					"https://example.com/role.mp4",
+					"https://example.com/prop.png",
+				},
+			},
+			"parameters": map[string]interface{}{
+				"size":      "1920*1080",
+				"shot_type": "multi",
+			},
 		},
 	}
 
@@ -188,11 +223,48 @@ func TestConvertToAliRequest_R2VMediaTakesPrecedenceOverInputReference(t *testin
 		t.Fatalf("convertToAliRequest() error = %v", err)
 	}
 
-	if got := len(aliReq.Input.Media); got != 1 {
-		t.Fatalf("media len = %d, want 1", got)
+	if got := len(aliReq.Input.ReferenceURLs); got != 2 {
+		t.Fatalf("reference_urls len = %d, want 2", got)
 	}
-	if got, want := aliReq.Input.Media[0].URL, "https://example.com/wins.jpg"; got != want {
-		t.Fatalf("media[0].url = %q, want %q (input_reference should not win)", got, want)
+	if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/role.mp4"; got != want {
+		t.Fatalf("reference_urls[0] = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Input.ReferenceURLs[1], "https://example.com/prop.png"; got != want {
+		t.Fatalf("reference_urls[1] = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Parameters.Size, "1920*1080"; got != want {
+		t.Fatalf("size = %q, want %q", got, want)
+	}
+	if got, want := aliReq.Parameters.ShotType, "multi"; got != want {
+		t.Fatalf("shot_type = %q, want %q", got, want)
+	}
+}
+
+func TestConvertToAliRequest_Wan26R2VTopLevelReferenceURLsOverrideMetadata(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Prompt:        "video gen",
+		Model:         "wan2.6-r2v",
+		ReferenceURLs: []string{"https://example.com/top-level.mp4"},
+		Metadata: map[string]interface{}{
+			"input": map[string]interface{}{
+				"reference_urls": []string{"https://example.com/metadata.mp4"},
+			},
+		},
+	}
+
+	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
+	if err != nil {
+		t.Fatalf("convertToAliRequest() error = %v", err)
+	}
+
+	if got := len(aliReq.Input.ReferenceURLs); got != 1 {
+		t.Fatalf("reference_urls len = %d, want 1", got)
+	}
+	if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/top-level.mp4"; got != want {
+		t.Fatalf("reference_urls[0] = %q, want %q", got, want)
 	}
 }
 
@@ -210,11 +282,17 @@ func TestConvertToAliRequest_R2VNoMediaNoInputReference(t *testing.T) {
 		t.Fatalf("convertToAliRequest() error = %v", err)
 	}
 
+	if got := len(aliReq.Input.ReferenceURLs); got != 0 {
+		t.Fatalf("reference_urls len = %d, want 0", got)
+	}
 	if got := len(aliReq.Input.Media); got != 0 {
 		t.Fatalf("media len = %d, want 0", got)
 	}
 	if got := aliReq.Input.ImgURL; got != "" {
 		t.Fatalf("img_url = %q, want empty", got)
+	}
+	if got, want := aliReq.Parameters.Size, "1280*720"; got != want {
+		t.Fatalf("size = %q, want %q", got, want)
 	}
 }
 
@@ -236,14 +314,14 @@ func TestConvertToAliRequest_R2VLastFrameURLBackwardCompat(t *testing.T) {
 		t.Fatalf("convertToAliRequest() error = %v", err)
 	}
 
-	if got := len(aliReq.Input.Media); got != 2 {
-		t.Fatalf("media len = %d, want 2", got)
+	if got := len(aliReq.Input.ReferenceURLs); got != 2 {
+		t.Fatalf("reference_urls len = %d, want 2", got)
 	}
-	if got, want := aliReq.Input.Media[0].URL, "https://example.com/first.png"; got != want {
-		t.Fatalf("media[0].url = %q, want %q", got, want)
+	if got, want := aliReq.Input.ReferenceURLs[0], "https://example.com/first.png"; got != want {
+		t.Fatalf("reference_urls[0] = %q, want %q", got, want)
 	}
-	if got, want := aliReq.Input.Media[1].URL, "https://example.com/last.png"; got != want {
-		t.Fatalf("media[1].url = %q, want %q", got, want)
+	if got, want := aliReq.Input.ReferenceURLs[1], "https://example.com/last.png"; got != want {
+		t.Fatalf("reference_urls[1] = %q, want %q", got, want)
 	}
 	if got := aliReq.Input.FirstFrameURL; got != "" {
 		t.Fatalf("first_frame_url = %q, want empty", got)
@@ -323,16 +401,15 @@ func TestValidateRequestAndSetAction_RejectsUnsupportedWan26Resolution(t *testin
 		},
 		{
 			name: "invalid metadata resolution on mapped alias",
-			info: makeMappedInfo("wan2.6-r2v"),
+			info: makeMappedInfo("wan2.6-i2v"),
 			body: `{
-				"prompt":"transition video",
-				"model":"wan26-transition-video",
-				"input_reference":"https://example.com/first.png",
-				"metadata":{
-					"last_frame_url":"https://example.com/last.png",
-					"parameters":{"resolution":"2K"}
-				}
-			}`,
+					"prompt":"image video",
+					"model":"wan26-image-video",
+					"input_reference":"https://example.com/frame.png",
+					"metadata":{
+						"parameters":{"resolution":"2K"}
+					}
+				}`,
 		},
 	}
 
@@ -391,16 +468,19 @@ func TestAdjustBillingOnComplete_UsesActualAliDuration(t *testing.T) {
 	}
 }
 
-func TestConvertToAliRequest_R2VMediaJSONSerialization(t *testing.T) {
+func TestConvertToAliRequest_Wan26R2VReferenceURLsJSONSerialization(t *testing.T) {
 	t.Parallel()
 
 	adaptor := &TaskAdaptor{}
 	req := relaycommon.TaskSubmitReq{
-		Prompt: "serialize test",
-		Model:  "wan2.6-r2v",
-		Media: []relaycommon.TaskMediaItem{
-			{Type: "reference_image", URL: "https://example.com/img.jpg"},
-		},
+		Prompt:        "serialize test",
+		Model:         "wan2.6-r2v-flash",
+		ReferenceURLs: []string{"https://example.com/role.mp4", "https://example.com/bg.png"},
+		Size:          "1280*720",
+		Duration:      10,
+		Audio:         common.GetPointer(true),
+		ShotType:      "multi",
+		Watermark:     common.GetPointer(true),
 	}
 
 	aliReq, err := adaptor.convertToAliRequest(&relaycommon.RelayInfo{}, req)
@@ -414,14 +494,26 @@ func TestConvertToAliRequest_R2VMediaJSONSerialization(t *testing.T) {
 	}
 	jsonStr := string(jsonBytes)
 
-	if !strings.Contains(jsonStr, `"media":[{`) {
-		t.Fatalf("JSON missing media array field, got: %s", jsonStr)
+	if !strings.Contains(jsonStr, `"model":"wan2.6-r2v-flash"`) {
+		t.Fatalf("JSON missing r2v flash model, got: %s", jsonStr)
 	}
-	if !strings.Contains(jsonStr, `"type":"reference_image"`) {
-		t.Fatalf("JSON missing type field in media, got: %s", jsonStr)
+	if !strings.Contains(jsonStr, `"reference_urls":["https://example.com/role.mp4","https://example.com/bg.png"]`) {
+		t.Fatalf("JSON missing reference_urls field, got: %s", jsonStr)
 	}
-	if !strings.Contains(jsonStr, `"url":"https://example.com/img.jpg"`) {
-		t.Fatalf("JSON missing url field in media, got: %s", jsonStr)
+	if !strings.Contains(jsonStr, `"size":"1280*720"`) {
+		t.Fatalf("JSON missing size field, got: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"audio":true`) {
+		t.Fatalf("JSON missing audio field, got: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"shot_type":"multi"`) {
+		t.Fatalf("JSON missing shot_type field, got: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"watermark":true`) {
+		t.Fatalf("JSON missing watermark field, got: %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"media"`) {
+		t.Fatalf("JSON should not contain media for wan2.6-r2v, got: %s", jsonStr)
 	}
 	if strings.Contains(jsonStr, `"img_url"`) {
 		t.Fatalf("JSON should not contain img_url for r2v, got: %s", jsonStr)

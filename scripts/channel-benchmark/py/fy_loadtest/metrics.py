@@ -227,3 +227,63 @@ def _meets_slo(r: ChatResult, slo: Slo) -> bool:
         if r.e2e_s * 1000.0 > slo.e2e_p95_ms:
             return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Ceiling finder result
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CeilingResult:
+    measured_rpm: float = 0.0
+    measured_input_tpm: float = 0.0
+    measured_output_tpm: float = 0.0
+    measured_total_tpm: float = 0.0
+    header_rpm_limit: float | None = None
+    header_tpm_limit: float | None = None
+    limit_type: str = "unknown"   # "rpm" | "tpm" | "both" | "unknown"
+    confidence: str = "low"       # "low" | "medium" | "high"
+    ceiling_concurrency: int = 0
+    first_429_concurrency: int | None = None
+    sustain_success_rate_pct: float = 0.0
+    sustain_duration_s: float = 0.0
+
+
+def extract_header_limits(results: list[ChatResult]) -> tuple[float | None, float | None]:
+    """Scan results for x-ratelimit-limit-requests / x-ratelimit-limit-tokens headers."""
+    rpm_limit: float | None = None
+    tpm_limit: float | None = None
+    for r in results:
+        h = r.rate_limit_headers
+        if not h:
+            continue
+        val = h.get("x-ratelimit-limit-requests")
+        if val:
+            try:
+                v = float(val)
+                if rpm_limit is None or v > rpm_limit:
+                    rpm_limit = v
+            except ValueError:
+                pass
+        val = h.get("x-ratelimit-limit-tokens")
+        if val:
+            try:
+                v = float(val)
+                if tpm_limit is None or v > tpm_limit:
+                    tpm_limit = v
+            except ValueError:
+                pass
+    return rpm_limit, tpm_limit
+
+
+def classify_limit_type(
+    header_rpm: float | None, header_tpm: float | None
+) -> str:
+    if header_rpm and header_tpm:
+        return "both"
+    if header_rpm:
+        return "rpm"
+    if header_tpm:
+        return "tpm"
+    return "unknown"

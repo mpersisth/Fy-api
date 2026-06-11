@@ -57,6 +57,8 @@ class ChatResult:
 
     # Metadata
     streamed: bool = False
+    started_at: float = 0.0              # time.time() wall-clock when dispatched
+    rate_limit_headers: dict[str, str] = field(default_factory=dict)
 
     def tokens_per_sec(self) -> float:
         """Decode throughput. Excludes prefill/queue (TTFT) for stream runs."""
@@ -163,6 +165,7 @@ class ChatClient:
             body["stream_options"] = {"include_usage": True}
 
         result = ChatResult(streamed=stream)
+        result.started_at = time.time()
         t0 = time.monotonic()
         try:
             if stream:
@@ -183,6 +186,7 @@ class ChatClient:
     async def _do_json(self, body: dict, result: ChatResult, t0: float) -> None:
         resp = await self._client.post(self._url, json=body)
         result.http_status = resp.status_code
+        result.rate_limit_headers = _capture_rl_headers(resp)
         result.e2e_s = time.monotonic() - t0
         if resp.status_code >= 400:
             result.error = f"HTTP {resp.status_code}: {resp.text[:300]}"
@@ -200,6 +204,7 @@ class ChatClient:
     async def _do_stream(self, body: dict, result: ChatResult, t0: float) -> None:
         async with self._client.stream("POST", self._url, json=body) as resp:
             result.http_status = resp.status_code
+            result.rate_limit_headers = _capture_rl_headers(resp)
             if resp.status_code >= 400:
                 # Drain to get server error text, but cap it so a megabyte error
                 # page doesn't blow memory.
@@ -255,6 +260,17 @@ class ChatClient:
             result.success = True
         elif not result.error:
             result.error = "stream closed with no content and no usage"
+
+
+_RL_PREFIXES = ("x-ratelimit-", "retry-after", "ratelimit-")
+
+
+def _capture_rl_headers(resp: httpx.Response) -> dict[str, str]:
+    return {
+        k.lower(): v
+        for k, v in resp.headers.items()
+        if any(k.lower().startswith(p) for p in _RL_PREFIXES)
+    }
 
 
 def _extract_usage(raw: dict | None, into: Usage) -> None:

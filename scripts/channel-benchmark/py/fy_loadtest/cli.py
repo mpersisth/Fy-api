@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override export.formats (comma-separated: json,csv,markdown,pdf)",
     )
     p.add_argument("--dry-run", action="store_true", help="Validate config and exit")
+    p.add_argument("--ceiling", action="store_true", help="Enable ceiling finder mode (measure max RPM/TPM)")
     p.add_argument("-V", "--version", action="version", version=f"fy-loadtest {__version__}")
     return p
 
@@ -55,6 +56,8 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
         cfg.export.output_dir = args.output
     if args.formats:
         cfg.export.formats = [x.strip() for x in args.formats.split(",") if x.strip()]
+    if args.ceiling:
+        cfg.load.ceiling_finder.enabled = True
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -84,7 +87,9 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.gateway.channels:
         ch_desc = ", ".join(f"{ch.name}(id={ch.pin_channel_id})" for ch in cfg.gateway.channels)
         console.print(f"[bold]Channels:[/bold]    {ch_desc}")
-    if cfg.load.auto_ramp.enabled:
+    if cfg.load.ceiling_finder.enabled:
+        console.print(f"[bold]Ceiling:[/bold]      max_c={cfg.load.ceiling_finder.max_concurrency}, stop_429>{cfg.load.ceiling_finder.stop_429_pct}%, sustain={cfg.load.ceiling_finder.sustain_duration_s}s")
+    elif cfg.load.auto_ramp.enabled:
         console.print(f"[bold]Auto-ramp:[/bold]   max={cfg.load.auto_ramp.max_concurrency}, stop<{cfg.load.auto_ramp.stop_success_pct}% success")
     else:
         console.print(f"[bold]Concurrency:[/bold]  {cfg.load.concurrency_levels}")

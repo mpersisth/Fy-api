@@ -185,6 +185,24 @@ python -m fy_integrity run -c <config>.yaml
 fy-loadtest -c <config>.yaml
 ```
 
+#### 4b. 速率上限探测（可选增强）
+
+如需精确测出渠道的 RPM/TPM 硬限制，追加 `--ceiling` flag：
+```bash
+fy-loadtest -c <config>.yaml --ceiling
+```
+
+或在配置中启用：
+```yaml
+load:
+  ceiling_finder:
+    enabled: true
+    sustain_duration_s: 60
+    stop_429_pct: 10
+```
+
+ceiling finder 会从低并发翻倍探测直到 429 出现或 RPM 停滞，然后在瓶颈并发处持续 60s 稳态验证，输出精确的最大 RPM/TPM。报告中新增"速率限制天花板"段落。
+
 注意：多模型 suite 模式会为每个模型单独生成文件。如果观察到输出文件只有一个模型的数据，
 说明文件名冲突被覆盖了——此时改为每个模型单独执行（用 --model 参数）。
 
@@ -369,7 +387,7 @@ fy-image-canary -c <config>.yaml --calibrate --calibrate-n 10
 | 真实性 | 20% | **15%** | 无 token 虚报 |
 | 合规性 | 15% | **15%** | 同等 |
 
-可用性门槛：成功率 < 90% → gated out（文本是 95%）
+可用性门槛：图片成功率 < 90% → gated out；文本 C=1 连通性 < 80% → gated out（仅看并发=1 串行请求的成功率，不聚合高并发数据）
 
 ```bash
 fy-score --image-conformance-dir <dir> \
@@ -526,6 +544,8 @@ fy-score --image-conformance-dir image-conformance-results/ \
 - 特别标注：integrity / canary / image-canary 是否成功执行（不可跳过）
 
 ### 5. 存活性 + TTFT 冒烟详细分析
+- C=1 连通性结果（此数据用于可用性维度门控评分）
+- TTFT 分布（P50/P90/P95/P99）
 
 ### 6. 协议合规详细分析
 - pass_rate 总览
@@ -547,8 +567,11 @@ fy-score --image-conformance-dir image-conformance-results/ \
 
 ### 10. 并发压测详细分析
 - 各并发级别的 RPM / TPM / 延迟 / 错误率对比表
+- **速率限制天花板**（如运行了 `--ceiling`）：稳态实测 RPM/TPM、Provider 标称值、限制类型、置信度
+- 若未运行 ceiling finder，则取成功率 ≥80% 的最高并发级别 RPM/TPM 作为近似
 - 瓶颈并发点分析
 - 是否触发限流（429）、是否有服务端错误（5xx）
+- 注：并发压测数据用于量化渠道容量上限，不参与可用性维度评分（可用性仅看 C=1 连通性）
 
 ### 11. 图片模型测试详细分析
 - 渠道探针结果（支持/不支持模型列表）
@@ -596,6 +619,7 @@ fy-score --image-conformance-dir image-conformance-results/ \
 | **5A CLIP 依赖缺失** | `pip install fy-channel-qa[image-canary]`（~2GB torch） |
 | **5B 指纹库无此模型** | 指纹仅覆盖 top 5，新模型需手动扩展 `fingerprints.yaml` |
 | **图片裁判一致性低** | VLM 对该图片判断不稳定，标注 ⚠ 供人工复核 |
+| **ceiling finder 探测不到 429** | 渠道可能无硬限流（纯计算瓶颈），置信度为 low，改用固定并发数据近似 |
 
 ### 交互式输入清单
 

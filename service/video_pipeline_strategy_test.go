@@ -250,3 +250,37 @@ func TestAdvanceVideoPipelineIfNeeded_SubmitThenComplete(t *testing.T) {
 	assert.Equal(t, "enhance_succeeded", done.PrivateData.SeedanceEnhance.Status)
 	assert.Equal(t, int(5*0.025*common.QuotaPerUnit), done.PrivateData.SeedanceEnhance.EnhanceCostQuota)
 }
+
+func TestHydrateVideoPipelinePrivateDataMergesStaleTaskSnapshot(t *testing.T) {
+	truncate(t)
+
+	task := &model.Task{
+		TaskID:    "task_pipeline_hydrate",
+		UserId:    1,
+		ChannelId: 1,
+		Status:    model.TaskStatusInProgress,
+		Progress:  "50%",
+		Data:      []byte(`{}`),
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "generation-1",
+			SeedanceEnhance: &model.SeedanceEnhancePipeline{
+				Pipeline:                VideoPipelineNameSeedanceEnhance,
+				Status:                  VideoPipelineStatusGenerationSubmitted,
+				RequestedResolution:     "1080p",
+				GenerationResolution:    "720p",
+				EnhanceTargetResolution: "1080p",
+				EnhanceProvider:         VideoPipelineProviderVolcengineMediaKit,
+			},
+		},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+
+	stale := *task
+	stale.PrivateData.SeedanceEnhance = nil
+
+	hydrateVideoPipelinePrivateData(&stale)
+
+	require.NotNil(t, stale.PrivateData.SeedanceEnhance)
+	assert.Equal(t, VideoPipelineNameSeedanceEnhance, stale.PrivateData.SeedanceEnhance.Pipeline)
+	assert.Equal(t, "generation-1", stale.PrivateData.UpstreamTaskID)
+}

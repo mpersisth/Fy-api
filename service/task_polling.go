@@ -399,6 +399,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	// Fy-api overlay: TraceNex multi-stage video pipeline. Only tasks with
 	// private pipeline state are handled here; all normal video tasks continue
 	// through the upstream-compatible status switch below.
+	hydrateVideoPipelinePrivateData(task)
 	if handled, err := AdvanceVideoPipelineIfNeeded(ctx, task, taskResult, responseBody); handled {
 		return err
 	}

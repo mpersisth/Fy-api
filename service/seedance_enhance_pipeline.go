@@ -95,6 +95,20 @@ func AdvanceVideoPipelineIfNeeded(ctx context.Context, task *model.Task, taskRes
 	return true, nil
 }
 
+func hydrateVideoPipelinePrivateData(task *model.Task) {
+	if task == nil || task.ID == 0 || task.PrivateData.SeedanceEnhance != nil {
+		return
+	}
+	var current model.Task
+	if err := model.DB.Select("private_data").Where("id = ?", task.ID).First(&current).Error; err != nil {
+		return
+	}
+	if current.PrivateData.SeedanceEnhance == nil {
+		return
+	}
+	task.PrivateData.SeedanceEnhance = current.PrivateData.SeedanceEnhance
+}
+
 func completePipelineWithFallback(_ context.Context, task *model.Task, oldStatus model.TaskStatus, reason string) (bool, error) {
 	p := task.PrivateData.SeedanceEnhance
 	p.Status = "enhance_failed_fallback"

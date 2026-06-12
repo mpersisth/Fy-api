@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .metrics import LevelAggregate
+from .metrics import CeilingResult, LevelAggregate
 from .runner import MultiChannelResult, RampResult, SuiteResult
 
 _CHANNEL_COLORS = [
@@ -55,11 +55,14 @@ def _write_json(mc: MultiChannelResult, out: Path, ts: str) -> Path:
     path = out / f"loadtest_{ts}.json"
     channels = []
     for r in mc.results:
-        channels.append({
+        ch_data: dict = {
             "channel_name": _ch_label(r),
             "pin_channel_id": r.pin_channel_id,
             "levels": [dataclasses.asdict(lv) for lv in r.levels],
-        })
+        }
+        if r.ceiling is not None:
+            ch_data["ceiling"] = dataclasses.asdict(r.ceiling)
+        channels.append(ch_data)
     doc = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "gateway": mc.base_url,
@@ -173,7 +176,29 @@ def _write_md(mc: MultiChannelResult, out: Path, ts: str) -> Path:
         for cl in conclusion:
             lines.append(cl)
 
-    path.write_text("\n".join(lines) + "\n")
+    # Ceiling finder section
+    multi = len(mc.results) > 1
+    for r in mc.results:
+        if r.ceiling is not None:
+            label = _ch_label(r)
+            lines.append("")
+            lines.append(f"## 速率限制天花板{f' ({label})' if multi else ''}")
+            lines.append("")
+            lines.append("| 指标 | 稳态实测 | Provider 标称 |")
+            lines.append("|---|---|---|")
+            lines.append(f"| RPM | {r.ceiling.measured_rpm:.0f} | {_fmt_header_limit(r.ceiling.header_rpm_limit)} |")
+            lines.append(f"| Input TPM | {r.ceiling.measured_input_tpm:.0f} | — |")
+            lines.append(f"| Output TPM | {r.ceiling.measured_output_tpm:.0f} | — |")
+            lines.append(f"| Total TPM | {r.ceiling.measured_total_tpm:.0f} | {_fmt_header_limit(r.ceiling.header_tpm_limit)} |")
+            lines.append("")
+            lines.append(f"- 限制类型: {r.ceiling.limit_type}")
+            lines.append(f"- 置信度: {r.ceiling.confidence}")
+            lines.append(f"- 探测并发: {r.ceiling.ceiling_concurrency}")
+            if r.ceiling.first_429_concurrency is not None:
+                lines.append(f"- 首次 429 并发: {r.ceiling.first_429_concurrency}")
+            lines.append(f"- 稳态验证: 持续 {r.ceiling.sustain_duration_s:.0f}s, 成功率 {r.ceiling.sustain_success_rate_pct:.1f}%")
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
@@ -185,6 +210,12 @@ def _fmt_opt(v: float | None) -> str:
     if v is None:
         return ""
     return f"{v:.2f}"
+
+
+def _fmt_header_limit(v: float | None) -> str:
+    if v is None:
+        return "—"
+    return f"{v:.0f}"
 
 
 def _top_error(lv: LevelAggregate) -> str:

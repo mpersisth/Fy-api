@@ -66,6 +66,18 @@ class AutoRamp:
 
 
 @dataclass
+class CeilingFinder:
+    enabled: bool = False
+    start_concurrency: int = 1
+    max_concurrency: int = 128
+    stop_429_pct: float = 10.0
+    requests_per_probe: int = 30
+    sustain_duration_s: float = 60.0
+    sustain_max_requests: int = 300
+    use_header_hints: bool = True
+
+
+@dataclass
 class LoadProfile:
     model: str
     models: list[str] = field(default_factory=list)
@@ -80,6 +92,7 @@ class LoadProfile:
 
     request_timeout_sec: float = 120.0
     auto_ramp: AutoRamp = field(default_factory=AutoRamp)
+    ceiling_finder: CeilingFinder = field(default_factory=CeilingFinder)
 
 
 @dataclass
@@ -150,6 +163,18 @@ class Config:
             start_concurrency=int(ar_raw.get("start_concurrency", 1)),
         )
 
+        cf_raw = ld.get("ceiling_finder") or {}
+        ceiling_finder = CeilingFinder(
+            enabled=bool(cf_raw.get("enabled", False)),
+            start_concurrency=int(cf_raw.get("start_concurrency", 1)),
+            max_concurrency=int(cf_raw.get("max_concurrency", 128)),
+            stop_429_pct=float(cf_raw.get("stop_429_pct", 10.0)),
+            requests_per_probe=int(cf_raw.get("requests_per_probe", 30)),
+            sustain_duration_s=float(cf_raw.get("sustain_duration_s", 60.0)),
+            sustain_max_requests=int(cf_raw.get("sustain_max_requests", 300)),
+            use_header_hints=bool(cf_raw.get("use_header_hints", True)),
+        )
+
         return cls(
             gateway=Gateway(
                 base_url=gw["base_url"],
@@ -169,6 +194,7 @@ class Config:
                 warmup_requests=int(ld.get("warmup_requests", 5)),
                 request_timeout_sec=float(ld.get("request_timeout_sec", 120.0)),
                 auto_ramp=auto_ramp,
+                ceiling_finder=ceiling_finder,
             ),
             slo=Slo(
                 ttft_p95_ms=slo.get("ttft_p95_ms"),
@@ -184,8 +210,11 @@ class Config:
     _VALID_FORMATS = {"json", "csv", "markdown", "pdf"}
 
     def validate(self) -> None:
-        if not self.load.auto_ramp.enabled and not self.load.concurrency_levels:
-            raise ValueError("load.concurrency_levels must have at least one entry (or enable auto_ramp)")
+        import warnings
+        if self.load.ceiling_finder.enabled and self.load.auto_ramp.enabled:
+            warnings.warn("both ceiling_finder and auto_ramp are enabled; ceiling_finder takes priority, auto_ramp will be ignored")
+        if not self.load.auto_ramp.enabled and not self.load.ceiling_finder.enabled and not self.load.concurrency_levels:
+            raise ValueError("load.concurrency_levels must have at least one entry (or enable auto_ramp/ceiling_finder)")
         if any(c <= 0 for c in self.load.concurrency_levels):
             raise ValueError(f"load.concurrency_levels must be positive: {self.load.concurrency_levels}")
         if not self.load.models and self.load.model:

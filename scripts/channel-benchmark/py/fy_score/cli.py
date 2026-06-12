@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     for f in smoke_files:
         for m in load_smoke(f):
             k = _merge(inputs, m.channel_name, m.channel_id, m.model)
-            inputs[k]["success_rate"] = m.success_rate
+            inputs[k]["connectivity_rate"] = m.success_rate
 
     for f in lt_files:
         for m in load_loadtest(f):
@@ -150,15 +150,16 @@ def main(argv: list[str] | None = None) -> int:
             inputs[k]["ttft_p95_ms"] = m.ttft_p95_ms
             inputs[k]["e2e_p95_ms"] = m.e2e_p95_ms
             inputs[k]["throughput_toks"] = m.throughput_toks
-            if "success_rate" not in inputs[k]:
-                levels = []
+            if "connectivity_rate" not in inputs[k]:
                 for ch in _read_loadtest_raw(f):
-                    levels.extend(ch.get("levels", []))
-                if levels:
-                    total_ok = sum(lv.get("ok", 0) for lv in levels)
-                    total_req = sum(lv.get("total", 0) for lv in levels)
-                    if total_req > 0:
-                        inputs[k]["success_rate"] = total_ok / total_req
+                    levels = ch.get("levels", [])
+                    c1_levels = [lv for lv in levels if lv.get("concurrency") == 1]
+                    if c1_levels:
+                        lv = c1_levels[0]
+                        total = lv.get("total", 0)
+                        if total > 0:
+                            inputs[k]["connectivity_rate"] = lv.get("ok", 0) / total
+                            break
 
     for f in qa_files:
         for m in load_quality(f):
@@ -238,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
                     "channel_id": args.channel_id,
                     "model": model,
                 }
-            for fld in ("success_rate", "ttft_p95_ms", "e2e_p95_ms", "throughput_toks",
+            for fld in ("connectivity_rate", "ttft_p95_ms", "e2e_p95_ms", "throughput_toks",
                         "quality_pass_rate", "quality_avg_score",
                         "canary_probe_pass_rate", "canary_avg_probe_score",
                         "conformance_pass_rate", "integrity_probes"):
@@ -283,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
                 channel_name=info["channel_name"],
                 channel_id=info.get("channel_id"),
                 model=info["model"],
-                success_rate=info.get("success_rate"),
+                connectivity_rate=info.get("connectivity_rate"),
                 ttft_p95_ms=info.get("ttft_p95_ms"),
                 e2e_p95_ms=info.get("e2e_p95_ms"),
                 throughput_toks=info.get("throughput_toks"),
